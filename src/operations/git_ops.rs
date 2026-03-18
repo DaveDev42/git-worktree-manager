@@ -1,6 +1,6 @@
 /// Git operations for pull requests and merging.
 ///
-/// Mirrors src/claude_worktree/operations/git_ops.py (412 lines).
+/// Mirrors src/git_worktree_manager/operations/git_ops.py (412 lines).
 use std::collections::HashMap;
 use std::process::Command;
 
@@ -197,7 +197,7 @@ pub fn create_pr_worktree(
         println!("{} {}\n", style("PR URL:").bold(), pr_url);
         println!(
             "{}\n",
-            style("Note: Worktree is still active. Use 'cw delete' to remove after PR is merged.")
+            style("Note: Worktree is still active. Use 'gw delete' to remove after PR is merged.")
                 .dim()
         );
 

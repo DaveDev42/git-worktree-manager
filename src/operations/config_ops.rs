@@ -1,6 +1,6 @@
 /// Configuration-related operations.
 ///
-/// Mirrors src/claude_worktree/operations/config_ops.py.
+/// Mirrors src/git_worktree_manager/operations/config_ops.py.
 use std::path::PathBuf;
 
 use console::style;
@@ -172,7 +172,7 @@ pub fn export_config(output: Option<&str>) -> Result<()> {
     println!("  - Configuration settings");
     println!(
         "\n{}\n",
-        style("Transfer this file and use 'cw import' to restore.").dim()
+        style("Transfer this file and use 'gw import' to restore.").dim()
     );
 
     Ok(())
@@ -272,7 +272,7 @@ pub fn import_config(import_file: &str, apply: bool) -> Result<()> {
         if let (Some(b), Some(bb)) = (branch, base) {
             if !git::branch_exists(b, Some(&repo)) {
                 println!(
-                    "{} Branch '{}' not found locally. Create with 'cw new {} --base {}'",
+                    "{} Branch '{}' not found locally. Create with 'gw new {} --base {}'",
                     style("!").yellow(),
                     b,
                     b,

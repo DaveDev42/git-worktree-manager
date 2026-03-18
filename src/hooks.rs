@@ -1,4 +1,4 @@
-/// Hook execution system for claude-worktree.
+/// Hook execution system for git-worktree-manager.
 ///
 /// Hooks allow users to run custom commands at lifecycle events.
 /// Stored per-repository in .cwconfig.json.

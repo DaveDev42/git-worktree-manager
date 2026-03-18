@@ -3,7 +3,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn cw() -> Command {
-    Command::cargo_bin("cw").unwrap()
+    Command::cargo_bin("gw").unwrap()
 }
 
 #[test]
@@ -11,7 +11,7 @@ fn test_help() {
     cw().arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Claude Code"))
+        .stdout(predicate::str::contains("git worktree manager"))
         .stdout(predicate::str::contains("new"))
         .stdout(predicate::str::contains("list"))
         .stdout(predicate::str::contains("merge"))
@@ -33,7 +33,7 @@ fn test_version() {
     cw().arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("cw"));
+        .stdout(predicate::str::contains("gw"));
 }
 
 #[test]
@@ -58,8 +58,8 @@ fn test_shell_function_bash() {
     cw().args(["_shell-function", "bash"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("cw-cd"))
-        .stdout(predicate::str::contains("_cw_cd_completion"));
+        .stdout(predicate::str::contains("gw-cd"))
+        .stdout(predicate::str::contains("_gw_cd_completion"));
 }
 
 #[test]
@@ -67,8 +67,8 @@ fn test_shell_function_fish() {
     cw().args(["_shell-function", "fish"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("function cw-cd"))
-        .stdout(predicate::str::contains("complete -c cw-cd"));
+        .stdout(predicate::str::contains("function gw-cd"))
+        .stdout(predicate::str::contains("complete -c gw-cd"));
 }
 
 #[test]

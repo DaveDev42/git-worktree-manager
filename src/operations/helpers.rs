@@ -1,6 +1,6 @@
 /// Helper functions shared across operations modules.
 ///
-/// Mirrors src/claude_worktree/operations/helpers.py (444 lines).
+/// Mirrors src/git_worktree_manager/operations/helpers.py (444 lines).
 use std::path::{Path, PathBuf};
 
 use crate::constants::{format_config_key, CONFIG_KEY_BASE_BRANCH, CONFIG_KEY_BASE_PATH};
@@ -157,7 +157,7 @@ fn resolve_global_target(
     }
 
     Err(CwError::WorktreeNotFound(format!(
-        "'{}' not found in any registered repository. Run 'cw scan' to register repos.",
+        "'{}' not found in any registered repository. Run 'gw scan' to register repos.",
         target
     )))
 }
@@ -186,7 +186,7 @@ pub fn get_worktree_metadata(branch: &str, repo: &Path) -> Result<(String, PathB
     let worktrees = git::parse_worktrees(repo)?;
     let inferred_base_path = worktrees.first().map(|(_, p)| p.clone()).ok_or_else(|| {
         CwError::Git(format!(
-            "Cannot infer base repository path for branch '{}'. Use 'cw new' to create worktrees.",
+            "Cannot infer base repository path for branch '{}'. Use 'gw new' to create worktrees.",
             branch
         ))
     })?;
@@ -210,7 +210,7 @@ pub fn get_worktree_metadata(branch: &str, repo: &Path) -> Result<(String, PathB
 
     let base = inferred_base_branch.ok_or_else(|| {
         CwError::Git(format!(
-            "Cannot infer base branch for '{}'. Use 'cw new' to create worktrees.",
+            "Cannot infer base branch for '{}'. Use 'gw new' to create worktrees.",
             branch
         ))
     })?;

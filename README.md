@@ -1,14 +1,18 @@
-# claude-worktree (Rust)
+# git-worktree-manager (gw)
 
-CLI tool integrating git worktree with AI coding assistants. Rust rewrite of [claude-worktree](https://github.com/DaveDev42/claude-worktree) for single-binary distribution and instant startup.
+CLI tool integrating git worktree with AI coding assistants. Single static binary, instant startup.
+
+Successor to [claude-worktree](https://github.com/DaveDev42/claude-worktree) (Python). Rewritten in Rust for single-binary distribution (~1.9MB) and ~3ms startup.
 
 ## Install
 
-Download the latest release binary from [Releases](https://github.com/DaveDev42/claude-worktree-rs/releases).
-
 ```bash
-# macOS / Linux
-chmod +x cw && sudo mv cw /usr/local/bin/
+# Homebrew
+brew tap DaveDev42/tap
+brew install git-worktree-manager
+
+# Or download from Releases
+# https://github.com/DaveDev42/git-worktree-manager/releases
 
 # Or build from source
 cargo install --path .
@@ -17,65 +21,63 @@ cargo install --path .
 ## Quick Start
 
 ```bash
-# Create a new worktree + launch AI tool
-cw new fix-auth
-
-# List worktrees
-cw list
-
-# Create PR
-cw pr
-
-# Resume work
-cw resume fix-auth
-
-# Merge back
-cw merge
+gw new fix-auth          # Create worktree + launch AI tool
+gw list                  # List worktrees
+gw pr                    # Create GitHub PR
+gw resume fix-auth       # Resume AI session
+gw merge                 # Merge back to base
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `cw new <name>` | Create worktree + launch AI tool |
-| `cw pr [branch]` | Create GitHub PR |
-| `cw merge [branch]` | Rebase + merge + cleanup |
-| `cw resume [branch]` | Resume AI session |
-| `cw delete <target>` | Remove worktree |
-| `cw list` | List all worktrees |
-| `cw status` | Show current worktree info |
-| `cw tree` | Visual tree display |
-| `cw stats` | Usage analytics |
-| `cw diff <b1> <b2>` | Compare branches |
-| `cw sync [branch]` | Rebase on base branch |
-| `cw config show/set/use-preset/reset` | Configuration |
-| `cw backup [branch]` | Git bundle backup |
-| `cw restore <branch>` | Restore from backup |
-| `cw doctor` | Health check |
-| `cw scan` | Register repos for global mode |
-| `cw -g <cmd>` | Global mode (cross-repo) |
+| `gw new <name>` | Create worktree + launch AI tool |
+| `gw pr [branch]` | Create GitHub PR |
+| `gw merge [branch]` | Rebase + merge + cleanup |
+| `gw resume [branch]` | Resume AI session |
+| `gw shell [branch]` | Open shell in worktree |
+| `gw delete <target>` | Remove worktree |
+| `gw list` | List all worktrees |
+| `gw clean` | Batch cleanup (--merged, --older-than) |
+| `gw status` | Show current worktree info |
+| `gw tree` | Visual tree display |
+| `gw stats` | Usage analytics |
+| `gw diff <b1> <b2>` | Compare branches |
+| `gw sync [branch]` | Rebase on base branch |
+| `gw config ...` | Configuration management |
+| `gw backup create/list/restore` | Git bundle backup |
+| `gw stash save/list/apply` | Worktree-aware stash |
+| `gw hook add/remove/list/...` | Lifecycle hooks |
+| `gw export` / `gw import` | Config export/import |
+| `gw doctor` | Health check |
+| `gw scan` | Register repos for global mode |
+| `gw -g <cmd>` | Global mode (cross-repo) |
 
 ## Shell Integration
 
 ```bash
 # bash/zsh
-source <(cw _shell-function bash)
+source <(gw _shell-function bash)
 
 # fish
-cw _shell-function fish | source
+gw _shell-function fish | source
+
+# Or use interactive setup
+gw shell-setup
 ```
 
-This enables `cw-cd <branch>` for quick worktree navigation.
+This enables `gw-cd <branch>` for quick worktree navigation.
 
 ## Configuration
 
 Config file: `~/.config/claude-worktree/config.json` (compatible with Python version).
 
 ```bash
-cw config use-preset claude       # Default
-cw config use-preset claude-yolo  # Skip permissions
-cw config use-preset codex        # OpenAI Codex
-cw config use-preset no-op        # No AI tool
+gw config use-preset claude       # Default
+gw config use-preset claude-yolo  # Skip permissions
+gw config use-preset codex        # OpenAI Codex
+gw config use-preset no-op        # No AI tool
 ```
 
 ## License

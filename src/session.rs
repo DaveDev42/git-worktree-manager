@@ -21,7 +21,7 @@ pub fn get_sessions_dir() -> PathBuf {
     let dir = dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".config")
-        .join("claude-worktree")
+        .join("git-worktree-manager")
         .join("sessions");
     let _ = std::fs::create_dir_all(&dir);
     dir

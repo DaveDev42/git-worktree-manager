@@ -1,6 +1,6 @@
-/// Constants and default values for claude-worktree.
+/// Constants and default values for git-worktree-manager.
 ///
-/// Mirrors src/claude_worktree/constants.py.
+/// Mirrors src/git_worktree_manager/constants.py.
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -147,7 +147,7 @@ pub fn format_config_key(template: &str, branch: &str) -> String {
 ///
 /// # Examples
 /// ```
-/// use claude_worktree::constants::sanitize_branch_name;
+/// use git_worktree_manager::constants::sanitize_branch_name;
 /// assert_eq!(sanitize_branch_name("feat/auth"), "feat-auth");
 /// assert_eq!(sanitize_branch_name("feature/user@login"), "feature-user-login");
 /// assert_eq!(sanitize_branch_name("hotfix/v2.0"), "hotfix-v2.0");
@@ -172,9 +172,11 @@ pub fn sanitize_branch_name(branch_name: &str) -> String {
 
 /// Generate default worktree path: `../<repo>-<branch>`.
 pub fn default_worktree_path(repo_path: &Path, branch_name: &str) -> PathBuf {
-    let repo_path = repo_path
-        .canonicalize()
-        .unwrap_or_else(|_| repo_path.to_path_buf());
+    let repo_path = strip_unc(
+        repo_path
+            .canonicalize()
+            .unwrap_or_else(|_| repo_path.to_path_buf()),
+    );
     let safe_branch = sanitize_branch_name(branch_name);
     let repo_name = repo_path
         .file_name()
@@ -185,6 +187,19 @@ pub fn default_worktree_path(repo_path: &Path, branch_name: &str) -> PathBuf {
         .parent()
         .unwrap_or(repo_path.as_path())
         .join(format!("{}-{}", repo_name, safe_branch))
+}
+
+/// Strip Windows UNC path prefix (`\\?\`) which `canonicalize()` adds.
+/// Git doesn't understand UNC paths, so we must strip them.
+pub fn strip_unc(path: PathBuf) -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        let s = path.to_string_lossy();
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            return PathBuf::from(stripped);
+        }
+    }
+    path
 }
 
 #[cfg(test)]

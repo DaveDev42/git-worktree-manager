@@ -46,7 +46,7 @@ impl TestRepo {
 
     /// Get the cw binary path.
     pub fn cw_bin() -> PathBuf {
-        let mut path = PathBuf::from(env!("CARGO_BIN_EXE_cw"));
+        let mut path = PathBuf::from(env!("CARGO_BIN_EXE_gw"));
         path
     }
 

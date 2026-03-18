@@ -1,9 +1,9 @@
-/// Custom error types for claude-worktree.
+/// Custom error types for git-worktree-manager.
 ///
 /// Maps directly from the Python exception hierarchy in exceptions.py.
 use thiserror::Error;
 
-/// Base error type for all claude-worktree errors.
+/// Base error type for all git-worktree-manager errors.
 #[derive(Error, Debug)]
 pub enum CwError {
     /// Raised when a git operation fails.

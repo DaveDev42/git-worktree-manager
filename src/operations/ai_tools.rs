@@ -1,6 +1,6 @@
 /// AI tool integration operations.
 ///
-/// Mirrors src/claude_worktree/operations/ai_tools.py (752 lines).
+/// Mirrors src/git_worktree_manager/operations/ai_tools.py (752 lines).
 /// Handles launching AI coding assistants in various terminal environments.
 use std::collections::HashMap;
 use std::path::Path;

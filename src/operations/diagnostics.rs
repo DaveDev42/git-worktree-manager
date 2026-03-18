@@ -13,7 +13,7 @@ pub fn doctor() -> Result<()> {
     let repo = git::get_repo_root(None)?;
     println!(
         "\n{}\n",
-        style("claude-worktree Health Check").cyan().bold()
+        style("git-worktree-manager Health Check").cyan().bold()
     );
 
     let mut issues = 0u32;
@@ -179,7 +179,7 @@ pub fn doctor() -> Result<()> {
         }
         println!(
             "   {}",
-            style("Tip: Use 'cw sync --all' to update all worktrees").dim()
+            style("Tip: Use 'gw sync --all' to update all worktrees").dim()
         );
         warnings += 1;
     }
@@ -250,13 +250,13 @@ pub fn doctor() -> Result<()> {
         if stale_count > 0 {
             println!(
                 "  - Run {} to clean up stale worktrees",
-                style("cw prune").cyan()
+                style("gw prune").cyan()
             );
         }
         if !behind.is_empty() {
             println!(
                 "  - Run {} to update all worktrees",
-                style("cw sync --all").cyan()
+                style("gw sync --all").cyan()
             );
         }
         if !conflicted.is_empty() {

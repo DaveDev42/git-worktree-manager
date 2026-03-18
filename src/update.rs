@@ -1,6 +1,6 @@
 /// Auto-update check via GitHub Releases.
 ///
-/// Mirrors src/claude_worktree/update.py — but uses GitHub API instead of PyPI.
+/// Mirrors src/git_worktree_manager/update.py — but uses GitHub API instead of PyPI.
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,7 @@ struct UpdateCache {
 fn get_cache_path() -> PathBuf {
     dirs::cache_dir()
         .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
-        .join("claude-worktree")
+        .join("git-worktree-manager")
         .join("update_check.json")
 }
 
@@ -76,7 +76,7 @@ pub fn check_for_update_if_needed() {
 
         if is_newer(&latest, CURRENT_VERSION) {
             eprintln!(
-                "\nclaude-worktree {} is available (current: {})",
+                "\ngit-worktree-manager {} is available (current: {})",
                 latest, CURRENT_VERSION
             );
             eprintln!("Run 'cw upgrade' to update.\n");
@@ -100,7 +100,7 @@ fn fetch_latest_version() -> Option<String> {
             "-s",
             "-H",
             "Accept: application/vnd.github+json",
-            "https://api.github.com/repos/DaveDev42/claude-worktree-rs/releases/latest",
+            "https://api.github.com/repos/DaveDev42/git-worktree-manager/releases/latest",
         ])
         .output()
         .ok()?;
@@ -127,18 +127,18 @@ fn is_newer(latest: &str, current: &str) -> bool {
 
 /// Manual upgrade command.
 pub fn upgrade() {
-    println!("claude-worktree v{}", CURRENT_VERSION);
+    println!("git-worktree-manager v{}", CURRENT_VERSION);
 
     if let Some(latest) = fetch_latest_version() {
         if is_newer(&latest, CURRENT_VERSION) {
             println!("New version available: v{}", latest);
             println!("\nTo upgrade:");
             println!(
-                "  Download from: https://github.com/DaveDev42/claude-worktree-rs/releases/latest"
+                "  Download from: https://github.com/DaveDev42/git-worktree-manager/releases/latest"
             );
 
             #[cfg(target_os = "macos")]
-            println!("  Or: brew upgrade claude-worktree");
+            println!("  Or: brew upgrade git-worktree-manager");
         } else {
             println!("Already up to date.");
         }

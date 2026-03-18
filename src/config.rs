@@ -1,8 +1,8 @@
-/// Configuration management for claude-worktree.
+/// Configuration management for git-worktree-manager.
 ///
-/// Mirrors src/claude_worktree/config.py (596 lines).
+/// Mirrors src/git_worktree_manager/config.py (596 lines).
 /// Supports multiple AI coding assistants with customizable commands.
-/// Configuration stored in ~/.config/claude-worktree/config.json.
+/// Configuration stored in ~/.config/git-worktree-manager/config.json.
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -60,7 +60,7 @@ impl Default for Config {
             },
             launch: LaunchConfig {
                 method: None,
-                tmux_session_prefix: "cw".to_string(),
+                tmux_session_prefix: "gw".to_string(),
                 wezterm_ready_timeout: 5.0,
             },
             git: GitConfig {
@@ -220,7 +220,7 @@ pub fn claude_preset_names() -> Vec<&'static str> {
 pub fn get_config_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     home.join(".config")
-        .join("claude-worktree")
+        .join("git-worktree-manager")
         .join("config.json")
 }
 

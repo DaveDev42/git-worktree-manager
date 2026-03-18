@@ -2,7 +2,7 @@
 
 #[test]
 fn test_sanitize_branch_name_various() {
-    use claude_worktree::constants::sanitize_branch_name;
+    use git_worktree_manager::constants::sanitize_branch_name;
 
     assert_eq!(sanitize_branch_name("feat/auth"), "feat-auth");
     assert_eq!(sanitize_branch_name("bugfix/issue-123"), "bugfix-issue-123");
@@ -21,7 +21,7 @@ fn test_sanitize_branch_name_various() {
 
 #[test]
 fn test_default_worktree_path() {
-    use claude_worktree::constants::default_worktree_path;
+    use git_worktree_manager::constants::default_worktree_path;
     use std::path::Path;
 
     let tmp = tempfile::TempDir::new().unwrap();
@@ -37,7 +37,7 @@ fn test_default_worktree_path() {
 
 #[test]
 fn test_launch_method_all_variants() {
-    use claude_worktree::constants::LaunchMethod;
+    use git_worktree_manager::constants::LaunchMethod;
 
     let methods = [
         LaunchMethod::Foreground,
@@ -70,7 +70,7 @@ fn test_launch_method_all_variants() {
 
 #[test]
 fn test_launch_method_aliases_coverage() {
-    use claude_worktree::constants::launch_method_aliases;
+    use git_worktree_manager::constants::launch_method_aliases;
 
     let aliases = launch_method_aliases();
     // Verify key aliases exist
@@ -84,7 +84,7 @@ fn test_launch_method_aliases_coverage() {
 
 #[test]
 fn test_format_config_key() {
-    use claude_worktree::constants::*;
+    use git_worktree_manager::constants::*;
     assert_eq!(
         format_config_key(CONFIG_KEY_BASE_BRANCH, "fix-auth"),
         "branch.fix-auth.worktreeBase"

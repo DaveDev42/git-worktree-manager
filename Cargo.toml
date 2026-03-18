@@ -1,16 +1,16 @@
 [package]
-name = "claude-worktree"
+name = "git-worktree-manager"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
 description = "CLI tool integrating git worktree with AI coding assistants"
 license = "BSD-3-Clause"
-repository = "https://github.com/DaveDev42/claude-worktree-rs"
-keywords = ["git", "worktree", "cli", "ai", "claude"]
+repository = "https://github.com/DaveDev42/git-worktree-manager"
+keywords = ["git", "worktree", "cli", "ai"]
 categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
-name = "cw"
+name = "gw"
 path = "src/main.rs"
 
 [dependencies]

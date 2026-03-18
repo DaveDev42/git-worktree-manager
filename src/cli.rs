@@ -1,17 +1,17 @@
 /// CLI definitions using clap derive.
 ///
-/// Mirrors the Typer-based CLI in src/claude_worktree/cli.py.
+/// Mirrors the Typer-based CLI in src/git_worktree_manager/cli.py.
 pub mod completions;
 pub mod global;
 
 use clap::{Parser, Subcommand, ValueHint};
 
-/// Claude Code x git worktree helper CLI.
+/// Git worktree manager CLI.
 #[derive(Parser, Debug)]
 #[command(
-    name = "cw",
+    name = "gw",
     version,
-    about = "Claude Code × git worktree helper CLI",
+    about = "git worktree manager — AI coding assistant integration",
     long_about = None,
     arg_required_else_help = true,
 )]

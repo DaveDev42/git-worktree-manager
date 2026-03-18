@@ -1,6 +1,6 @@
 /// Git operations wrapper utilities.
 ///
-/// Mirrors src/claude_worktree/git_utils.py (676 lines).
+/// Mirrors src/git_worktree_manager/git_utils.py (676 lines).
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 

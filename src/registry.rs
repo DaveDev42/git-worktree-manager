@@ -1,6 +1,6 @@
 /// Global repository registry for cross-repo worktree management.
 ///
-/// Mirrors src/claude_worktree/registry.py (267 lines).
+/// Mirrors src/git_worktree_manager/registry.py (267 lines).
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -75,7 +75,7 @@ pub fn get_registry_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".config")
-        .join("claude-worktree")
+        .join("git-worktree-manager")
         .join("registry.json")
 }
 

@@ -1,4 +1,4 @@
-/// claude-worktree: CLI tool integrating git worktree with AI coding assistants.
+/// git-worktree-manager: CLI tool integrating git worktree with AI coding assistants.
 pub mod cli;
 pub mod config;
 pub mod console;

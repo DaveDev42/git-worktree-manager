@@ -1,6 +1,6 @@
-/// Display and information operations for claude-worktree.
+/// Display and information operations for git-worktree-manager.
 ///
-/// Mirrors src/claude_worktree/operations/display.py (537 lines).
+/// Mirrors src/git_worktree_manager/operations/display.py (537 lines).
 use std::path::Path;
 use std::time::SystemTime;
 

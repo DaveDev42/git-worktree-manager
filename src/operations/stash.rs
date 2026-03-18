@@ -1,6 +1,6 @@
-/// Stash operations for claude-worktree.
+/// Stash operations for git-worktree-manager.
 ///
-/// Mirrors src/claude_worktree/operations/stash_ops.py.
+/// Mirrors src/git_worktree_manager/operations/stash_ops.py.
 use std::collections::HashMap;
 
 use console::style;

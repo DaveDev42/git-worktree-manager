@@ -13,12 +13,12 @@ fn with_isolated_config<F: FnOnce(&TempDir)>(f: F) {
 
 #[test]
 fn test_default_config_values() {
-    let config = claude_worktree::config::Config::default();
+    let config = git_worktree_manager::config::Config::default();
     assert_eq!(config.ai_tool.command, "claude");
     assert!(config.ai_tool.args.is_empty());
     assert_eq!(config.git.default_base_branch, "main");
     assert!(config.update.auto_check);
-    assert_eq!(config.launch.tmux_session_prefix, "cw");
+    assert_eq!(config.launch.tmux_session_prefix, "gw");
     assert_eq!(config.launch.wezterm_ready_timeout, 5.0);
     assert!(!config.shell_completion.prompted);
     assert!(!config.shell_completion.installed);
@@ -27,7 +27,7 @@ fn test_default_config_values() {
 
 #[test]
 fn test_presets_all_present() {
-    let presets = claude_worktree::config::ai_tool_presets();
+    let presets = git_worktree_manager::config::ai_tool_presets();
     assert!(presets.contains_key("claude"));
     assert!(presets.contains_key("claude-yolo"));
     assert!(presets.contains_key("claude-remote"));
@@ -40,7 +40,7 @@ fn test_presets_all_present() {
 
 #[test]
 fn test_resume_presets_all_present() {
-    let presets = claude_worktree::config::ai_tool_resume_presets();
+    let presets = git_worktree_manager::config::ai_tool_resume_presets();
     assert!(presets.contains_key("claude"));
     assert!(presets.contains_key("codex"));
     // Claude uses --continue, not --resume
@@ -51,14 +51,14 @@ fn test_resume_presets_all_present() {
 
 #[test]
 fn test_merge_presets_all_present() {
-    let presets = claude_worktree::config::ai_tool_merge_presets();
+    let presets = git_worktree_manager::config::ai_tool_merge_presets();
     assert!(presets.contains_key("claude"));
     assert!(presets.contains_key("codex"));
 }
 
 #[test]
 fn test_list_presets_format() {
-    let output = claude_worktree::config::list_presets();
+    let output = git_worktree_manager::config::list_presets();
     assert!(output.contains("Available AI tool presets:"));
     assert!(output.contains("claude"));
     assert!(output.contains("no-op"));
@@ -68,43 +68,49 @@ fn test_list_presets_format() {
 #[test]
 fn test_resolve_launch_alias() {
     assert_eq!(
-        claude_worktree::config::resolve_launch_alias("fg"),
+        git_worktree_manager::config::resolve_launch_alias("fg"),
         "foreground"
     );
-    assert_eq!(claude_worktree::config::resolve_launch_alias("t"), "tmux");
     assert_eq!(
-        claude_worktree::config::resolve_launch_alias("z-t"),
+        git_worktree_manager::config::resolve_launch_alias("t"),
+        "tmux"
+    );
+    assert_eq!(
+        git_worktree_manager::config::resolve_launch_alias("z-t"),
         "zellij-tab"
     );
     assert_eq!(
-        claude_worktree::config::resolve_launch_alias("i-w"),
+        git_worktree_manager::config::resolve_launch_alias("i-w"),
         "iterm-window"
     );
     assert_eq!(
-        claude_worktree::config::resolve_launch_alias("w-t"),
+        git_worktree_manager::config::resolve_launch_alias("w-t"),
         "wezterm-tab"
     );
-    assert_eq!(claude_worktree::config::resolve_launch_alias("d"), "detach");
+    assert_eq!(
+        git_worktree_manager::config::resolve_launch_alias("d"),
+        "detach"
+    );
     // Session name passthrough
     assert_eq!(
-        claude_worktree::config::resolve_launch_alias("t:mywork"),
+        git_worktree_manager::config::resolve_launch_alias("t:mywork"),
         "tmux:mywork"
     );
     assert_eq!(
-        claude_worktree::config::resolve_launch_alias("z:dev"),
+        git_worktree_manager::config::resolve_launch_alias("z:dev"),
         "zellij:dev"
     );
     // Unknown passes through
     assert_eq!(
-        claude_worktree::config::resolve_launch_alias("unknown"),
+        git_worktree_manager::config::resolve_launch_alias("unknown"),
         "unknown"
     );
 }
 
 #[test]
 fn test_parse_term_option() {
-    use claude_worktree::config::parse_term_option;
-    use claude_worktree::constants::LaunchMethod;
+    use git_worktree_manager::config::parse_term_option;
+    use git_worktree_manager::constants::LaunchMethod;
 
     let (m, s) = parse_term_option(Some("t")).unwrap();
     assert_eq!(m, LaunchMethod::Tmux);
@@ -137,7 +143,7 @@ fn test_parse_term_option() {
 #[test]
 fn test_deep_merge_preserves_defaults() {
     // Verify that loading a partial config still has all default fields
-    let config = claude_worktree::config::Config::default();
+    let config = git_worktree_manager::config::Config::default();
     let json = serde_json::to_value(&config).unwrap();
 
     // Verify all top-level keys exist

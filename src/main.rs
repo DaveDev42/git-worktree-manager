@@ -1,17 +1,19 @@
 use std::collections::HashMap;
 
 use clap::Parser;
-use claude_worktree::cli::{BackupAction, Cli, Commands, ConfigAction, HookAction, StashAction};
-use claude_worktree::config;
-use claude_worktree::console as cwconsole;
-use claude_worktree::hooks;
-use claude_worktree::operations::{
+use git_worktree_manager::cli::{
+    BackupAction, Cli, Commands, ConfigAction, HookAction, StashAction,
+};
+use git_worktree_manager::config;
+use git_worktree_manager::console as cwconsole;
+use git_worktree_manager::hooks;
+use git_worktree_manager::operations::{
     ai_tools, backup, clean, config_ops, diagnostics, display, git_ops, helpers, path_cmd, shell,
     stash, worktree,
 };
-use claude_worktree::registry;
-use claude_worktree::shell_functions;
-use claude_worktree::update;
+use git_worktree_manager::registry;
+use git_worktree_manager::shell_functions;
+use git_worktree_manager::update;
 
 fn main() {
     let cli = Cli::parse();
@@ -236,7 +238,7 @@ fn main() {
                 print!("{}", output);
                 Ok(())
             }
-            None => Err(claude_worktree::error::CwError::Config(format!(
+            None => Err(git_worktree_manager::error::CwError::Config(format!(
                 "Unsupported shell: {}. Use bash, zsh, or fish.",
                 shell
             ))),
@@ -282,11 +284,11 @@ fn list_hooks(event: Option<&str>) {
     }
 
     if event.is_none() && !has_any {
-        println!("No hooks configured. Use 'cw hook add' to add one.");
+        println!("No hooks configured. Use 'gw hook add' to add one.");
     }
 }
 
-fn run_hooks_manual(event: &str, dry_run: bool) -> claude_worktree::error::Result<()> {
+fn run_hooks_manual(event: &str, dry_run: bool) -> git_worktree_manager::error::Result<()> {
     let hook_list = hooks::get_hooks(event, None);
     if hook_list.is_empty() {
         println!("No hooks configured for {}", event);
@@ -353,7 +355,7 @@ fn shell_setup() {
     println!("Detected shell: {}\n", shell_name);
 
     let line = match shell_name {
-        "fish" => "cw _shell-function fish | source",
+        "fish" => "gw _shell-function fish | source",
         _ => &format!("source <(cw _shell-function {})", shell_name),
     };
 
@@ -361,7 +363,7 @@ fn shell_setup() {
     if let Some(ref path) = profile_path {
         if path.exists() {
             if let Ok(content) = std::fs::read_to_string(path) {
-                if content.contains("cw _shell-function") || content.contains("cw-cd") {
+                if content.contains("gw _shell-function") || content.contains("gw-cd") {
                     println!("* cw-cd function is already installed!\n");
                     println!("Found in: {}", path.display());
                     return;
@@ -378,7 +380,7 @@ fn shell_setup() {
             .map(|p| p.display().to_string())
             .unwrap_or("your profile".to_string())
     );
-    println!("\n  # claude-worktree shell integration");
+    println!("\n  # git-worktree-manager shell integration");
     println!("  {}\n", line);
 
     print!("Add to your shell profile? [Y/n]: ");
@@ -399,7 +401,7 @@ fn shell_setup() {
             let _ = std::fs::create_dir_all(parent);
         }
 
-        let append = format!("\n# claude-worktree shell integration\n{}\n", line);
+        let append = format!("\n# git-worktree-manager shell integration\n{}\n", line);
 
         match std::fs::OpenOptions::new()
             .create(true)

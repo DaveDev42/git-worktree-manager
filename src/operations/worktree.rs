@@ -1,6 +1,6 @@
 /// Core worktree lifecycle operations.
 ///
-/// Mirrors src/claude_worktree/operations/worktree_ops.py (1433 lines).
+/// Mirrors src/git_worktree_manager/operations/worktree_ops.py (1433 lines).
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -54,7 +54,7 @@ pub fn create_worktree(
         if git::is_non_interactive() {
             return Err(CwError::InvalidBranch(format!(
                 "Worktree for branch '{}' already exists at {}.\n\
-                 Use 'cw resume {}' to continue work.",
+                 Use 'gw resume {}' to continue work.",
                 branch_name,
                 existing_path.display(),
                 branch_name,
@@ -64,7 +64,7 @@ pub fn create_worktree(
         // In interactive mode, suggest resume
         println!(
             "Use '{}' to resume work in this worktree.\n",
-            style(format!("cw resume {}", branch_name)).cyan()
+            style(format!("gw resume {}", branch_name)).cyan()
         );
         return Ok(existing_path);
     }
