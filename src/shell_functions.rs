@@ -112,6 +112,15 @@ if [ -n "$ZSH_VERSION" ]; then
     }
     compdef _gw_cd_zsh gw-cd
 fi
+
+# Backward compatibility: cw-cd alias
+cw-cd() { gw-cd "$@"; }
+if [ -n "$BASH_VERSION" ]; then
+    complete -F _gw_cd_completion cw-cd
+fi
+if [ -n "$ZSH_VERSION" ]; then
+    compdef _gw_cd_zsh cw-cd
+fi
 "#;
 
 const FISH_FUNCTION: &str = r#"# git-worktree-manager shell functions for fish
@@ -183,4 +192,8 @@ end
 complete -c gw-cd -s g -l global -d 'Search all registered repositories'
 complete -c gw-cd -f -n '__fish_contains_opt -s g global' -a '(gw _path --list-branches -g 2>/dev/null)'
 complete -c gw-cd -f -n 'not __fish_contains_opt -s g global' -a '(git worktree list --porcelain 2>/dev/null | grep "^branch " | sed "s|^branch refs/heads/||" | sort -u)'
+
+# Backward compatibility: cw-cd alias
+function cw-cd; gw-cd $argv; end
+complete -c cw-cd -w gw-cd
 "#;
