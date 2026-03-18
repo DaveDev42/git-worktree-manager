@@ -1,0 +1,38 @@
+[package]
+name = "claude-worktree"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "CLI tool integrating git worktree with AI coding assistants"
+license = "BSD-3-Clause"
+repository = "https://github.com/DaveDev42/claude-worktree-rs"
+keywords = ["git", "worktree", "cli", "ai", "claude"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "cw"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env", "string"] }
+clap_complete = "4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+console = "0.15"
+dialoguer = "0.11"
+dirs = "6"
+walkdir = "2"
+regex = "1"
+pathdiff = "0.2"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = "z"
