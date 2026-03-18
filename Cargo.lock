@@ -170,6 +170,7 @@ dependencies = [
  "console",
  "dialoguer",
  "dirs",
+ "libc",
  "pathdiff",
  "predicates",
  "regex",

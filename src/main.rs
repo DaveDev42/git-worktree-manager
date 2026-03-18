@@ -2,7 +2,7 @@ use clap::Parser;
 use claude_worktree::cli::{Cli, Commands, ConfigAction};
 use claude_worktree::config;
 use claude_worktree::console as cwconsole;
-use claude_worktree::operations::{config_ops, display, git_ops, helpers, worktree};
+use claude_worktree::operations::{ai_tools, config_ops, display, git_ops, helpers, worktree};
 use claude_worktree::registry;
 
 fn main() {
@@ -123,10 +123,8 @@ fn main() {
             }
         }
 
-        // Phase 2+ stubs
-        Some(Commands::Resume { .. }) => {
-            cwconsole::print_warning("Command 'resume' not yet implemented (Phase 3)");
-            Ok(())
+        Some(Commands::Resume { branch, term, bg: _ }) => {
+            ai_tools::resume_worktree(branch.as_deref(), term.as_deref())
         }
         Some(Commands::Backup { .. }) => {
             cwconsole::print_warning("Command 'backup' not yet implemented (Phase 2+)");
