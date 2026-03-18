@@ -6,7 +6,10 @@ fn test_sanitize_branch_name_various() {
 
     assert_eq!(sanitize_branch_name("feat/auth"), "feat-auth");
     assert_eq!(sanitize_branch_name("bugfix/issue-123"), "bugfix-issue-123");
-    assert_eq!(sanitize_branch_name("feature/user@login"), "feature-user-login");
+    assert_eq!(
+        sanitize_branch_name("feature/user@login"),
+        "feature-user-login"
+    );
     assert_eq!(sanitize_branch_name("hotfix/v2.0"), "hotfix-v2.0");
     assert_eq!(sanitize_branch_name("///"), "worktree");
     assert_eq!(sanitize_branch_name(""), "worktree");
@@ -26,14 +29,10 @@ fn test_default_worktree_path() {
     std::fs::create_dir_all(&repo).unwrap();
 
     let result = default_worktree_path(&repo, "fix-auth");
-    assert!(result
-        .to_string_lossy()
-        .ends_with("myproject-fix-auth"));
+    assert!(result.to_string_lossy().ends_with("myproject-fix-auth"));
 
     let result = default_worktree_path(&repo, "feat/nested");
-    assert!(result
-        .to_string_lossy()
-        .ends_with("myproject-feat-nested"));
+    assert!(result.to_string_lossy().ends_with("myproject-feat-nested"));
 }
 
 #[test]

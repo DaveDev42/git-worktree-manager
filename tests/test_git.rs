@@ -7,7 +7,8 @@ use common::TestRepo;
 fn test_get_repo_root() {
     let repo = TestRepo::new();
     let root = claude_worktree::git::get_repo_root(Some(repo.path())).unwrap();
-    assert_eq!(root, repo.path().canonicalize().unwrap());
+    // Compare file names to avoid Windows UNC path (\\?\) vs git path (C:/) mismatch
+    assert_eq!(root.file_name().unwrap(), repo.path().file_name().unwrap());
 }
 
 #[test]
@@ -22,8 +23,14 @@ fn test_get_current_branch() {
 fn test_branch_exists() {
     let repo = TestRepo::new();
     let branch = claude_worktree::git::get_current_branch(Some(repo.path())).unwrap();
-    assert!(claude_worktree::git::branch_exists(&branch, Some(repo.path())));
-    assert!(!claude_worktree::git::branch_exists("nonexistent-xyz", Some(repo.path())));
+    assert!(claude_worktree::git::branch_exists(
+        &branch,
+        Some(repo.path())
+    ));
+    assert!(!claude_worktree::git::branch_exists(
+        "nonexistent-xyz",
+        Some(repo.path())
+    ));
 }
 
 #[test]
@@ -48,11 +55,26 @@ fn test_get_feature_worktrees_empty() {
 #[test]
 fn test_is_valid_branch_name() {
     let repo = TestRepo::new();
-    assert!(claude_worktree::git::is_valid_branch_name("feature-abc", Some(repo.path())));
-    assert!(claude_worktree::git::is_valid_branch_name("feat/auth", Some(repo.path())));
-    assert!(!claude_worktree::git::is_valid_branch_name("", Some(repo.path())));
-    assert!(!claude_worktree::git::is_valid_branch_name("bad..name", Some(repo.path())));
-    assert!(!claude_worktree::git::is_valid_branch_name("bad name", Some(repo.path())));
+    assert!(claude_worktree::git::is_valid_branch_name(
+        "feature-abc",
+        Some(repo.path())
+    ));
+    assert!(claude_worktree::git::is_valid_branch_name(
+        "feat/auth",
+        Some(repo.path())
+    ));
+    assert!(!claude_worktree::git::is_valid_branch_name(
+        "",
+        Some(repo.path())
+    ));
+    assert!(!claude_worktree::git::is_valid_branch_name(
+        "bad..name",
+        Some(repo.path())
+    ));
+    assert!(!claude_worktree::git::is_valid_branch_name(
+        "bad name",
+        Some(repo.path())
+    ));
 }
 
 #[test]
@@ -74,8 +96,14 @@ fn test_unset_config() {
 
 #[test]
 fn test_normalize_branch_name() {
-    assert_eq!(claude_worktree::git::normalize_branch_name("refs/heads/main"), "main");
-    assert_eq!(claude_worktree::git::normalize_branch_name("feature"), "feature");
+    assert_eq!(
+        claude_worktree::git::normalize_branch_name("refs/heads/main"),
+        "main"
+    );
+    assert_eq!(
+        claude_worktree::git::normalize_branch_name("feature"),
+        "feature"
+    );
 }
 
 #[test]

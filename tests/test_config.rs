@@ -67,17 +67,38 @@ fn test_list_presets_format() {
 
 #[test]
 fn test_resolve_launch_alias() {
-    assert_eq!(claude_worktree::config::resolve_launch_alias("fg"), "foreground");
+    assert_eq!(
+        claude_worktree::config::resolve_launch_alias("fg"),
+        "foreground"
+    );
     assert_eq!(claude_worktree::config::resolve_launch_alias("t"), "tmux");
-    assert_eq!(claude_worktree::config::resolve_launch_alias("z-t"), "zellij-tab");
-    assert_eq!(claude_worktree::config::resolve_launch_alias("i-w"), "iterm-window");
-    assert_eq!(claude_worktree::config::resolve_launch_alias("w-t"), "wezterm-tab");
+    assert_eq!(
+        claude_worktree::config::resolve_launch_alias("z-t"),
+        "zellij-tab"
+    );
+    assert_eq!(
+        claude_worktree::config::resolve_launch_alias("i-w"),
+        "iterm-window"
+    );
+    assert_eq!(
+        claude_worktree::config::resolve_launch_alias("w-t"),
+        "wezterm-tab"
+    );
     assert_eq!(claude_worktree::config::resolve_launch_alias("d"), "detach");
     // Session name passthrough
-    assert_eq!(claude_worktree::config::resolve_launch_alias("t:mywork"), "tmux:mywork");
-    assert_eq!(claude_worktree::config::resolve_launch_alias("z:dev"), "zellij:dev");
+    assert_eq!(
+        claude_worktree::config::resolve_launch_alias("t:mywork"),
+        "tmux:mywork"
+    );
+    assert_eq!(
+        claude_worktree::config::resolve_launch_alias("z:dev"),
+        "zellij:dev"
+    );
     // Unknown passes through
-    assert_eq!(claude_worktree::config::resolve_launch_alias("unknown"), "unknown");
+    assert_eq!(
+        claude_worktree::config::resolve_launch_alias("unknown"),
+        "unknown"
+    );
 }
 
 #[test]

@@ -42,7 +42,11 @@ fn test_stats_no_worktrees() {
 fn test_new_creates_worktree() {
     let repo = TestRepo::new();
     let output = repo.cw(&["new", "test-feature", "--no-ai"]);
-    assert!(output.status.success(), "cw new failed: {}", String::from_utf8_lossy(&output.stdout));
+    assert!(
+        output.status.success(),
+        "cw new failed: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Worktree created successfully"));
@@ -73,7 +77,11 @@ fn test_new_then_delete() {
 
     // Delete
     let del_output = repo.cw(&["delete", "to-delete"]);
-    assert!(del_output.status.success(), "delete failed: {}", String::from_utf8_lossy(&del_output.stdout));
+    assert!(
+        del_output.status.success(),
+        "delete failed: {}",
+        String::from_utf8_lossy(&del_output.stdout)
+    );
 
     // Verify it's gone
     let list_after = repo.cw_stdout(&["list"]);
@@ -196,7 +204,10 @@ fn test_export_creates_file() {
     // Verify it's valid JSON
     let content = std::fs::read_to_string(&export_path).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-    assert_eq!(parsed.get("export_version").unwrap().as_str().unwrap(), "1.0");
+    assert_eq!(
+        parsed.get("export_version").unwrap().as_str().unwrap(),
+        "1.0"
+    );
 }
 
 #[test]
