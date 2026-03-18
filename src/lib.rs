@@ -5,4 +5,8 @@ pub mod console;
 pub mod constants;
 pub mod error;
 pub mod git;
+pub mod hooks;
 pub mod operations;
+pub mod registry;
+pub mod session;
+pub mod shared_files;
