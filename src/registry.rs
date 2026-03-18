@@ -210,18 +210,11 @@ pub fn scan_for_repos(base_dir: Option<&Path>, max_depth: usize) -> Vec<PathBuf>
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")));
 
-    let base = base
-        .canonicalize()
-        .unwrap_or_else(|_| base.clone());
+    let base = base.canonicalize().unwrap_or_else(|_| base.clone());
 
     let mut found = Vec::new();
 
-    fn scan_recursive(
-        current: &Path,
-        depth: usize,
-        max_depth: usize,
-        found: &mut Vec<PathBuf>,
-    ) {
+    fn scan_recursive(current: &Path, depth: usize, max_depth: usize, found: &mut Vec<PathBuf>) {
         if depth > max_depth {
             return;
         }

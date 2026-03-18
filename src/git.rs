@@ -37,15 +37,13 @@ pub fn run_command(
         command.stderr(std::process::Stdio::piped());
     }
 
-    let output: Output = command
-        .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                CwError::Git(format!("Command not found: {}", cmd[0]))
-            } else {
-                CwError::Io(e)
-            }
-        })?;
+    let output: Output = command.output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            CwError::Git(format!("Command not found: {}", cmd[0]))
+        } else {
+            CwError::Io(e)
+        }
+    })?;
 
     let returncode = output.status.code().unwrap_or(-1);
     let stdout = if capture {
@@ -88,12 +86,7 @@ pub fn git_command(
 
 /// Get the root directory of the git repository.
 pub fn get_repo_root(path: Option<&Path>) -> Result<PathBuf> {
-    let result = git_command(
-        &["rev-parse", "--show-toplevel"],
-        path,
-        true,
-        true,
-    );
+    let result = git_command(&["rev-parse", "--show-toplevel"], path, true, true);
     match result {
         Ok(r) => Ok(PathBuf::from(r.stdout.trim())),
         Err(_) => Err(CwError::Git("Not in a git repository".to_string())),
@@ -102,12 +95,7 @@ pub fn get_repo_root(path: Option<&Path>) -> Result<PathBuf> {
 
 /// Get the current branch name.
 pub fn get_current_branch(repo: Option<&Path>) -> Result<String> {
-    let result = git_command(
-        &["rev-parse", "--abbrev-ref", "HEAD"],
-        repo,
-        true,
-        true,
-    )?;
+    let result = git_command(&["rev-parse", "--abbrev-ref", "HEAD"], repo, true, true)?;
     let branch = result.stdout.trim().to_string();
     if branch == "HEAD" {
         return Err(CwError::InvalidBranch("In detached HEAD state".to_string()));
@@ -132,20 +120,15 @@ pub fn remote_branch_exists(branch: &str, repo: Option<&Path>, remote: &str) -> 
 
 /// Get a git config value (local scope).
 pub fn get_config(key: &str, repo: Option<&Path>) -> Option<String> {
-    git_command(
-        &["config", "--local", "--get", key],
-        repo,
-        false,
-        true,
-    )
-    .ok()
-    .and_then(|r| {
-        if r.returncode == 0 {
-            Some(r.stdout.trim().to_string())
-        } else {
-            None
-        }
-    })
+    git_command(&["config", "--local", "--get", key], repo, false, true)
+        .ok()
+        .and_then(|r| {
+            if r.returncode == 0 {
+                Some(r.stdout.trim().to_string())
+            } else {
+                None
+            }
+        })
 }
 
 /// Set a git config value (local scope).
@@ -174,12 +157,7 @@ pub type WorktreeEntry = (String, PathBuf);
 
 /// Parse `git worktree list --porcelain` output.
 pub fn parse_worktrees(repo: &Path) -> Result<Vec<WorktreeEntry>> {
-    let result = git_command(
-        &["worktree", "list", "--porcelain"],
-        Some(repo),
-        true,
-        true,
-    )?;
+    let result = git_command(&["worktree", "list", "--porcelain"], Some(repo), true, true)?;
 
     let mut items: Vec<WorktreeEntry> = Vec::new();
     let mut cur_path: Option<String> = None;
@@ -192,7 +170,9 @@ pub fn parse_worktrees(repo: &Path) -> Result<Vec<WorktreeEntry>> {
             cur_branch = Some(branch.to_string());
         } else if line.trim().is_empty() {
             if let Some(path) = cur_path.take() {
-                let branch = cur_branch.take().unwrap_or_else(|| "(detached)".to_string());
+                let branch = cur_branch
+                    .take()
+                    .unwrap_or_else(|| "(detached)".to_string());
                 items.push((branch, PathBuf::from(path)));
             }
         }
@@ -313,11 +293,8 @@ pub fn find_worktree_by_intended_branch(
                             .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_default();
-                        let expected_suffix = format!(
-                            "{}-{}",
-                            repo_name,
-                            sanitize_branch_name(branch_from_key)
-                        );
+                        let expected_suffix =
+                            format!("{}-{}", repo_name, sanitize_branch_name(branch_from_key));
                         for (_, path) in &worktrees {
                             if let Some(name) = path.file_name() {
                                 if name.to_string_lossy() == expected_suffix {
@@ -460,10 +437,7 @@ pub fn get_branch_name_error(branch_name: &str) -> String {
         );
     }
 
-    if branch_name
-        .chars()
-        .any(|c| (c as u32) < 32 || c == ' ')
-    {
+    if branch_name.chars().any(|c| (c as u32) < 32 || c == ' ') {
         return "Branch name cannot contain spaces or control characters".to_string();
     }
 
@@ -525,18 +499,12 @@ mod tests {
     fn test_normalize_branch_name() {
         assert_eq!(normalize_branch_name("refs/heads/main"), "main");
         assert_eq!(normalize_branch_name("feature-branch"), "feature-branch");
-        assert_eq!(
-            normalize_branch_name("refs/heads/feat/auth"),
-            "feat/auth"
-        );
+        assert_eq!(normalize_branch_name("refs/heads/feat/auth"), "feat/auth");
     }
 
     #[test]
     fn test_get_branch_name_error() {
-        assert_eq!(
-            get_branch_name_error(""),
-            "Branch name cannot be empty"
-        );
+        assert_eq!(get_branch_name_error(""), "Branch name cannot be empty");
         assert_eq!(
             get_branch_name_error("@"),
             "Branch name cannot be '@' alone"

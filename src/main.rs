@@ -2,7 +2,9 @@ use clap::Parser;
 use claude_worktree::cli::{Cli, Commands, ConfigAction};
 use claude_worktree::config;
 use claude_worktree::console as cwconsole;
-use claude_worktree::operations::{ai_tools, config_ops, display, git_ops, helpers, worktree};
+use claude_worktree::operations::{
+    ai_tools, backup, config_ops, diagnostics, display, git_ops, helpers, worktree,
+};
 use claude_worktree::registry;
 use claude_worktree::shell_functions;
 use claude_worktree::update;
@@ -28,9 +30,7 @@ fn main() {
 
         // Config commands (Phase 1)
         Some(Commands::Config { action }) => match action {
-            ConfigAction::Show => {
-                config::show_config().map(|output| println!("{}", output))
-            }
+            ConfigAction::Show => config::show_config().map(|output| println!("{}", output)),
             ConfigAction::Set { key, value } => config::set_config_value(&key, &value),
             ConfigAction::UsePreset { name } => config::use_preset(&name),
             ConfigAction::ListPresets => {
@@ -85,9 +85,7 @@ fn main() {
             delete_remote,
         }) => worktree::delete_worktree(Some(&target), keep_branch, delete_remote),
 
-        Some(Commands::Sync { branch }) => {
-            worktree::sync_worktree(branch.as_deref(), false, false)
-        }
+        Some(Commands::Sync { branch }) => worktree::sync_worktree(branch.as_deref(), false, false),
 
         Some(Commands::ChangeBase { new_base, branch }) => {
             config_ops::change_base_branch(&new_base, branch.as_deref())
@@ -108,54 +106,43 @@ fn main() {
             Ok(())
         }
 
-        Some(Commands::Prune) => {
-            match registry::prune_registry() {
-                Ok(removed) => {
-                    if removed.is_empty() {
-                        println!("No stale entries found.\n");
-                    } else {
-                        for path in &removed {
-                            println!("  Removed: {}", path);
-                        }
-                        println!("\n{} stale entry(ies) pruned.\n", removed.len());
+        Some(Commands::Prune) => match registry::prune_registry() {
+            Ok(removed) => {
+                if removed.is_empty() {
+                    println!("No stale entries found.\n");
+                } else {
+                    for path in &removed {
+                        println!("  Removed: {}", path);
                     }
-                    Ok(())
+                    println!("\n{} stale entry(ies) pruned.\n", removed.len());
                 }
-                Err(e) => Err(e),
+                Ok(())
             }
-        }
+            Err(e) => Err(e),
+        },
 
-        Some(Commands::Resume { branch, term, bg: _ }) => {
-            ai_tools::resume_worktree(branch.as_deref(), term.as_deref())
-        }
-        Some(Commands::Backup { .. }) => {
-            cwconsole::print_warning("Command 'backup' not yet implemented (Phase 2+)");
-            Ok(())
-        }
-        Some(Commands::Restore { .. }) => {
-            cwconsole::print_warning("Command 'restore' not yet implemented (Phase 2+)");
-            Ok(())
-        }
-        Some(Commands::Doctor) => {
-            cwconsole::print_warning("Command 'doctor' not yet implemented (Phase 2+)");
-            Ok(())
-        }
+        Some(Commands::Resume {
+            branch,
+            term,
+            bg: _,
+        }) => ai_tools::resume_worktree(branch.as_deref(), term.as_deref()),
+        Some(Commands::Backup { branch }) => backup::backup_worktree(branch.as_deref(), false),
+        Some(Commands::Restore { branch }) => backup::restore_worktree(&branch, None),
+        Some(Commands::Doctor) => diagnostics::doctor(),
         Some(Commands::Upgrade) => {
             update::upgrade();
             Ok(())
         }
-        Some(Commands::ShellFunction { shell }) => {
-            match shell_functions::generate(&shell) {
-                Some(output) => {
-                    print!("{}", output);
-                    Ok(())
-                }
-                None => Err(claude_worktree::error::CwError::Config(format!(
-                    "Unsupported shell: {}. Use bash, zsh, or fish.",
-                    shell
-                ))),
+        Some(Commands::ShellFunction { shell }) => match shell_functions::generate(&shell) {
+            Some(output) => {
+                print!("{}", output);
+                Ok(())
             }
-        }
+            None => Err(claude_worktree::error::CwError::Config(format!(
+                "Unsupported shell: {}. Use bash, zsh, or fish.",
+                shell
+            ))),
+        },
         None => Ok(()),
     };
 

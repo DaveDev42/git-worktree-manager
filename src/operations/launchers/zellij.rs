@@ -46,29 +46,21 @@ pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str) -> Result<()> 
     let path_str = path.to_string_lossy().to_string();
     Command::new("zellij")
         .args([
-            "action",
-            "new-tab",
-            "--cwd",
-            &path_str,
-            "--",
-            "bash",
-            "-lc",
-            command,
+            "action", "new-tab", "--cwd", &path_str, "--", "bash", "-lc", command,
         ])
         .status()
         .map_err(|e| CwError::Git(format!("zellij new-tab failed: {}", e)))?;
 
-    println!("{} {} running in new Zellij tab\n", style("*").green().bold(), ai_tool_name);
+    println!(
+        "{} {} running in new Zellij tab\n",
+        style("*").green().bold(),
+        ai_tool_name
+    );
     Ok(())
 }
 
 /// Launch in Zellij split pane.
-pub fn launch_pane(
-    path: &Path,
-    command: &str,
-    ai_tool_name: &str,
-    horizontal: bool,
-) -> Result<()> {
+pub fn launch_pane(path: &Path, command: &str, ai_tool_name: &str, horizontal: bool) -> Result<()> {
     if std::env::var("ZELLIJ").is_err() {
         return Err(CwError::Git(
             "--term zellij-pane-* requires running inside a Zellij session".to_string(),
@@ -79,16 +71,7 @@ pub fn launch_pane(
     let path_str = path.to_string_lossy().to_string();
     Command::new("zellij")
         .args([
-            "action",
-            "new-pane",
-            "-d",
-            direction,
-            "--cwd",
-            &path_str,
-            "--",
-            "bash",
-            "-lc",
-            command,
+            "action", "new-pane", "-d", direction, "--cwd", &path_str, "--", "bash", "-lc", command,
         ])
         .status()
         .map_err(|e| CwError::Git(format!("zellij new-pane failed: {}", e)))?;

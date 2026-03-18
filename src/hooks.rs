@@ -112,8 +112,7 @@ pub fn save_hooks_config(
     let root = if let Some(r) = repo_root {
         r.to_path_buf()
     } else {
-        find_repo_root(None)
-            .ok_or_else(|| CwError::Hook("Not in a git repository".to_string()))?
+        find_repo_root(None).ok_or_else(|| CwError::Hook("Not in a git repository".to_string()))?
     };
 
     let config_file = root.join(LOCAL_CONFIG_FILE);
@@ -151,11 +150,7 @@ pub fn run_hooks(
 
     let is_pre_hook = event.contains(".pre");
 
-    eprintln!(
-        "Running {} hook(s) for {}...",
-        enabled.len(),
-        event
-    );
+    eprintln!("Running {} hook(s) for {}...", enabled.len(), event);
 
     // Build environment
     let mut env: HashMap<String, String> = std::env::vars().collect();

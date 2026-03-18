@@ -433,7 +433,7 @@ pub fn get_ai_tool_merge_command(prompt: &str) -> Result<Vec<String>> {
 /// Check if the currently configured AI tool is Claude-based.
 pub fn is_claude_tool() -> Result<bool> {
     if let Ok(env_tool) = std::env::var("CW_AI_TOOL") {
-        let first_word = env_tool.trim().split_whitespace().next().unwrap_or("");
+        let first_word = env_tool.split_whitespace().next().unwrap_or("");
         return Ok(first_word == "claude");
     }
     let config = load_config()?;
@@ -494,7 +494,10 @@ pub fn set_config_value(key_path: &str, value: &str) -> Result<()> {
     let mut current = &mut json;
     for &key in &keys[..keys.len() - 1] {
         if !current.is_object() {
-            return Err(CwError::Config(format!("Invalid config path: {}", key_path)));
+            return Err(CwError::Config(format!(
+                "Invalid config path: {}",
+                key_path
+            )));
         }
         current = current
             .as_object_mut()
@@ -506,13 +509,15 @@ pub fn set_config_value(key_path: &str, value: &str) -> Result<()> {
     if let Some(obj) = current.as_object_mut() {
         obj.insert(keys[keys.len() - 1].to_string(), json_value);
     } else {
-        return Err(CwError::Config(format!("Invalid config path: {}", key_path)));
+        return Err(CwError::Config(format!(
+            "Invalid config path: {}",
+            key_path
+        )));
     }
 
     // Deserialize back to Config and save
-    config = serde_json::from_value(json).map_err(|e| {
-        CwError::Config(format!("Invalid config value: {}", e))
-    })?;
+    config = serde_json::from_value(json)
+        .map_err(|e| CwError::Config(format!("Invalid config value: {}", e)))?;
     save_config(&config)
 }
 
@@ -578,7 +583,10 @@ pub fn resolve_launch_alias(value: &str) -> String {
     // Handle session name suffix (e.g., "t:mysession")
     if let Some((prefix, suffix)) = value.split_once(':') {
         let resolved_prefix = if let Some(&new) = deprecated.get(prefix) {
-            eprintln!("Warning: '{}' is deprecated. Use '{}' instead.", prefix, new);
+            eprintln!(
+                "Warning: '{}' is deprecated. Use '{}' instead.",
+                prefix, new
+            );
             new.to_string()
         } else {
             aliases
@@ -612,9 +620,8 @@ pub fn parse_term_option(term_value: Option<&str>) -> Result<(LaunchMethod, Opti
     let resolved = resolve_launch_alias(term_value);
 
     if let Some((method_str, session_name)) = resolved.split_once(':') {
-        let method = LaunchMethod::from_str_opt(method_str).ok_or_else(|| {
-            CwError::Config(format!("Invalid launch method: {}", method_str))
-        })?;
+        let method = LaunchMethod::from_str_opt(method_str)
+            .ok_or_else(|| CwError::Config(format!("Invalid launch method: {}", method_str)))?;
 
         if matches!(method, LaunchMethod::Tmux | LaunchMethod::Zellij) {
             if session_name.len() > MAX_SESSION_NAME_LENGTH {
@@ -632,9 +639,8 @@ pub fn parse_term_option(term_value: Option<&str>) -> Result<(LaunchMethod, Opti
         }
     }
 
-    let method = LaunchMethod::from_str_opt(&resolved).ok_or_else(|| {
-        CwError::Config(format!("Invalid launch method: {}", term_value))
-    })?;
+    let method = LaunchMethod::from_str_opt(&resolved)
+        .ok_or_else(|| CwError::Config(format!("Invalid launch method: {}", term_value)))?;
     Ok((method, None))
 }
 

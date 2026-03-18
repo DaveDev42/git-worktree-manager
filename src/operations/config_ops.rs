@@ -1,4 +1,3 @@
-
 use console::style;
 
 use crate::constants::{format_config_key, CONFIG_KEY_BASE_BRANCH};

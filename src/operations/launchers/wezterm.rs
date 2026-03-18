@@ -78,7 +78,11 @@ pub fn launch_window(path: &Path, command: &str, ai_tool_name: &str) -> Result<(
     let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
     send_text(&pane_id, command)?;
 
-    println!("{} {} running in new WezTerm window\n", style("*").green().bold(), ai_tool_name);
+    println!(
+        "{} {} running in new WezTerm window\n",
+        style("*").green().bold(),
+        ai_tool_name
+    );
     Ok(())
 }
 
@@ -99,24 +103,27 @@ pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str) -> Result<()> 
     let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
     send_text(&pane_id, command)?;
 
-    println!("{} {} running in new WezTerm tab\n", style("*").green().bold(), ai_tool_name);
+    println!(
+        "{} {} running in new WezTerm tab\n",
+        style("*").green().bold(),
+        ai_tool_name
+    );
     Ok(())
 }
 
 /// Launch in WezTerm split pane.
-pub fn launch_pane(
-    path: &Path,
-    command: &str,
-    ai_tool_name: &str,
-    horizontal: bool,
-) -> Result<()> {
+pub fn launch_pane(path: &Path, command: &str, ai_tool_name: &str, horizontal: bool) -> Result<()> {
     if !git::has_command("wezterm") {
         return Err(CwError::Git(
             "wezterm not installed. Install from https://wezterm.org/".to_string(),
         ));
     }
 
-    let split_flag = if horizontal { "--horizontal" } else { "--bottom" };
+    let split_flag = if horizontal {
+        "--horizontal"
+    } else {
+        "--bottom"
+    };
     let path_str = path.to_string_lossy().to_string();
     let output = Command::new("wezterm")
         .args(["cli", "split-pane", split_flag, "--cwd", &path_str])

@@ -90,19 +90,18 @@ pub fn claude_native_session_exists(worktree_path: &Path) -> bool {
 fn has_jsonl_files(dir: &Path) -> bool {
     std::fs::read_dir(dir)
         .map(|entries| {
-            entries
-                .flatten()
-                .any(|e| e.path().extension().map(|ext| ext == "jsonl").unwrap_or(false))
+            entries.flatten().any(|e| {
+                e.path()
+                    .extension()
+                    .map(|ext| ext == "jsonl")
+                    .unwrap_or(false)
+            })
         })
         .unwrap_or(false)
 }
 
 /// Save session metadata for a branch.
-pub fn save_session_metadata(
-    branch_name: &str,
-    ai_tool: &str,
-    worktree_path: &str,
-) -> Result<()> {
+pub fn save_session_metadata(branch_name: &str, ai_tool: &str, worktree_path: &str) -> Result<()> {
     let session_dir = get_session_dir(branch_name);
     let metadata_file = session_dir.join("metadata.json");
 

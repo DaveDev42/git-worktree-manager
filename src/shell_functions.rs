@@ -1,7 +1,6 @@
 /// Shell function generation for cw-cd.
 ///
 /// Outputs shell-specific function definitions for bash/zsh/fish.
-
 /// Generate shell function for the specified shell.
 pub fn generate(shell: &str) -> Option<String> {
     match shell {

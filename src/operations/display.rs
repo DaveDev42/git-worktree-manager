@@ -7,7 +7,10 @@ use std::time::SystemTime;
 use console::style;
 
 use crate::console as cwconsole;
-use crate::constants::{format_config_key, sanitize_branch_name, CONFIG_KEY_BASE_BRANCH, CONFIG_KEY_BASE_PATH, CONFIG_KEY_INTENDED_BRANCH};
+use crate::constants::{
+    format_config_key, sanitize_branch_name, CONFIG_KEY_BASE_BRANCH, CONFIG_KEY_BASE_PATH,
+    CONFIG_KEY_INTENDED_BRANCH,
+};
 use crate::error::Result;
 use crate::git;
 
@@ -221,7 +224,10 @@ fn print_worktree_table(rows: &[WorktreeRow]) {
 
     println!(
         "{:<wt_col$} {:<br_col$} {:<10} {:<12} PATH",
-        "WORKTREE", "CURRENT BRANCH", "STATUS", "AGE",
+        "WORKTREE",
+        "CURRENT BRANCH",
+        "STATUS",
+        "AGE",
         wt_col = wt_col,
         br_col = br_col,
     );
@@ -236,8 +242,8 @@ fn print_worktree_table(rows: &[WorktreeRow]) {
             row.current_branch.clone()
         };
 
-        let status_styled = cwconsole::status_style(&row.status)
-            .apply_to(format!("{:<10}", row.status));
+        let status_styled =
+            cwconsole::status_style(&row.status).apply_to(format!("{:<10}", row.status));
 
         println!(
             "{:<wt_col$} {:<br_col$} {} {:<12} {}",
@@ -291,14 +297,8 @@ pub fn show_status() -> Result<()> {
             let base = git::get_config(&base_key, Some(&repo));
             let base_path = git::get_config(&path_key, Some(&repo));
 
-            println!(
-                "\n{}",
-                style("Current worktree:").cyan().bold()
-            );
-            println!(
-                "  Feature:  {}",
-                style(&branch).green()
-            );
+            println!("\n{}", style("Current worktree:").cyan().bold());
+            println!("  Feature:  {}", style(&branch).green());
             println!(
                 "  Base:     {}",
                 style(base.as_deref().unwrap_or("N/A")).green()
@@ -311,10 +311,8 @@ pub fn show_status() -> Result<()> {
         Err(_) => {
             println!(
                 "\n{}\n",
-                style(
-                    "Current directory is not a feature worktree or is the main repository."
-                )
-                .yellow()
+                style("Current directory is not a feature worktree or is the main repository.")
+                    .yellow()
             );
         }
     }
@@ -369,7 +367,10 @@ pub fn show_tree() -> Result<()> {
         let st = cwconsole::status_style(&status);
 
         let branch_display = if is_current {
-            st.clone().bold().apply_to(format!("★ {}", branch_name)).to_string()
+            st.clone()
+                .bold()
+                .apply_to(format!("★ {}", branch_name))
+                .to_string()
         } else {
             st.clone().apply_to(branch_name.as_str()).to_string()
         };
@@ -388,11 +389,20 @@ pub fn show_tree() -> Result<()> {
 
     // Legend
     println!("\n{}", style("Legend:").bold());
-    println!("  {} active (current)", cwconsole::status_style("active").apply_to("●"));
+    println!(
+        "  {} active (current)",
+        cwconsole::status_style("active").apply_to("●")
+    );
     println!("  {} clean", cwconsole::status_style("clean").apply_to("○"));
-    println!("  {} modified", cwconsole::status_style("modified").apply_to("◉"));
+    println!(
+        "  {} modified",
+        cwconsole::status_style("modified").apply_to("◉")
+    );
     println!("  {} stale", cwconsole::status_style("stale").apply_to("x"));
-    println!("  {} currently active worktree\n", style("★").green().bold());
+    println!(
+        "  {} currently active worktree\n",
+        style("★").green().bold()
+    );
 
     Ok(())
 }
@@ -457,7 +467,8 @@ pub fn show_stats() -> Result<()> {
     }
 
     // Overview
-    let mut status_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    let mut status_counts: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::new();
     for d in &data {
         *status_counts.entry(d.status.as_str()).or_insert(0) += 1;
     }
@@ -468,13 +479,19 @@ pub fn show_stats() -> Result<()> {
         "  Status: {} clean, {} modified, {} active, {} stale",
         style(status_counts.get("clean").unwrap_or(&0)).green(),
         style(status_counts.get("modified").unwrap_or(&0)).yellow(),
-        style(status_counts.get("active").unwrap_or(&0)).green().bold(),
+        style(status_counts.get("active").unwrap_or(&0))
+            .green()
+            .bold(),
         style(status_counts.get("stale").unwrap_or(&0)).red(),
     );
     println!();
 
     // Age statistics
-    let ages: Vec<f64> = data.iter().filter(|d| d.age_days > 0.0).map(|d| d.age_days).collect();
+    let ages: Vec<f64> = data
+        .iter()
+        .filter(|d| d.age_days > 0.0)
+        .map(|d| d.age_days)
+        .collect();
     if !ages.is_empty() {
         let avg = ages.iter().sum::<f64>() / ages.len() as f64;
         let oldest = ages.iter().cloned().fold(0.0_f64, f64::max);
@@ -488,7 +505,11 @@ pub fn show_stats() -> Result<()> {
     }
 
     // Commit statistics
-    let commits: Vec<usize> = data.iter().filter(|d| d.commit_count > 0).map(|d| d.commit_count).collect();
+    let commits: Vec<usize> = data
+        .iter()
+        .filter(|d| d.commit_count > 0)
+        .map(|d| d.commit_count)
+        .collect();
     if !commits.is_empty() {
         let total: usize = commits.iter().sum();
         let avg = total as f64 / commits.len() as f64;
@@ -504,7 +525,11 @@ pub fn show_stats() -> Result<()> {
     // Top by age
     println!("{}", style("Oldest Worktrees:").bold());
     let mut by_age = data.iter().collect::<Vec<_>>();
-    by_age.sort_by(|a, b| b.age_days.partial_cmp(&a.age_days).unwrap_or(std::cmp::Ordering::Equal));
+    by_age.sort_by(|a, b| {
+        b.age_days
+            .partial_cmp(&a.age_days)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     for d in by_age.iter().take(5) {
         if d.age_days > 0.0 {
             let icon = match d.status.as_str() {
@@ -553,12 +578,7 @@ pub fn show_stats() -> Result<()> {
 }
 
 /// Compare two branches.
-pub fn diff_worktrees(
-    branch1: &str,
-    branch2: &str,
-    summary: bool,
-    files: bool,
-) -> Result<()> {
+pub fn diff_worktrees(branch1: &str, branch2: &str, summary: bool, files: bool) -> Result<()> {
     let repo = git::get_repo_root(None)?;
 
     if !git::branch_exists(branch1, Some(&repo)) {
@@ -574,16 +594,8 @@ pub fn diff_worktrees(
         )));
     }
 
-    println!(
-        "\n{}",
-        style("Comparing branches:").cyan().bold()
-    );
-    println!(
-        "  {} {} {}\n",
-        branch1,
-        style("...").yellow(),
-        branch2
-    );
+    println!("\n{}", style("Comparing branches:").cyan().bold());
+    println!("  {} {} {}\n", branch1, style("...").yellow(), branch2);
 
     if files {
         let result = git::git_command(
@@ -634,12 +646,7 @@ pub fn diff_worktrees(
             println!("{}", result.stdout);
         }
     } else {
-        let result = git::git_command(
-            &["diff", branch1, branch2],
-            Some(&repo),
-            true,
-            true,
-        )?;
+        let result = git::git_command(&["diff", branch1, branch2], Some(&repo), true, true)?;
         if result.stdout.trim().is_empty() {
             println!("{}\n", style("No differences found").dim());
         } else {

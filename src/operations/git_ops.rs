@@ -6,7 +6,9 @@ use std::process::Command;
 
 use console::style;
 
-use crate::constants::{format_config_key, CONFIG_KEY_BASE_BRANCH, CONFIG_KEY_BASE_PATH, CONFIG_KEY_INTENDED_BRANCH};
+use crate::constants::{
+    format_config_key, CONFIG_KEY_BASE_BRANCH, CONFIG_KEY_BASE_PATH, CONFIG_KEY_INTENDED_BRANCH,
+};
 use crate::error::{CwError, Result};
 use crate::git;
 use crate::hooks;
@@ -108,7 +110,7 @@ pub fn create_pr_worktree(
                 rebase_target
             );
             if let Some(files) = conflicts {
-                msg.push_str(&format!("\n\nConflicted files:\n"));
+                msg.push_str("\n\nConflicted files:\n");
                 for f in files.lines() {
                     msg.push_str(&format!("  - {}\n", f));
                 }
@@ -137,7 +139,13 @@ pub fn create_pr_worktree(
             Ok(r) => {
                 // Try force push with lease
                 match git::git_command(
-                    &["push", "--force-with-lease", "-u", "origin", &feature_branch],
+                    &[
+                        "push",
+                        "--force-with-lease",
+                        "-u",
+                        "origin",
+                        &feature_branch,
+                    ],
                     Some(&cwd),
                     false,
                     true,
@@ -146,10 +154,7 @@ pub fn create_pr_worktree(
                         println!("{} Force pushed to origin\n", style("*").green().bold());
                     }
                     _ => {
-                        return Err(CwError::Git(format!(
-                            "Push failed: {}",
-                            r.stdout
-                        )));
+                        return Err(CwError::Git(format!("Push failed: {}", r.stdout)));
                     }
                 }
             }
@@ -241,12 +246,23 @@ pub fn merge_worktree(
 
     // Dry run
     if dry_run {
-        println!("{}\n", style("DRY RUN MODE — No changes will be made").yellow().bold());
-        println!("{}\n", style("The following operations would be performed:").bold());
+        println!(
+            "{}\n",
+            style("DRY RUN MODE — No changes will be made")
+                .yellow()
+                .bold()
+        );
+        println!(
+            "{}\n",
+            style("The following operations would be performed:").bold()
+        );
         println!("  1. Fetch updates from remote");
         println!("  2. Rebase {} onto {}", feature_branch, base_branch);
         println!("  3. Switch to {} in base repository", base_branch);
-        println!("  4. Merge {} into {} (fast-forward)", feature_branch, base_branch);
+        println!(
+            "  4. Merge {} into {} (fast-forward)",
+            feature_branch, base_branch
+        );
         if push {
             println!("  5. Push {} to origin", base_branch);
             println!("  6. Remove worktree at {}", cwd.display());
@@ -260,14 +276,9 @@ pub fn merge_worktree(
     }
 
     // Fetch
-    let fetch_ok = git::git_command(
-        &["fetch", "--all", "--prune"],
-        Some(repo),
-        false,
-        true,
-    )
-    .map(|r| r.returncode == 0)
-    .unwrap_or(false);
+    let fetch_ok = git::git_command(&["fetch", "--all", "--prune"], Some(repo), false, true)
+        .map(|r| r.returncode == 0)
+        .unwrap_or(false);
 
     let rebase_target = if fetch_ok {
         let origin_ref = format!("origin/{}", base_branch);
@@ -283,7 +294,11 @@ pub fn merge_worktree(
     // Rebase
     println!(
         "{}",
-        style(format!("Rebasing {} onto {}...", feature_branch, rebase_target)).yellow()
+        style(format!(
+            "Rebasing {} onto {}...",
+            feature_branch, rebase_target
+        ))
+        .yellow()
     );
 
     match git::git_command(&["rebase", &rebase_target], Some(&cwd), false, true) {
@@ -311,11 +326,20 @@ pub fn merge_worktree(
     // Fast-forward merge
     println!(
         "{}",
-        style(format!("Merging {} into {}...", feature_branch, base_branch)).yellow()
+        style(format!(
+            "Merging {} into {}...",
+            feature_branch, base_branch
+        ))
+        .yellow()
     );
 
     // Switch to base branch if needed
-    let _ = git::git_command(&["fetch", "--all", "--prune"], Some(&base_path), false, false);
+    let _ = git::git_command(
+        &["fetch", "--all", "--prune"],
+        Some(&base_path),
+        false,
+        false,
+    );
     if let Ok(current) = git::get_current_branch(Some(&base_path)) {
         if current != base_branch {
             git::git_command(&["switch", &base_branch], Some(&base_path), true, false)?;

@@ -10,7 +10,9 @@ use console::style;
 use crate::config::{
     self, get_ai_tool_command, get_ai_tool_resume_command, is_claude_tool, parse_term_option,
 };
-use crate::constants::{format_config_key, LaunchMethod, CONFIG_KEY_BASE_BRANCH, MAX_SESSION_NAME_LENGTH};
+use crate::constants::{
+    format_config_key, LaunchMethod, CONFIG_KEY_BASE_BRANCH, MAX_SESSION_NAME_LENGTH,
+};
 use crate::error::Result;
 use crate::git;
 use crate::hooks;
@@ -64,12 +66,19 @@ pub fn launch_ai_tool(
     // Dispatch to launcher
     match method {
         LaunchMethod::Foreground => {
-            println!("{}\n", style(format!("Starting {} (Ctrl+C to exit)...", ai_tool_name)).cyan());
+            println!(
+                "{}\n",
+                style(format!("Starting {} (Ctrl+C to exit)...", ai_tool_name)).cyan()
+            );
             launchers::foreground::run(path, &cmd);
         }
         LaunchMethod::Detach => {
             launchers::detached::run(path, &cmd);
-            println!("{} {} detached (survives terminal close)\n", style("*").green().bold(), ai_tool_name);
+            println!(
+                "{} {} detached (survives terminal close)\n",
+                style("*").green().bold(),
+                ai_tool_name
+            );
         }
         // iTerm
         LaunchMethod::ItermWindow => launchers::iterm::launch_window(path, &cmd, ai_tool_name)?,
@@ -90,25 +99,29 @@ pub fn launch_ai_tool(
             launchers::zellij::launch_session(path, &cmd, ai_tool_name, &sn)?;
         }
         LaunchMethod::ZellijTab => launchers::zellij::launch_tab(path, &cmd, ai_tool_name)?,
-        LaunchMethod::ZellijPaneH => launchers::zellij::launch_pane(path, &cmd, ai_tool_name, true)?,
-        LaunchMethod::ZellijPaneV => launchers::zellij::launch_pane(path, &cmd, ai_tool_name, false)?,
+        LaunchMethod::ZellijPaneH => {
+            launchers::zellij::launch_pane(path, &cmd, ai_tool_name, true)?
+        }
+        LaunchMethod::ZellijPaneV => {
+            launchers::zellij::launch_pane(path, &cmd, ai_tool_name, false)?
+        }
         // WezTerm
         LaunchMethod::WeztermWindow => launchers::wezterm::launch_window(path, &cmd, ai_tool_name)?,
         LaunchMethod::WeztermTab => launchers::wezterm::launch_tab(path, &cmd, ai_tool_name)?,
-        LaunchMethod::WeztermPaneH => launchers::wezterm::launch_pane(path, &cmd, ai_tool_name, true)?,
-        LaunchMethod::WeztermPaneV => launchers::wezterm::launch_pane(path, &cmd, ai_tool_name, false)?,
+        LaunchMethod::WeztermPaneH => {
+            launchers::wezterm::launch_pane(path, &cmd, ai_tool_name, true)?
+        }
+        LaunchMethod::WeztermPaneV => {
+            launchers::wezterm::launch_pane(path, &cmd, ai_tool_name, false)?
+        }
     }
 
     Ok(())
 }
 
 /// Resume AI work in a worktree with context restoration.
-pub fn resume_worktree(
-    worktree: Option<&str>,
-    term: Option<&str>,
-) -> Result<()> {
-    let (worktree_path, branch_name, worktree_repo) =
-        resolve_worktree_target(worktree, None)?;
+pub fn resume_worktree(worktree: Option<&str>, term: Option<&str>) -> Result<()> {
+    let (worktree_path, branch_name, worktree_repo) = resolve_worktree_target(worktree, None)?;
 
     // Pre-resume hooks
     let base_key = format_config_key(CONFIG_KEY_BASE_BRANCH, &branch_name);
@@ -117,21 +130,35 @@ pub fn resume_worktree(
     let mut hook_ctx = HashMap::new();
     hook_ctx.insert("branch".into(), branch_name.clone());
     hook_ctx.insert("base_branch".into(), base_branch);
-    hook_ctx.insert("worktree_path".into(), worktree_path.to_string_lossy().to_string());
-    hook_ctx.insert("repo_path".into(), worktree_repo.to_string_lossy().to_string());
+    hook_ctx.insert(
+        "worktree_path".into(),
+        worktree_path.to_string_lossy().to_string(),
+    );
+    hook_ctx.insert(
+        "repo_path".into(),
+        worktree_repo.to_string_lossy().to_string(),
+    );
     hook_ctx.insert("event".into(), "resume.pre".into());
     hook_ctx.insert("operation".into(), "resume".into());
-    hooks::run_hooks("resume.pre", &hook_ctx, Some(&worktree_path), Some(&worktree_repo))?;
+    hooks::run_hooks(
+        "resume.pre",
+        &hook_ctx,
+        Some(&worktree_path),
+        Some(&worktree_repo),
+    )?;
 
     // Change directory if specified
     if worktree.is_some() {
         let _ = std::env::set_current_dir(&worktree_path);
-        println!("{}\n", style(format!("Switched to worktree: {}", worktree_path.display())).dim());
+        println!(
+            "{}\n",
+            style(format!("Switched to worktree: {}", worktree_path.display())).dim()
+        );
     }
 
     // Check for existing session
-    let has_session = is_claude_tool().unwrap_or(false)
-        && session::claude_native_session_exists(&worktree_path);
+    let has_session =
+        is_claude_tool().unwrap_or(false) && session::claude_native_session_exists(&worktree_path);
 
     if has_session {
         println!(
@@ -193,7 +220,12 @@ pub fn resume_worktree(
 
     // Post-resume hooks
     hook_ctx.insert("event".into(), "resume.post".into());
-    let _ = hooks::run_hooks("resume.post", &hook_ctx, Some(&worktree_path), Some(&worktree_repo));
+    let _ = hooks::run_hooks(
+        "resume.post",
+        &hook_ctx,
+        Some(&worktree_path),
+        Some(&worktree_repo),
+    );
 
     Ok(())
 }

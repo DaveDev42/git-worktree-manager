@@ -8,7 +8,9 @@ use crate::error::{CwError, Result};
 
 fn ensure_macos() -> Result<()> {
     if cfg!(not(target_os = "macos")) {
-        return Err(CwError::Git("iTerm launchers only work on macOS".to_string()));
+        return Err(CwError::Git(
+            "iTerm launchers only work on macOS".to_string(),
+        ));
     }
     Ok(())
 }
@@ -37,7 +39,11 @@ APPLESCRIPT"#,
         .args(["-lc", &script])
         .status()
         .map_err(|e| CwError::Git(format!("iTerm launch failed: {}", e)))?;
-    println!("{} {} running in new iTerm window\n", style("*").green().bold(), ai_tool_name);
+    println!(
+        "{} {} running in new iTerm window\n",
+        style("*").green().bold(),
+        ai_tool_name
+    );
     Ok(())
 }
 
@@ -63,14 +69,22 @@ APPLESCRIPT"#,
         .args(["-lc", &script])
         .status()
         .map_err(|e| CwError::Git(format!("iTerm launch failed: {}", e)))?;
-    println!("{} {} running in new iTerm tab\n", style("*").green().bold(), ai_tool_name);
+    println!(
+        "{} {} running in new iTerm tab\n",
+        style("*").green().bold(),
+        ai_tool_name
+    );
     Ok(())
 }
 
 /// Launch in iTerm split pane.
 pub fn launch_pane(path: &Path, command: &str, ai_tool_name: &str, horizontal: bool) -> Result<()> {
     ensure_macos()?;
-    let direction = if horizontal { "horizontally" } else { "vertically" };
+    let direction = if horizontal {
+        "horizontally"
+    } else {
+        "vertically"
+    };
     let script = format!(
         r#"osascript <<'APPLESCRIPT'
 tell application "iTerm"
@@ -92,6 +106,11 @@ APPLESCRIPT"#,
         .status()
         .map_err(|e| CwError::Git(format!("iTerm launch failed: {}", e)))?;
     let pane_type = if horizontal { "horizontal" } else { "vertical" };
-    println!("{} {} running in iTerm {} pane\n", style("*").green().bold(), ai_tool_name, pane_type);
+    println!(
+        "{} {} running in iTerm {} pane\n",
+        style("*").green().bold(),
+        ai_tool_name,
+        pane_type
+    );
     Ok(())
 }

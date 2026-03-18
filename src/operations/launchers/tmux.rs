@@ -63,17 +63,16 @@ pub fn launch_window(path: &Path, command: &str, ai_tool_name: &str) -> Result<(
         .status()
         .map_err(|e| CwError::Git(format!("tmux new-window failed: {}", e)))?;
 
-    println!("{} {} running in new tmux window\n", style("*").green().bold(), ai_tool_name);
+    println!(
+        "{} {} running in new tmux window\n",
+        style("*").green().bold(),
+        ai_tool_name
+    );
     Ok(())
 }
 
 /// Launch in tmux split pane.
-pub fn launch_pane(
-    path: &Path,
-    command: &str,
-    ai_tool_name: &str,
-    horizontal: bool,
-) -> Result<()> {
+pub fn launch_pane(path: &Path, command: &str, ai_tool_name: &str, horizontal: bool) -> Result<()> {
     if std::env::var("TMUX").is_err() {
         return Err(CwError::Git(
             "--term tmux-pane-* requires running inside a tmux session".to_string(),

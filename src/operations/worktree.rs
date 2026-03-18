@@ -39,11 +39,9 @@ pub fn create_worktree(
     }
 
     // Check if worktree already exists
-    let existing = git::find_worktree_by_branch(&repo, branch_name)?
-        .or(git::find_worktree_by_branch(
-            &repo,
-            &format!("refs/heads/{}", branch_name),
-        )?);
+    let existing = git::find_worktree_by_branch(&repo, branch_name)?.or(
+        git::find_worktree_by_branch(&repo, &format!("refs/heads/{}", branch_name))?,
+    );
 
     if let Some(existing_path) = existing {
         println!(
@@ -107,9 +105,7 @@ pub fn create_worktree(
     };
 
     // Verify base branch
-    if (!is_remote_only || base_branch.is_some())
-        && !git::branch_exists(&base, Some(&repo))
-    {
+    if (!is_remote_only || base_branch.is_some()) && !git::branch_exists(&base, Some(&repo)) {
         return Err(CwError::InvalidBranch(format!(
             "Base branch '{}' not found",
             base
@@ -134,7 +130,10 @@ pub fn create_worktree(
     let mut hook_ctx = HashMap::new();
     hook_ctx.insert("branch".into(), branch_name.to_string());
     hook_ctx.insert("base_branch".into(), base.clone());
-    hook_ctx.insert("worktree_path".into(), worktree_path.to_string_lossy().to_string());
+    hook_ctx.insert(
+        "worktree_path".into(),
+        worktree_path.to_string_lossy().to_string(),
+    );
     hook_ctx.insert("repo_path".into(), repo.to_string_lossy().to_string());
     hook_ctx.insert("event".into(), "worktree.pre_create".into());
     hook_ctx.insert("operation".into(), "new".into());
@@ -191,14 +190,22 @@ pub fn create_worktree(
     // Register in global registry (non-fatal)
     let _ = registry::register_repo(&repo);
 
-    println!("{} Worktree created successfully\n", style("*").green().bold());
+    println!(
+        "{} Worktree created successfully\n",
+        style("*").green().bold()
+    );
 
     // Copy shared files
     shared_files::share_files(&repo, &worktree_path);
 
     // Post-create hooks
     hook_ctx.insert("event".into(), "worktree.post_create".into());
-    let _ = hooks::run_hooks("worktree.post_create", &hook_ctx, Some(&worktree_path), Some(&repo));
+    let _ = hooks::run_hooks(
+        "worktree.post_create",
+        &hook_ctx,
+        Some(&worktree_path),
+        Some(&repo),
+    );
 
     // AI tool launch would happen here (Phase 3)
     if !no_ai {
@@ -209,11 +216,7 @@ pub fn create_worktree(
 }
 
 /// Delete a worktree by branch name, worktree directory name, or path.
-pub fn delete_worktree(
-    target: Option<&str>,
-    keep_branch: bool,
-    delete_remote: bool,
-) -> Result<()> {
+pub fn delete_worktree(target: Option<&str>, keep_branch: bool, delete_remote: bool) -> Result<()> {
     let main_repo = git::get_main_repo_root(None)?;
     let (worktree_path, branch_name) = resolve_delete_target(target, &main_repo)?;
 
@@ -225,7 +228,9 @@ pub fn delete_worktree(
         .canonicalize()
         .unwrap_or_else(|_| main_repo.clone());
     if wt_resolved == main_resolved {
-        return Err(CwError::Git("Cannot delete main repository worktree".to_string()));
+        return Err(CwError::Git(
+            "Cannot delete main repository worktree".to_string(),
+        ));
     }
 
     // If cwd is inside worktree, change to main repo
@@ -249,27 +254,36 @@ pub fn delete_worktree(
     let mut hook_ctx = HashMap::new();
     hook_ctx.insert("branch".into(), branch_name.clone().unwrap_or_default());
     hook_ctx.insert("base_branch".into(), base_branch);
-    hook_ctx.insert("worktree_path".into(), worktree_path.to_string_lossy().to_string());
+    hook_ctx.insert(
+        "worktree_path".into(),
+        worktree_path.to_string_lossy().to_string(),
+    );
     hook_ctx.insert("repo_path".into(), main_repo.to_string_lossy().to_string());
     hook_ctx.insert("event".into(), "worktree.pre_delete".into());
     hook_ctx.insert("operation".into(), "delete".into());
-    hooks::run_hooks("worktree.pre_delete", &hook_ctx, Some(&main_repo), Some(&main_repo))?;
+    hooks::run_hooks(
+        "worktree.pre_delete",
+        &hook_ctx,
+        Some(&main_repo),
+        Some(&main_repo),
+    )?;
 
     // Remove worktree
-    println!("{}", style(format!("Removing worktree: {}", worktree_path.display())).yellow());
+    println!(
+        "{}",
+        style(format!("Removing worktree: {}", worktree_path.display())).yellow()
+    );
     git::remove_worktree_safe(&worktree_path, &main_repo, true)?;
     println!("{} Worktree removed\n", style("*").green().bold());
 
     // Delete branch
     if let Some(ref branch) = branch_name {
         if !keep_branch {
-            println!("{}", style(format!("Deleting local branch: {}", branch)).yellow());
-            let _ = git::git_command(
-                &["branch", "-D", branch],
-                Some(&main_repo),
-                false,
-                false,
+            println!(
+                "{}",
+                style(format!("Deleting local branch: {}", branch)).yellow()
             );
+            let _ = git::git_command(&["branch", "-D", branch], Some(&main_repo), false, false);
 
             // Remove metadata
             let bb_key = format_config_key(CONFIG_KEY_BASE_BRANCH, branch);
@@ -279,7 +293,10 @@ pub fn delete_worktree(
             git::unset_config(&bp_key, Some(&main_repo));
             git::unset_config(&ib_key, Some(&main_repo));
 
-            println!("{} Local branch and metadata removed\n", style("*").green().bold());
+            println!(
+                "{} Local branch and metadata removed\n",
+                style("*").green().bold()
+            );
 
             // Delete remote branch
             if delete_remote {
@@ -306,7 +323,12 @@ pub fn delete_worktree(
 
     // Post-delete hooks
     hook_ctx.insert("event".into(), "worktree.post_delete".into());
-    let _ = hooks::run_hooks("worktree.post_delete", &hook_ctx, Some(&main_repo), Some(&main_repo));
+    let _ = hooks::run_hooks(
+        "worktree.post_delete",
+        &hook_ctx,
+        Some(&main_repo),
+        Some(&main_repo),
+    );
     let _ = registry::update_last_seen(&main_repo);
 
     Ok(())
@@ -317,14 +339,12 @@ fn resolve_delete_target(
     target: Option<&str>,
     main_repo: &Path,
 ) -> Result<(PathBuf, Option<String>)> {
-    let target = target
-        .map(|t| t.to_string())
-        .unwrap_or_else(|| {
-            std::env::current_dir()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string()
-        });
+    let target = target.map(|t| t.to_string()).unwrap_or_else(|| {
+        std::env::current_dir()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string()
+    });
 
     let target_path = PathBuf::from(&target);
 
@@ -353,23 +373,17 @@ fn resolve_delete_target(
 }
 
 /// Sync worktree with base branch.
-pub fn sync_worktree(
-    target: Option<&str>,
-    all: bool,
-    _fetch_only: bool,
-) -> Result<()> {
+pub fn sync_worktree(target: Option<&str>, all: bool, _fetch_only: bool) -> Result<()> {
     let repo = git::get_repo_root(None)?;
 
     // Fetch first
     println!("{}", style("Fetching updates from remote...").yellow());
-    let fetch_result = git::git_command(
-        &["fetch", "--all", "--prune"],
-        Some(&repo),
-        false,
-        true,
-    )?;
+    let fetch_result = git::git_command(&["fetch", "--all", "--prune"], Some(&repo), false, true)?;
     if fetch_result.returncode != 0 {
-        println!("{} Fetch failed or no remote configured\n", style("!").yellow());
+        println!(
+            "{} Fetch failed or no remote configured\n",
+            style("!").yellow()
+        );
     }
 
     if _fetch_only {
@@ -424,12 +438,7 @@ pub fn sync_worktree(
                 }
                 _ => {
                     // Abort rebase on failure
-                    let _ = git::git_command(
-                        &["rebase", "--abort"],
-                        Some(wt_path),
-                        false,
-                        false,
-                    );
+                    let _ = git::git_command(&["rebase", "--abort"], Some(wt_path), false, false);
                     println!(
                         "{} Rebase failed for '{}'. Resolve conflicts manually.\n",
                         style("!").yellow(),
@@ -455,12 +464,8 @@ pub fn sync_worktree(
                         println!("{} Rebase successful\n", style("*").green().bold());
                     }
                     _ => {
-                        let _ = git::git_command(
-                            &["rebase", "--abort"],
-                            Some(wt_path),
-                            false,
-                            false,
-                        );
+                        let _ =
+                            git::git_command(&["rebase", "--abort"], Some(wt_path), false, false);
                         println!(
                             "{} Rebase failed for '{}'. Resolve conflicts manually.\n",
                             style("!").yellow(),

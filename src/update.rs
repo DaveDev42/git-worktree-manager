@@ -5,7 +5,6 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Cache for update check results.
@@ -120,11 +119,7 @@ fn fetch_latest_version() -> Option<String> {
 
 /// Compare version strings (simple semver).
 fn is_newer(latest: &str, current: &str) -> bool {
-    let parse = |s: &str| -> Vec<u32> {
-        s.split('.')
-            .filter_map(|p| p.parse().ok())
-            .collect()
-    };
+    let parse = |s: &str| -> Vec<u32> { s.split('.').filter_map(|p| p.parse().ok()).collect() };
     let l = parse(latest);
     let c = parse(current);
     l > c
@@ -138,7 +133,9 @@ pub fn upgrade() {
         if is_newer(&latest, CURRENT_VERSION) {
             println!("New version available: v{}", latest);
             println!("\nTo upgrade:");
-            println!("  Download from: https://github.com/DaveDev42/claude-worktree-rs/releases/latest");
+            println!(
+                "  Download from: https://github.com/DaveDev42/claude-worktree-rs/releases/latest"
+            );
 
             #[cfg(target_os = "macos")]
             println!("  Or: brew upgrade claude-worktree");

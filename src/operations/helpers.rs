@@ -38,9 +38,7 @@ pub fn get_branch_for_worktree(repo: &Path, worktree_path: &Path) -> Option<Stri
         .unwrap_or_else(|_| worktree_path.to_path_buf());
 
     for (branch, path) in &worktrees {
-        let p_resolved = path
-            .canonicalize()
-            .unwrap_or_else(|_| path.clone());
+        let p_resolved = path.canonicalize().unwrap_or_else(|_| path.clone());
         if p_resolved == resolved {
             if branch == "(detached)" {
                 return None;
@@ -112,8 +110,8 @@ pub fn resolve_worktree_target(
             Ok((bp, target.to_string(), repo))
         }
         (None, Some(wp)) => {
-            let branch = get_branch_for_worktree(&main_repo, &wp)
-                .unwrap_or_else(|| target.to_string());
+            let branch =
+                get_branch_for_worktree(&main_repo, &wp).unwrap_or_else(|| target.to_string());
             let repo = git::get_repo_root(Some(&wp))?;
             Ok((wp, branch, repo))
         }
@@ -144,9 +142,7 @@ fn resolve_global_target(
         }
 
         // Try branch lookup
-        if let Ok(Some(path)) =
-            git::find_worktree_by_intended_branch(repo_path, branch_target)
-        {
+        if let Ok(Some(path)) = git::find_worktree_by_intended_branch(repo_path, branch_target) {
             let repo = git::get_repo_root(Some(&path)).unwrap_or(repo_path.clone());
             return Ok((path, branch_target.to_string(), repo));
         }
@@ -181,19 +177,19 @@ pub fn get_worktree_metadata(branch: &str, repo: &Path) -> Result<(String, PathB
     }
 
     // Metadata missing — try to infer
-    eprintln!("Warning: Metadata missing for branch '{}'. Attempting to infer...", branch);
+    eprintln!(
+        "Warning: Metadata missing for branch '{}'. Attempting to infer...",
+        branch
+    );
 
     // Infer base_path from first worktree entry
     let worktrees = git::parse_worktrees(repo)?;
-    let inferred_base_path = worktrees
-        .first()
-        .map(|(_, p)| p.clone())
-        .ok_or_else(|| {
-            CwError::Git(format!(
-                "Cannot infer base repository path for branch '{}'. Use 'cw new' to create worktrees.",
-                branch
-            ))
-        })?;
+    let inferred_base_path = worktrees.first().map(|(_, p)| p.clone()).ok_or_else(|| {
+        CwError::Git(format!(
+            "Cannot infer base repository path for branch '{}'. Use 'cw new' to create worktrees.",
+            branch
+        ))
+    })?;
 
     // Infer base_branch from common defaults
     let mut inferred_base_branch: Option<String> = None;
@@ -207,8 +203,7 @@ pub fn get_worktree_metadata(branch: &str, repo: &Path) -> Result<(String, PathB
     if inferred_base_branch.is_none() {
         if let Some((first_branch, _)) = worktrees.first() {
             if first_branch != "(detached)" {
-                inferred_base_branch =
-                    Some(git::normalize_branch_name(first_branch).to_string());
+                inferred_base_branch = Some(git::normalize_branch_name(first_branch).to_string());
             }
         }
     }
