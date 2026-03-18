@@ -4,6 +4,8 @@ CLI tool integrating git worktree with AI coding assistants. Single static binar
 
 Successor to [claude-worktree](https://github.com/DaveDev42/claude-worktree) (Python). Rewritten in Rust for single-binary distribution (~1.9MB) and ~3ms startup.
 
+> **Backward compatible:** The `cw` command is included as an alias. Existing `cw` workflows, `.cwshare`, and `.cwconfig.json` files work unchanged.
+
 ## Install
 
 ```bash

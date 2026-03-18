@@ -1,16 +1,22 @@
 [package]
 name = "git-worktree-manager"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 rust-version = "1.75"
 description = "CLI tool integrating git worktree with AI coding assistants"
 license = "BSD-3-Clause"
 repository = "https://github.com/DaveDev42/git-worktree-manager"
+homepage = "https://github.com/DaveDev42/git-worktree-manager"
 keywords = ["git", "worktree", "cli", "ai"]
 categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
 
 [[bin]]
 name = "gw"
+path = "src/main.rs"
+
+[[bin]]
+name = "cw"
 path = "src/main.rs"
 
 [dependencies]
@@ -39,3 +45,15 @@ strip = true
 lto = true
 codegen-units = 1
 opt-level = "z"
+
+# cargo-binstall support
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/gw-{ target }{ archive-suffix }"
+bin-dir = "gw{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-fmt = "zip"

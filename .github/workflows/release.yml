@@ -59,22 +59,22 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../cw-${{ matrix.target }}.tar.gz cw
+          tar czf ../../../gw-${{ matrix.target }}.tar.gz gw cw
           cd ../../..
 
       - name: Package (Windows)
         if: matrix.os == 'windows-latest'
         run: |
           cd target/${{ matrix.target }}/release
-          7z a ../../../cw-${{ matrix.target }}.zip cw.exe
+          7z a ../../../gw-${{ matrix.target }}.zip gw.exe cw.exe
           cd ../../..
         shell: bash
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cw-${{ matrix.target }}
-          path: cw-${{ matrix.target }}.*
+          name: gw-${{ matrix.target }}
+          path: gw-${{ matrix.target }}.*
 
   release:
     needs: build
@@ -92,4 +92,4 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            artifacts/cw-*/*
+            artifacts/gw-*/*
