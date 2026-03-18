@@ -110,6 +110,16 @@ pub enum Commands {
         bg: bool,
     },
 
+    /// Open interactive shell or execute command in a worktree
+    Shell {
+        /// Worktree branch to shell into
+        worktree: Option<String>,
+
+        /// Command and arguments to execute
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
     /// Show current worktree status
     Status,
 
@@ -125,11 +135,34 @@ pub enum Commands {
         /// Also delete the remote branch
         #[arg(long)]
         delete_remote: bool,
+
+        /// Don't use --force flag
+        #[arg(long)]
+        no_force: bool,
     },
 
     /// List all worktrees
     #[command(alias = "ls")]
     List,
+
+    /// Batch cleanup of worktrees
+    Clean {
+        /// Delete worktrees for branches already merged to base
+        #[arg(long)]
+        merged: bool,
+
+        /// Delete worktrees older than N days
+        #[arg(long, value_name = "DAYS")]
+        older_than: Option<u64>,
+
+        /// Interactive selection UI
+        #[arg(short, long)]
+        interactive: bool,
+
+        /// Show what would be deleted without deleting
+        #[arg(long)]
+        dry_run: bool,
+    },
 
     /// Display worktree hierarchy as a tree
     Tree,
@@ -155,6 +188,14 @@ pub enum Commands {
     Sync {
         /// Branch name (default: current worktree)
         branch: Option<String>,
+
+        /// Sync all worktrees
+        #[arg(long)]
+        all: bool,
+
+        /// Only fetch updates without rebasing
+        #[arg(long)]
+        fetch_only: bool,
     },
 
     /// Change base branch for a worktree
@@ -163,6 +204,10 @@ pub enum Commands {
         new_base: String,
         /// Branch name (default: current worktree)
         branch: Option<String>,
+
+        /// Dry run (show what would happen)
+        #[arg(long)]
+        dry_run: bool,
     },
 
     /// Configuration management
@@ -171,16 +216,39 @@ pub enum Commands {
         action: ConfigAction,
     },
 
-    /// Backup worktree state
+    /// Backup and restore worktrees
     Backup {
-        /// Branch name (default: current worktree)
-        branch: Option<String>,
+        #[command(subcommand)]
+        action: BackupAction,
     },
 
-    /// Restore worktree from backup
-    Restore {
-        /// Branch name to restore
-        branch: String,
+    /// Stash management (worktree-aware)
+    Stash {
+        #[command(subcommand)]
+        action: StashAction,
+    },
+
+    /// Manage lifecycle hooks
+    Hook {
+        #[command(subcommand)]
+        action: HookAction,
+    },
+
+    /// Export worktree configuration to a file
+    Export {
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+
+    /// Import worktree configuration from a file
+    Import {
+        /// Path to the configuration file to import
+        import_file: String,
+
+        /// Apply the imported configuration (default: preview only)
+        #[arg(long)]
+        apply: bool,
     },
 
     /// Scan for repositories (global mode)
@@ -195,8 +263,26 @@ pub enum Commands {
     /// Check for updates / upgrade
     Upgrade,
 
+    /// Interactive shell integration setup
+    ShellSetup,
+
+    /// [Internal] Get worktree path for a branch
+    #[command(name = "_path", hide = true)]
+    Path {
+        /// Branch name
+        branch: Option<String>,
+
+        /// List branch names (for tab completion)
+        #[arg(long)]
+        list_branches: bool,
+
+        /// Interactive worktree selection
+        #[arg(short, long)]
+        interactive: bool,
+    },
+
     /// Generate shell function for cw-cd
-    #[command(name = "_shell-function")]
+    #[command(name = "_shell-function", hide = true)]
     ShellFunction {
         /// Shell type: bash, zsh, or fish
         shell: String,
@@ -223,4 +309,106 @@ pub enum ConfigAction {
     ListPresets,
     /// Reset configuration to defaults
     Reset,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BackupAction {
+    /// Create backup of worktree(s) using git bundle
+    Create {
+        /// Branch name to backup (default: current worktree)
+        branch: Option<String>,
+
+        /// Backup all worktrees
+        #[arg(long)]
+        all: bool,
+
+        /// Output directory for backups
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// List available backups
+    List {
+        /// Filter by branch name
+        branch: Option<String>,
+    },
+    /// Restore worktree from backup
+    Restore {
+        /// Branch name to restore
+        branch: String,
+
+        /// Custom path for restored worktree
+        #[arg(short, long)]
+        path: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum StashAction {
+    /// Save changes in current worktree to stash
+    Save {
+        /// Optional message to describe the stash
+        message: Option<String>,
+    },
+    /// List all stashes organized by worktree/branch
+    List,
+    /// Apply a stash to a different worktree
+    Apply {
+        /// Branch name of worktree to apply stash to
+        target_branch: String,
+
+        /// Stash reference (default: stash@{0})
+        #[arg(short, long, default_value = "stash@{0}")]
+        stash: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum HookAction {
+    /// Add a new hook for an event
+    Add {
+        /// Hook event (e.g., worktree.post_create, merge.pre)
+        event: String,
+        /// Shell command to execute
+        command: String,
+        /// Custom hook identifier
+        #[arg(long)]
+        id: Option<String>,
+        /// Human-readable description
+        #[arg(short, long)]
+        description: Option<String>,
+    },
+    /// Remove a hook
+    Remove {
+        /// Hook event
+        event: String,
+        /// Hook identifier to remove
+        hook_id: String,
+    },
+    /// List all hooks
+    List {
+        /// Filter by event
+        event: Option<String>,
+    },
+    /// Enable a disabled hook
+    Enable {
+        /// Hook event
+        event: String,
+        /// Hook identifier
+        hook_id: String,
+    },
+    /// Disable a hook without removing it
+    Disable {
+        /// Hook event
+        event: String,
+        /// Hook identifier
+        hook_id: String,
+    },
+    /// Manually run all hooks for an event
+    Run {
+        /// Hook event to run
+        event: String,
+        /// Show what would be executed without running
+        #[arg(long)]
+        dry_run: bool,
+    },
 }

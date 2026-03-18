@@ -122,6 +122,103 @@ pub fn save_hooks_config(
     Ok(())
 }
 
+/// Generate a unique ID for a hook based on command hash.
+fn generate_hook_id(command: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    command.hash(&mut hasher);
+    format!("hook-{:08x}", hasher.finish() as u32)
+}
+
+/// Add a new hook for an event.
+pub fn add_hook(
+    event: &str,
+    command: &str,
+    hook_id: Option<&str>,
+    description: Option<&str>,
+) -> Result<String> {
+    if !HOOK_EVENTS.contains(&event) {
+        return Err(CwError::Hook(format!(
+            "Invalid hook event: {}. Valid events: {}",
+            event,
+            HOOK_EVENTS.join(", ")
+        )));
+    }
+
+    let mut hooks = load_hooks_config(None);
+    let event_hooks = hooks.entry(event.to_string()).or_default();
+
+    let id = hook_id
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| generate_hook_id(command));
+
+    // Check for duplicate
+    if event_hooks.iter().any(|h| h.id == id) {
+        return Err(CwError::Hook(format!(
+            "Hook with ID '{}' already exists for event '{}'",
+            id, event
+        )));
+    }
+
+    event_hooks.push(HookEntry {
+        id: id.clone(),
+        command: command.to_string(),
+        enabled: true,
+        description: description.unwrap_or("").to_string(),
+    });
+
+    save_hooks_config(&hooks, None)?;
+    Ok(id)
+}
+
+/// Remove a hook by event and ID.
+pub fn remove_hook(event: &str, hook_id: &str) -> Result<()> {
+    let mut hooks = load_hooks_config(None);
+    let event_hooks = hooks
+        .get_mut(event)
+        .ok_or_else(|| CwError::Hook(format!("No hooks found for event '{}'", event)))?;
+
+    let original_len = event_hooks.len();
+    event_hooks.retain(|h| h.id != hook_id);
+
+    if event_hooks.len() == original_len {
+        return Err(CwError::Hook(format!(
+            "Hook '{}' not found for event '{}'",
+            hook_id, event
+        )));
+    }
+
+    save_hooks_config(&hooks, None)?;
+    println!("* Removed hook '{}' from {}", hook_id, event);
+    Ok(())
+}
+
+/// Enable or disable a hook.
+pub fn set_hook_enabled(event: &str, hook_id: &str, enabled: bool) -> Result<()> {
+    let mut hooks = load_hooks_config(None);
+    let event_hooks = hooks
+        .get_mut(event)
+        .ok_or_else(|| CwError::Hook(format!("No hooks found for event '{}'", event)))?;
+
+    let hook = event_hooks
+        .iter_mut()
+        .find(|h| h.id == hook_id)
+        .ok_or_else(|| {
+            CwError::Hook(format!(
+                "Hook '{}' not found for event '{}'",
+                hook_id, event
+            ))
+        })?;
+
+    hook.enabled = enabled;
+    save_hooks_config(&hooks, None)?;
+
+    let action = if enabled { "Enabled" } else { "Disabled" };
+    println!("* {} hook '{}'", action, hook_id);
+    Ok(())
+}
+
 /// Get hooks for a specific event.
 pub fn get_hooks(event: &str, repo_root: Option<&Path>) -> Vec<HookEntry> {
     let hooks = load_hooks_config(repo_root);
