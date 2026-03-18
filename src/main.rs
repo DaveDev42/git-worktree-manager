@@ -4,6 +4,8 @@ use claude_worktree::config;
 use claude_worktree::console as cwconsole;
 use claude_worktree::operations::{ai_tools, config_ops, display, git_ops, helpers, worktree};
 use claude_worktree::registry;
+use claude_worktree::shell_functions;
+use claude_worktree::update;
 
 fn main() {
     let cli = Cli::parse();
@@ -139,12 +141,20 @@ fn main() {
             Ok(())
         }
         Some(Commands::Upgrade) => {
-            cwconsole::print_warning("Command 'upgrade' not yet implemented (Phase 4)");
+            update::upgrade();
             Ok(())
         }
-        Some(Commands::ShellFunction { .. }) => {
-            cwconsole::print_warning("Command 'shell-function' not yet implemented (Phase 4)");
-            Ok(())
+        Some(Commands::ShellFunction { shell }) => {
+            match shell_functions::generate(&shell) {
+                Some(output) => {
+                    print!("{}", output);
+                    Ok(())
+                }
+                None => Err(claude_worktree::error::CwError::Config(format!(
+                    "Unsupported shell: {}. Use bash, zsh, or fish.",
+                    shell
+                ))),
+            }
         }
         None => Ok(()),
     };
