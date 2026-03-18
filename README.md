@@ -1,24 +1,39 @@
 # git-worktree-manager (gw)
 
-CLI tool integrating git worktree with AI coding assistants. Single static binary, instant startup.
+[![crates.io](https://img.shields.io/crates/v/git-worktree-manager.svg)](https://crates.io/crates/git-worktree-manager)
+[![CI](https://github.com/DaveDev42/git-worktree-manager/actions/workflows/test.yml/badge.svg)](https://github.com/DaveDev42/git-worktree-manager/actions)
+[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](LICENSE)
 
-Successor to [claude-worktree](https://github.com/DaveDev42/claude-worktree) (Python). Rewritten in Rust for single-binary distribution (~1.9MB) and ~3ms startup.
+CLI tool integrating git worktree with AI coding assistants. Single static binary (~1.9MB), instant startup (~3ms).
+
+Successor to [claude-worktree](https://github.com/DaveDev42/claude-worktree) (Python).
 
 > **Backward compatible:** The `cw` command is included as an alias. Existing `cw` workflows, `.cwshare`, and `.cwconfig.json` files work unchanged.
 
 ## Install
 
 ```bash
-# Homebrew
+cargo install git-worktree-manager
+```
+
+This installs both `gw` and `cw` binaries.
+
+<details>
+<summary>Other installation methods</summary>
+
+```bash
+# Homebrew (macOS/Linux)
 brew tap DaveDev42/tap
 brew install git-worktree-manager
 
-# Or download from Releases
-# https://github.com/DaveDev42/git-worktree-manager/releases
+# cargo-binstall (pre-built binary, no compile)
+cargo binstall git-worktree-manager
 
-# Or build from source
-cargo install --path .
+# Direct download
+# https://github.com/DaveDev42/git-worktree-manager/releases/latest
 ```
+
+</details>
 
 ## Quick Start
 
@@ -41,7 +56,7 @@ gw merge                 # Merge back to base
 | `gw shell [branch]` | Open shell in worktree |
 | `gw delete <target>` | Remove worktree |
 | `gw list` | List all worktrees |
-| `gw clean` | Batch cleanup (--merged, --older-than) |
+| `gw clean` | Batch cleanup (`--merged`, `--older-than`) |
 | `gw status` | Show current worktree info |
 | `gw tree` | Visual tree display |
 | `gw stats` | Usage analytics |
@@ -69,11 +84,11 @@ gw _shell-function fish | source
 gw shell-setup
 ```
 
-This enables `gw-cd <branch>` for quick worktree navigation.
+This enables `gw-cd <branch>` (and `cw-cd` alias) for quick worktree navigation.
 
 ## Configuration
 
-Config file: `~/.config/claude-worktree/config.json` (compatible with Python version).
+Config file: `~/.config/claude-worktree/config.json`
 
 ```bash
 gw config use-preset claude       # Default
