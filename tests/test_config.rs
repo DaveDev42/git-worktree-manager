@@ -153,3 +153,190 @@ fn test_deep_merge_preserves_defaults() {
     assert!(json.get("update").is_some());
     assert!(json.get("shell_completion").is_some());
 }
+
+// --- Additional tests ported from test_config.py ---
+
+#[test]
+fn test_get_config_path() {
+    let path = git_worktree_manager::config::get_config_path();
+    assert!(path.to_string_lossy().contains("config.json"));
+    assert!(path.to_string_lossy().contains(".config"));
+}
+
+#[test]
+fn test_preset_noop_empty() {
+    let presets = git_worktree_manager::config::ai_tool_presets();
+    assert!(presets["no-op"].is_empty());
+}
+
+#[test]
+fn test_preset_claude_command() {
+    let presets = git_worktree_manager::config::ai_tool_presets();
+    assert_eq!(presets["claude"], vec!["claude"]);
+}
+
+#[test]
+fn test_preset_claude_yolo_command() {
+    let presets = git_worktree_manager::config::ai_tool_presets();
+    assert_eq!(
+        presets["claude-yolo"],
+        vec!["claude", "--dangerously-skip-permissions"]
+    );
+}
+
+#[test]
+fn test_preset_claude_remote_command() {
+    let presets = git_worktree_manager::config::ai_tool_presets();
+    assert_eq!(presets["claude-remote"], vec!["claude", "/remote-control"]);
+}
+
+#[test]
+fn test_preset_codex_command() {
+    let presets = git_worktree_manager::config::ai_tool_presets();
+    assert_eq!(presets["codex"], vec!["codex"]);
+}
+
+#[test]
+fn test_preset_codex_yolo_command() {
+    let presets = git_worktree_manager::config::ai_tool_presets();
+    assert_eq!(
+        presets["codex-yolo"],
+        vec!["codex", "--dangerously-bypass-approvals-and-sandbox"]
+    );
+}
+
+#[test]
+fn test_resume_preset_claude_uses_continue() {
+    let presets = git_worktree_manager::config::ai_tool_resume_presets();
+    let claude = &presets["claude"];
+    assert!(claude.contains(&"--continue"));
+    assert!(!claude.contains(&"--resume"));
+}
+
+#[test]
+fn test_resume_preset_codex_uses_subcommand() {
+    let presets = git_worktree_manager::config::ai_tool_resume_presets();
+    let codex = &presets["codex"];
+    assert_eq!(codex[0], "codex");
+    assert_eq!(codex[1], "resume");
+    assert!(codex.contains(&"--last"));
+}
+
+#[test]
+fn test_merge_preset_claude_uses_print_mode() {
+    let presets = git_worktree_manager::config::ai_tool_merge_presets();
+    let claude = &presets["claude"];
+    assert!(claude.flags.contains(&"--print"));
+    assert!(claude.flags.contains(&"--tools=default"));
+}
+
+#[test]
+fn test_claude_preset_names() {
+    let names = git_worktree_manager::config::claude_preset_names();
+    assert!(names.contains(&"claude"));
+    assert!(names.contains(&"claude-yolo"));
+    assert!(names.contains(&"claude-remote"));
+    assert!(names.contains(&"claude-yolo-remote"));
+    assert!(!names.contains(&"codex"));
+    assert!(!names.contains(&"no-op"));
+}
+
+#[test]
+fn test_config_serialization_roundtrip() {
+    let config = git_worktree_manager::config::Config::default();
+    let json = serde_json::to_string(&config).unwrap();
+    let deserialized: git_worktree_manager::config::Config = serde_json::from_str(&json).unwrap();
+    assert_eq!(deserialized.ai_tool.command, "claude");
+    assert_eq!(deserialized.git.default_base_branch, "main");
+    assert!(deserialized.update.auto_check);
+}
+
+#[test]
+fn test_config_partial_json_deserialize() {
+    // Partial JSON should merge with defaults
+    let partial = r#"{"ai_tool": {"command": "codex", "args": ["--fast"]}}"#;
+    let value: serde_json::Value = serde_json::from_str(partial).unwrap();
+    // Verify the partial data is valid
+    assert_eq!(value["ai_tool"]["command"], "codex");
+    assert_eq!(value["ai_tool"]["args"][0], "--fast");
+}
+
+#[test]
+fn test_resolve_launch_alias_deprecated_bg() {
+    // "bg" should resolve to "detach" with deprecation warning
+    let result = git_worktree_manager::config::resolve_launch_alias("bg");
+    assert_eq!(result, "detach");
+}
+
+#[test]
+fn test_resolve_launch_alias_deprecated_background() {
+    let result = git_worktree_manager::config::resolve_launch_alias("background");
+    assert_eq!(result, "detach");
+}
+
+#[test]
+fn test_parse_term_option_all_methods() {
+    use git_worktree_manager::config::parse_term_option;
+    use git_worktree_manager::constants::LaunchMethod;
+
+    let cases = vec![
+        ("foreground", LaunchMethod::Foreground),
+        ("detach", LaunchMethod::Detach),
+        ("iterm-window", LaunchMethod::ItermWindow),
+        ("iterm-tab", LaunchMethod::ItermTab),
+        ("iterm-pane-h", LaunchMethod::ItermPaneH),
+        ("iterm-pane-v", LaunchMethod::ItermPaneV),
+        ("tmux", LaunchMethod::Tmux),
+        ("tmux-window", LaunchMethod::TmuxWindow),
+        ("tmux-pane-h", LaunchMethod::TmuxPaneH),
+        ("tmux-pane-v", LaunchMethod::TmuxPaneV),
+        ("zellij", LaunchMethod::Zellij),
+        ("zellij-tab", LaunchMethod::ZellijTab),
+        ("zellij-pane-h", LaunchMethod::ZellijPaneH),
+        ("zellij-pane-v", LaunchMethod::ZellijPaneV),
+        ("wezterm-window", LaunchMethod::WeztermWindow),
+        ("wezterm-tab", LaunchMethod::WeztermTab),
+        ("wezterm-pane-h", LaunchMethod::WeztermPaneH),
+        ("wezterm-pane-v", LaunchMethod::WeztermPaneV),
+    ];
+
+    for (input, expected) in cases {
+        let (m, _) = parse_term_option(Some(input)).unwrap();
+        assert_eq!(m, expected, "Failed for input: {}", input);
+    }
+}
+
+#[test]
+fn test_parse_term_option_session_name_on_non_tmux_zellij() {
+    use git_worktree_manager::config::parse_term_option;
+    // Session names only supported for tmux and zellij
+    assert!(parse_term_option(Some("foreground:session")).is_err());
+    assert!(parse_term_option(Some("iterm-window:session")).is_err());
+    assert!(parse_term_option(Some("wezterm-tab:session")).is_err());
+}
+
+#[test]
+fn test_parse_term_option_zellij_session() {
+    use git_worktree_manager::config::parse_term_option;
+    use git_worktree_manager::constants::LaunchMethod;
+
+    let (m, s) = parse_term_option(Some("z:mydev")).unwrap();
+    assert_eq!(m, LaunchMethod::Zellij);
+    assert_eq!(s.unwrap(), "mydev");
+}
+
+#[test]
+fn test_list_presets_contains_all_presets() {
+    let output = git_worktree_manager::config::list_presets();
+    for name in [
+        "claude",
+        "claude-yolo",
+        "claude-remote",
+        "claude-yolo-remote",
+        "codex",
+        "codex-yolo",
+        "no-op",
+    ] {
+        assert!(output.contains(name), "Missing preset: {}", name);
+    }
+}
