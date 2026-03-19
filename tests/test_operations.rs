@@ -121,32 +121,7 @@ fn test_config_show() {
     assert!(stdout.contains("Config file:"));
 }
 
-#[test]
-fn test_backup_list_empty() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["backup", "list"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("No backups found"));
-}
-
-#[test]
-fn test_stash_list_empty() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["stash", "list"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("No stashes found"));
-}
-
-#[test]
-fn test_hook_list_empty() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["hook", "list"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("No hooks configured"));
-}
+// backup, stash, hook tests moved to dedicated test files
 
 #[test]
 fn test_path_list_branches() {
