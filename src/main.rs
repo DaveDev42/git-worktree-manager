@@ -6,24 +6,39 @@ use git_worktree_manager::cli::{
 };
 use git_worktree_manager::config;
 use git_worktree_manager::console as cwconsole;
+use git_worktree_manager::cwshare_setup;
 use git_worktree_manager::hooks;
 use git_worktree_manager::operations::{
-    ai_tools, backup, clean, config_ops, diagnostics, display, git_ops, helpers, path_cmd, shell,
-    stash, worktree,
+    ai_tools, backup, clean, config_ops, diagnostics, display, git_ops, global_ops, helpers,
+    path_cmd, shell, stash, worktree,
 };
-use git_worktree_manager::registry;
 use git_worktree_manager::shell_functions;
 use git_worktree_manager::update;
 
 fn main() {
     let cli = Cli::parse();
 
+    // Handle --generate-completion before anything else
+    if let Some(ref shell_name) = cli.generate_completion {
+        generate_completions(shell_name);
+        return;
+    }
+
+    // Auto-update check (non-blocking, once per day)
+    update::check_for_update_if_needed();
+
     // Set global mode flag
     helpers::set_global_mode(cli.global);
 
     let result = match cli.command {
         // Display commands
-        Some(Commands::List) => display::list_worktrees(),
+        Some(Commands::List) => {
+            if cli.global {
+                global_ops::global_list_worktrees()
+            } else {
+                display::list_worktrees()
+            }
+        }
         Some(Commands::Status) => display::show_status(),
         Some(Commands::Tree) => display::show_tree(),
         Some(Commands::Stats) => display::show_stats(),
@@ -50,19 +65,24 @@ fn main() {
         Some(Commands::New {
             name,
             path,
-            branch,
+            base,
             force: _,
-            no_ai,
+            no_term,
             term,
             bg: _,
-        }) => worktree::create_worktree(
-            &name,
-            branch.as_deref(),
-            path.as_deref(),
-            term.as_deref(),
-            no_ai,
-        )
-        .map(|_| ()),
+        }) => {
+            // Prompt for .cwshare setup on first run
+            cwshare_setup::prompt_cwshare_setup();
+
+            worktree::create_worktree(
+                &name,
+                base.as_deref(),
+                path.as_deref(),
+                term.as_deref(),
+                no_term,
+            )
+            .map(|_| ())
+        }
 
         Some(Commands::Pr {
             branch,
@@ -70,26 +90,47 @@ fn main() {
             body,
             draft,
             no_push,
-        }) => git_ops::create_pr_worktree(
-            branch.as_deref(),
-            !no_push,
-            title.as_deref(),
-            body.as_deref(),
-            draft,
-        ),
+            worktree: is_worktree,
+        }) => {
+            let lookup_mode = if is_worktree { Some("worktree") } else { None };
+            git_ops::create_pr_worktree(
+                branch.as_deref(),
+                !no_push,
+                title.as_deref(),
+                body.as_deref(),
+                draft,
+                lookup_mode,
+            )
+        }
 
         Some(Commands::Merge {
             branch,
             interactive,
             dry_run,
             push,
-        }) => git_ops::merge_worktree(branch.as_deref(), push, interactive, dry_run),
+            ai_merge,
+            worktree: is_worktree,
+        }) => {
+            let lookup_mode = if is_worktree { Some("worktree") } else { None };
+            git_ops::merge_worktree(
+                branch.as_deref(),
+                push,
+                interactive,
+                dry_run,
+                ai_merge,
+                lookup_mode,
+            )
+        }
 
         Some(Commands::Resume {
             branch,
             term,
             bg: _,
-        }) => ai_tools::resume_worktree(branch.as_deref(), term.as_deref()),
+            worktree: is_worktree,
+        }) => {
+            let lookup_mode = if is_worktree { Some("worktree") } else { None };
+            ai_tools::resume_worktree(branch.as_deref(), term.as_deref(), lookup_mode)
+        }
 
         Some(Commands::Shell { worktree, args }) => {
             let cmd = if args.is_empty() { None } else { Some(args) };
@@ -101,7 +142,11 @@ fn main() {
             keep_branch,
             delete_remote,
             no_force: _,
-        }) => worktree::delete_worktree(Some(&target), keep_branch, delete_remote),
+            worktree: is_worktree,
+        }) => {
+            let lookup_mode = if is_worktree { Some("worktree") } else { None };
+            worktree::delete_worktree(Some(&target), keep_branch, delete_remote, lookup_mode)
+        }
 
         Some(Commands::Clean {
             merged,
@@ -114,13 +159,29 @@ fn main() {
             branch,
             all,
             fetch_only,
-        }) => worktree::sync_worktree(branch.as_deref(), all, fetch_only),
+            ai_merge,
+            worktree: is_worktree,
+        }) => {
+            let lookup_mode = if is_worktree { Some("worktree") } else { None };
+            worktree::sync_worktree(branch.as_deref(), all, fetch_only, ai_merge, lookup_mode)
+        }
 
         Some(Commands::ChangeBase {
             new_base,
             branch,
             dry_run,
-        }) => config_ops::change_base_branch(&new_base, branch.as_deref(), dry_run),
+            interactive,
+            worktree: is_worktree,
+        }) => {
+            let lookup_mode = if is_worktree { Some("worktree") } else { None };
+            config_ops::change_base_branch(
+                &new_base,
+                branch.as_deref(),
+                dry_run,
+                interactive,
+                lookup_mode,
+            )
+        }
 
         // Backup subcommands
         Some(Commands::Backup { action }) => match action {
@@ -184,35 +245,9 @@ fn main() {
         }
 
         // Global management
-        Some(Commands::Scan) => {
-            println!("Scanning for repositories with worktrees...\n");
-            let repos = registry::scan_for_repos(None, 5);
-            if repos.is_empty() {
-                println!("No repositories with worktrees found.\n");
-            } else {
-                for repo in &repos {
-                    let _ = registry::register_repo(repo);
-                    println!("  Registered: {}", repo.display());
-                }
-                println!("\n{} repository(ies) registered.\n", repos.len());
-            }
-            Ok(())
-        }
+        Some(Commands::Scan) => global_ops::global_scan(None),
 
-        Some(Commands::Prune) => match registry::prune_registry() {
-            Ok(removed) => {
-                if removed.is_empty() {
-                    println!("No stale entries found.\n");
-                } else {
-                    for path in &removed {
-                        println!("  Removed: {}", path);
-                    }
-                    println!("\n{} stale entry(ies) pruned.\n", removed.len());
-                }
-                Ok(())
-            }
-            Err(e) => Err(e),
-        },
+        Some(Commands::Prune) => global_ops::global_prune(),
 
         Some(Commands::Doctor) => diagnostics::doctor(),
 
@@ -251,6 +286,29 @@ fn main() {
         cwconsole::print_error(&format!("Error: {}", e));
         std::process::exit(1);
     }
+}
+
+fn generate_completions(shell_name: &str) {
+    use clap::CommandFactory;
+    use clap_complete::{generate, Shell};
+
+    let shell = match shell_name.to_lowercase().as_str() {
+        "bash" => Shell::Bash,
+        "zsh" => Shell::Zsh,
+        "fish" => Shell::Fish,
+        "powershell" | "pwsh" => Shell::PowerShell,
+        "elvish" => Shell::Elvish,
+        _ => {
+            eprintln!(
+                "Unsupported shell: {}. Use bash, zsh, fish, powershell, or elvish.",
+                shell_name
+            );
+            std::process::exit(1);
+        }
+    };
+
+    let mut cmd = Cli::command();
+    generate(shell, &mut cmd, "gw", &mut std::io::stdout());
 }
 
 fn list_hooks(event: Option<&str>) {
@@ -347,8 +405,8 @@ fn shell_setup() {
     } else {
         println!("Could not detect your shell automatically.\n");
         println!("Please manually add the cw-cd function to your shell:\n");
-        println!("  bash/zsh: source <(cw _shell-function bash)");
-        println!("  fish:     cw _shell-function fish | source");
+        println!("  bash/zsh: source <(gw _shell-function bash)");
+        println!("  fish:     gw _shell-function fish | source");
         return;
     };
 
@@ -356,7 +414,7 @@ fn shell_setup() {
 
     let line = match shell_name {
         "fish" => "gw _shell-function fish | source",
-        _ => &format!("source <(cw _shell-function {})", shell_name),
+        _ => &format!("source <(gw _shell-function {})", shell_name),
     };
 
     // Check if already installed
@@ -364,7 +422,7 @@ fn shell_setup() {
         if path.exists() {
             if let Ok(content) = std::fs::read_to_string(path) {
                 if content.contains("gw _shell-function") || content.contains("gw-cd") {
-                    println!("* cw-cd function is already installed!\n");
+                    println!("* gw-cd function is already installed!\n");
                     println!("Found in: {}", path.display());
                     return;
                 }
@@ -414,7 +472,7 @@ fn shell_setup() {
                 println!("\n* Successfully added to {}", path.display());
                 println!("\nNext steps:");
                 println!("  1. Restart your shell or run: source {}", path.display());
-                println!("  2. Try: cw-cd <branch-name>");
+                println!("  2. Try: gw-cd <branch-name>");
             }
             Err(e) => {
                 println!("\nError: Failed to update {}: {}", path.display(), e);

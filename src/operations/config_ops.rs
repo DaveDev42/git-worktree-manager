@@ -10,23 +10,31 @@ use crate::config;
 use crate::constants::{format_config_key, CONFIG_KEY_BASE_BRANCH, CONFIG_KEY_BASE_PATH};
 use crate::error::{CwError, Result};
 use crate::git;
+use crate::messages;
 
 /// Change the base branch for a worktree (with optional rebase + dry-run).
-pub fn change_base_branch(new_base: &str, branch: Option<&str>, dry_run: bool) -> Result<()> {
+pub fn change_base_branch(
+    new_base: &str,
+    branch: Option<&str>,
+    dry_run: bool,
+    _interactive: bool,
+    lookup_mode: Option<&str>,
+) -> Result<()> {
     let repo = git::get_repo_root(None)?;
 
     let feature_branch = if let Some(b) = branch {
-        b.to_string()
+        // Use resolve_worktree_target to respect lookup_mode
+        match super::helpers::resolve_worktree_target(Some(b), lookup_mode) {
+            Ok((_path, resolved_branch, _repo)) => resolved_branch,
+            Err(_) => b.to_string(), // Fallback to raw name
+        }
     } else {
         git::get_current_branch(Some(&std::env::current_dir()?))?
     };
 
     // Verify new base exists
     if !git::branch_exists(new_base, Some(&repo)) {
-        return Err(CwError::InvalidBranch(format!(
-            "Base branch '{}' not found",
-            new_base
-        )));
+        return Err(CwError::InvalidBranch(messages::branch_not_found(new_base)));
     }
 
     let key = format_config_key(CONFIG_KEY_BASE_BRANCH, &feature_branch);
@@ -97,10 +105,10 @@ pub fn change_base_branch(new_base: &str, branch: Option<&str>, dry_run: bool) -
         }
         _ => {
             let _ = git::git_command(&["rebase", "--abort"], Some(&wt_path), false, false);
-            return Err(CwError::Rebase(format!(
-                "Rebase failed. Resolve conflicts manually:\n  cd {}\n  git rebase {}",
-                wt_path.display(),
-                rebase_target
+            return Err(CwError::Rebase(messages::rebase_failed(
+                &wt_path.display().to_string(),
+                &rebase_target,
+                None,
             )));
         }
     }
@@ -182,9 +190,8 @@ pub fn export_config(output: Option<&str>) -> Result<()> {
 pub fn import_config(import_file: &str, apply: bool) -> Result<()> {
     let path = PathBuf::from(import_file);
     if !path.exists() {
-        return Err(CwError::Config(format!(
-            "Import file not found: {}",
-            import_file
+        return Err(CwError::Config(messages::import_file_not_found(
+            import_file,
         )));
     }
 

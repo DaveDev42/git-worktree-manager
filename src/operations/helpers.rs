@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::constants::{format_config_key, CONFIG_KEY_BASE_BRANCH, CONFIG_KEY_BASE_PATH};
 use crate::error::{CwError, Result};
 use crate::git;
+use crate::messages;
 
 // Thread-local global mode flag.
 std::thread_local! {
@@ -55,7 +56,7 @@ pub fn get_branch_for_worktree(repo: &Path, worktree_path: &Path) -> Option<Stri
 /// and disambiguation when both match.
 pub fn resolve_worktree_target(
     target: Option<&str>,
-    _lookup_mode: Option<&str>,
+    lookup_mode: Option<&str>,
 ) -> Result<(PathBuf, String, PathBuf)> {
     if target.is_none() && is_global_mode() {
         return Err(CwError::WorktreeNotFound(
@@ -75,16 +76,24 @@ pub fn resolve_worktree_target(
 
     // Global mode: search all registered repositories
     if is_global_mode() {
-        return resolve_global_target(target, _lookup_mode);
+        return resolve_global_target(target, lookup_mode);
     }
 
     let main_repo = git::get_main_repo_root(None)?;
 
-    // Try branch lookup
-    let branch_match = git::find_worktree_by_intended_branch(&main_repo, target)?;
+    // Try branch lookup (skip if lookup_mode is "worktree")
+    let branch_match = if lookup_mode != Some("worktree") {
+        git::find_worktree_by_intended_branch(&main_repo, target)?
+    } else {
+        None
+    };
 
-    // Try worktree name lookup
-    let worktree_match = git::find_worktree_by_name(&main_repo, target)?;
+    // Try worktree name lookup (skip if lookup_mode is "branch")
+    let worktree_match = if lookup_mode != Some("branch") {
+        git::find_worktree_by_name(&main_repo, target)?
+    } else {
+        None
+    };
 
     match (branch_match, worktree_match) {
         (Some(bp), Some(wp)) => {
@@ -115,10 +124,8 @@ pub fn resolve_worktree_target(
             let repo = git::get_repo_root(Some(&wp))?;
             Ok((wp, branch, repo))
         }
-        (None, None) => Err(CwError::WorktreeNotFound(format!(
-            "No worktree found for '{}'. \
-             Try: full path, branch name, or worktree name.",
-            target
+        (None, None) => Err(CwError::WorktreeNotFound(messages::worktree_not_found(
+            target,
         ))),
     }
 }
@@ -126,7 +133,7 @@ pub fn resolve_worktree_target(
 /// Global mode target resolution.
 fn resolve_global_target(
     target: &str,
-    _lookup_mode: Option<&str>,
+    lookup_mode: Option<&str>,
 ) -> Result<(PathBuf, String, PathBuf)> {
     let repos = crate::registry::get_all_registered_repos();
     let (repo_filter, branch_target) = parse_repo_branch_target(target);
@@ -141,18 +148,23 @@ fn resolve_global_target(
             continue;
         }
 
-        // Try branch lookup
-        if let Ok(Some(path)) = git::find_worktree_by_intended_branch(repo_path, branch_target) {
-            let repo = git::get_repo_root(Some(&path)).unwrap_or(repo_path.clone());
-            return Ok((path, branch_target.to_string(), repo));
+        // Try branch lookup (skip if lookup_mode is "worktree")
+        if lookup_mode != Some("worktree") {
+            if let Ok(Some(path)) = git::find_worktree_by_intended_branch(repo_path, branch_target)
+            {
+                let repo = git::get_repo_root(Some(&path)).unwrap_or(repo_path.clone());
+                return Ok((path, branch_target.to_string(), repo));
+            }
         }
 
-        // Try worktree name lookup
-        if let Ok(Some(path)) = git::find_worktree_by_name(repo_path, branch_target) {
-            let branch = get_branch_for_worktree(repo_path, &path)
-                .unwrap_or_else(|| branch_target.to_string());
-            let repo = git::get_repo_root(Some(&path)).unwrap_or(repo_path.clone());
-            return Ok((path, branch, repo));
+        // Try worktree name lookup (skip if lookup_mode is "branch")
+        if lookup_mode != Some("branch") {
+            if let Ok(Some(path)) = git::find_worktree_by_name(repo_path, branch_target) {
+                let branch = get_branch_for_worktree(repo_path, &path)
+                    .unwrap_or_else(|| branch_target.to_string());
+                let repo = git::get_repo_root(Some(&path)).unwrap_or(repo_path.clone());
+                return Ok((path, branch, repo));
+            }
         }
     }
 

@@ -20,6 +20,10 @@ pub struct Cli {
     #[arg(short = 'g', long = "global", global = true)]
     pub global: bool,
 
+    /// Generate shell completions for the given shell
+    #[arg(long, value_name = "SHELL")]
+    pub generate_completion: Option<String>,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
@@ -36,19 +40,19 @@ pub enum Commands {
         path: Option<String>,
 
         /// Base branch to create from (default: from config)
-        #[arg(short, long)]
-        branch: Option<String>,
+        #[arg(short = 'b', long = "base")]
+        base: Option<String>,
 
         /// Force creation even if branch exists
         #[arg(short, long)]
         force: bool,
 
         /// Skip AI tool launch
-        #[arg(long)]
-        no_ai: bool,
+        #[arg(long = "no-term")]
+        no_term: bool,
 
         /// Terminal launch method (e.g., tmux, iterm-tab, zellij)
-        #[arg(long)]
+        #[arg(short = 'T', long)]
         term: Option<String>,
 
         /// Launch AI tool in background
@@ -76,6 +80,10 @@ pub enum Commands {
         /// Skip pushing to remote
         #[arg(long)]
         no_push: bool,
+
+        /// Resolve target as worktree name (instead of branch)
+        #[arg(short, long)]
+        worktree: bool,
     },
 
     /// Merge feature branch into base branch
@@ -94,6 +102,14 @@ pub enum Commands {
         /// Push to remote after merge
         #[arg(long)]
         push: bool,
+
+        /// Use AI to resolve merge conflicts
+        #[arg(long)]
+        ai_merge: bool,
+
+        /// Resolve target as worktree name (instead of branch)
+        #[arg(short, long)]
+        worktree: bool,
     },
 
     /// Resume AI work in a worktree
@@ -102,12 +118,16 @@ pub enum Commands {
         branch: Option<String>,
 
         /// Terminal launch method
-        #[arg(long)]
+        #[arg(short = 'T', long)]
         term: Option<String>,
 
         /// Launch AI tool in background
         #[arg(long)]
         bg: bool,
+
+        /// Resolve target as worktree name (instead of branch)
+        #[arg(short, long)]
+        worktree: bool,
     },
 
     /// Open interactive shell or execute command in a worktree
@@ -129,16 +149,20 @@ pub enum Commands {
         target: String,
 
         /// Keep the branch (only remove worktree)
-        #[arg(long)]
+        #[arg(short = 'k', long)]
         keep_branch: bool,
 
         /// Also delete the remote branch
-        #[arg(long)]
+        #[arg(short = 'r', long)]
         delete_remote: bool,
 
         /// Don't use --force flag
         #[arg(long)]
         no_force: bool,
+
+        /// Resolve target as worktree name (instead of branch)
+        #[arg(short, long)]
+        worktree: bool,
     },
 
     /// List all worktrees
@@ -196,6 +220,14 @@ pub enum Commands {
         /// Only fetch updates without rebasing
         #[arg(long)]
         fetch_only: bool,
+
+        /// Use AI to resolve merge conflicts
+        #[arg(long)]
+        ai_merge: bool,
+
+        /// Resolve target as worktree name (instead of branch)
+        #[arg(short, long)]
+        worktree: bool,
     },
 
     /// Change base branch for a worktree
@@ -208,6 +240,14 @@ pub enum Commands {
         /// Dry run (show what would happen)
         #[arg(long)]
         dry_run: bool,
+
+        /// Interactive rebase
+        #[arg(short, long)]
+        interactive: bool,
+
+        /// Resolve target as worktree name (instead of branch)
+        #[arg(short, long)]
+        worktree: bool,
     },
 
     /// Configuration management

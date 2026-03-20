@@ -157,7 +157,7 @@ pub fn clean_worktrees(
     let mut deleted = 0u32;
     for (branch, _, _) in &to_delete {
         println!("{}", style(format!("Deleting {}...", branch)).yellow());
-        match super::worktree::delete_worktree(Some(branch), false, false) {
+        match super::worktree::delete_worktree(Some(branch), false, false, None) {
             Ok(()) => {
                 println!("{} Deleted {}", style("*").green().bold(), branch);
                 deleted += 1;

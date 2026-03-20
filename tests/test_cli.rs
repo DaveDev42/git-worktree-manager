@@ -131,8 +131,8 @@ fn test_new_help() {
         .assert()
         .success()
         .stdout(predicate::str::contains("--path"))
-        .stdout(predicate::str::contains("--branch"))
-        .stdout(predicate::str::contains("--no-ai"))
+        .stdout(predicate::str::contains("--base"))
+        .stdout(predicate::str::contains("--no-term"))
         .stdout(predicate::str::contains("--term"));
 }
 
@@ -306,4 +306,136 @@ fn test_config_show_runs() {
         .assert()
         .success()
         .stdout(predicate::str::contains("AI Tool:"));
+}
+
+// --- New CLI option tests ---
+
+#[test]
+fn test_new_base_short_flag() {
+    cw().args(["new", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("-b"))
+        .stdout(predicate::str::contains("--base"));
+}
+
+#[test]
+fn test_new_term_short_flag() {
+    cw().args(["new", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("-T"))
+        .stdout(predicate::str::contains("--term"));
+}
+
+#[test]
+fn test_delete_short_flags() {
+    cw().args(["delete", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("-k"))
+        .stdout(predicate::str::contains("--keep-branch"))
+        .stdout(predicate::str::contains("-r"))
+        .stdout(predicate::str::contains("--delete-remote"));
+}
+
+#[test]
+fn test_merge_ai_merge_flag() {
+    cw().args(["merge", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--ai-merge"));
+}
+
+#[test]
+fn test_sync_ai_merge_flag() {
+    cw().args(["sync", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--ai-merge"));
+}
+
+#[test]
+fn test_change_base_interactive_flag() {
+    cw().args(["change-base", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--interactive"))
+        .stdout(predicate::str::contains("-i"));
+}
+
+#[test]
+fn test_pr_worktree_disambiguation_flag() {
+    cw().args(["pr", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--worktree"))
+        .stdout(predicate::str::contains("-w"));
+}
+
+#[test]
+fn test_merge_worktree_disambiguation_flag() {
+    cw().args(["merge", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--worktree"))
+        .stdout(predicate::str::contains("-w"));
+}
+
+#[test]
+fn test_resume_worktree_disambiguation_flag() {
+    cw().args(["resume", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--worktree"))
+        .stdout(predicate::str::contains("-w"));
+}
+
+#[test]
+fn test_sync_worktree_disambiguation_flag() {
+    cw().args(["sync", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--worktree"))
+        .stdout(predicate::str::contains("-w"));
+}
+
+#[test]
+fn test_delete_worktree_disambiguation_flag() {
+    cw().args(["delete", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--worktree"))
+        .stdout(predicate::str::contains("-w"));
+}
+
+#[test]
+fn test_generate_completion_bash() {
+    cw().args(["--generate-completion", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("complete"));
+}
+
+#[test]
+fn test_generate_completion_zsh() {
+    cw().args(["--generate-completion", "zsh"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("compdef"));
+}
+
+#[test]
+fn test_generate_completion_fish() {
+    cw().args(["--generate-completion", "fish"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("complete"));
+}
+
+#[test]
+fn test_generate_completion_invalid() {
+    cw().args(["--generate-completion", "tcsh"])
+        .assert()
+        .failure();
 }

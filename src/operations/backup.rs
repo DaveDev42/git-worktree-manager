@@ -9,6 +9,7 @@ use crate::constants::{
 };
 use crate::error::{CwError, Result};
 use crate::git;
+use crate::messages;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct BackupMetadata {
@@ -232,10 +233,7 @@ pub fn restore_worktree(branch: &str, path: Option<&str>) -> Result<()> {
     let branch_backup_dir = backups_dir.join(branch);
 
     if !branch_backup_dir.exists() {
-        return Err(CwError::Git(format!(
-            "No backups found for branch '{}'",
-            branch
-        )));
+        return Err(CwError::Git(messages::backup_not_found("latest", branch)));
     }
 
     // Use latest backup
@@ -247,7 +245,7 @@ pub fn restore_worktree(branch: &str, path: Option<&str>) -> Result<()> {
 
     let backup_dir = backups
         .first()
-        .ok_or_else(|| CwError::Git(format!("No backups found for branch '{}'", branch)))?
+        .ok_or_else(|| CwError::Git(messages::backup_not_found("latest", branch)))?
         .path();
 
     let backup_id = backup_dir

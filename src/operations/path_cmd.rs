@@ -3,6 +3,7 @@
 /// Mirrors the _path command in cli.py — used by cw-cd shell function.
 use crate::error::{CwError, Result};
 use crate::git;
+use crate::messages;
 use crate::registry;
 
 /// Resolve branch to path (outputs to stdout for shell consumption).
@@ -39,7 +40,7 @@ pub fn worktree_path(
             &repo,
             &format!("refs/heads/{}", normalized),
         )?)
-        .ok_or_else(|| CwError::Git(format!("No worktree found for branch '{}'", branch)))?;
+        .ok_or_else(|| CwError::Git(messages::worktree_not_found(branch)))?;
 
     println!("{}", path.display());
     Ok(())
@@ -190,31 +191,14 @@ fn interactive_path_selection(global_mode: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Simple numbered selection (stderr for UI, stdout for path)
-    if !atty_stderr() {
-        return Err(CwError::Git(
-            "Interactive mode requires a terminal (TTY)".to_string(),
-        ));
+    // Try arrow-key TUI selector, fall back to numbered selection
+    match crate::tui::arrow_select(&entries, "Select worktree:", 0) {
+        Some(selected_path) => {
+            println!("{}", selected_path);
+            Ok(())
+        }
+        None => {
+            std::process::exit(1);
+        }
     }
-
-    eprintln!("Select worktree:");
-    for (i, (label, _)) in entries.iter().enumerate() {
-        eprintln!("  [{}] {}", i + 1, label);
-    }
-    eprint!("Choice [1-{}]: ", entries.len());
-
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
-    let choice: usize = input.trim().parse().unwrap_or(0);
-
-    if choice >= 1 && choice <= entries.len() {
-        println!("{}", entries[choice - 1].1);
-        Ok(())
-    } else {
-        std::process::exit(1);
-    }
-}
-
-fn atty_stderr() -> bool {
-    std::io::IsTerminal::is_terminal(&std::io::stderr())
 }

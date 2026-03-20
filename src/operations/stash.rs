@@ -7,6 +7,7 @@ use console::style;
 
 use crate::error::{CwError, Result};
 use crate::git;
+use crate::messages;
 
 /// Save changes in current worktree to stash.
 pub fn stash_save(message: Option<&str>) -> Result<()> {
@@ -119,20 +120,12 @@ pub fn stash_apply(target_branch: &str, stash_ref: &str) -> Result<()> {
             &repo,
             &format!("refs/heads/{}", target_branch),
         )?)
-        .ok_or_else(|| {
-            CwError::WorktreeNotFound(format!(
-                "No worktree found for branch '{}'. Use 'cw list' to see available worktrees.",
-                target_branch
-            ))
-        })?;
+        .ok_or_else(|| CwError::WorktreeNotFound(messages::worktree_not_found(target_branch)))?;
 
     // Verify stash exists
     let verify = git::git_command(&["stash", "list"], Some(&repo), false, true)?;
     if !verify.stdout.contains(stash_ref) {
-        return Err(CwError::Git(format!(
-            "Stash '{}' not found. Use 'cw stash list' to see available stashes.",
-            stash_ref
-        )));
+        return Err(CwError::Git(messages::stash_not_found(stash_ref)));
     }
 
     println!(

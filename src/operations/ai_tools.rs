@@ -120,8 +120,13 @@ pub fn launch_ai_tool(
 }
 
 /// Resume AI work in a worktree with context restoration.
-pub fn resume_worktree(worktree: Option<&str>, term: Option<&str>) -> Result<()> {
-    let (worktree_path, branch_name, worktree_repo) = resolve_worktree_target(worktree, None)?;
+pub fn resume_worktree(
+    worktree: Option<&str>,
+    term: Option<&str>,
+    lookup_mode: Option<&str>,
+) -> Result<()> {
+    let (worktree_path, branch_name, worktree_repo) =
+        resolve_worktree_target(worktree, lookup_mode)?;
 
     // Pre-resume hooks
     let base_key = format_config_key(CONFIG_KEY_BASE_BRANCH, &branch_name);

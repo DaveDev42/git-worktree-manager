@@ -59,7 +59,7 @@ fn test_stash_apply_nonexistent_branch() {
 fn test_stash_apply_invalid_stash_ref() {
     let repo = TestRepo::new();
     // Create a worktree first
-    repo.cw(&["new", "test-branch", "--no-ai"]);
+    repo.cw(&["new", "test-branch", "--no-term"]);
     let output = repo.cw(&["stash", "apply", "test-branch", "--stash", "stash@{99}"]);
     assert!(!output.status.success());
 }

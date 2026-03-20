@@ -1,4 +1,12 @@
 // Global mode (-g) support.
 //
-// Filters available commands to only those that support global mode.
-// TODO: Phase 2 — implement global mode command filtering
+// Commands that support global mode:
+// - list: show worktrees across all repos
+// - delete: delete worktree from any repo
+// - pr: create PR from any repo
+// - merge: merge worktree from any repo
+// - resume: resume work in any repo
+// - sync: sync worktrees across repos
+// - scan: register repositories
+// - prune: clean stale registry entries
+// - _path: resolve paths across repos

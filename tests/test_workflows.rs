@@ -9,7 +9,7 @@ fn test_full_workflow_new_list_delete() {
     let repo = TestRepo::new();
 
     // Create
-    assert!(repo.cw_ok(&["new", "e2e-test", "--no-ai"]));
+    assert!(repo.cw_ok(&["new", "e2e-test", "--no-term"]));
 
     // List shows it
     let list = repo.cw_stdout(&["list"]);
@@ -26,7 +26,7 @@ fn test_full_workflow_new_list_delete() {
 #[test]
 fn test_workflow_new_status() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "status-test", "--no-ai"]));
+    assert!(repo.cw_ok(&["new", "status-test", "--no-term"]));
 
     let status = repo.cw_stdout(&["status"]);
     assert!(
@@ -38,7 +38,7 @@ fn test_workflow_new_status() {
 #[test]
 fn test_workflow_new_tree() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "tree-test", "--no-ai"]));
+    assert!(repo.cw_ok(&["new", "tree-test", "--no-term"]));
 
     let tree = repo.cw_stdout(&["tree"]);
     assert!(tree.contains("tree-test"));
@@ -48,9 +48,9 @@ fn test_workflow_new_tree() {
 #[test]
 fn test_workflow_multiple_worktrees() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "feat-a", "--no-ai"]));
-    assert!(repo.cw_ok(&["new", "feat-b", "--no-ai"]));
-    assert!(repo.cw_ok(&["new", "feat-c", "--no-ai"]));
+    assert!(repo.cw_ok(&["new", "feat-a", "--no-term"]));
+    assert!(repo.cw_ok(&["new", "feat-b", "--no-term"]));
+    assert!(repo.cw_ok(&["new", "feat-c", "--no-term"]));
 
     let list = repo.cw_stdout(&["list"]);
     assert!(list.contains("feat-a"));
@@ -68,7 +68,7 @@ fn test_workflow_multiple_worktrees() {
 #[test]
 fn test_workflow_delete_keep_branch() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "keep-branch-test", "--no-ai"]));
+    assert!(repo.cw_ok(&["new", "keep-branch-test", "--no-term"]));
     assert!(repo.cw_ok(&["delete", "keep-branch-test", "--keep-branch"]));
 
     // Worktree removed but branch should still exist
@@ -79,7 +79,7 @@ fn test_workflow_delete_keep_branch() {
 #[test]
 fn test_workflow_doctor_after_operations() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "doc-test", "--no-ai"]));
+    assert!(repo.cw_ok(&["new", "doc-test", "--no-term"]));
     let doctor = repo.cw_stdout(&["doctor"]);
     assert!(doctor.contains("Health Check"));
     assert!(doctor.contains("Git version"));
@@ -119,7 +119,7 @@ fn test_workflow_export_import_roundtrip() {
 #[test]
 fn test_workflow_new_then_sync() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "sync-wf", "--no-ai"]));
+    assert!(repo.cw_ok(&["new", "sync-wf", "--no-term"]));
 
     let output = repo.cw(&["sync", "sync-wf"]);
     assert!(output.status.success());
@@ -128,7 +128,7 @@ fn test_workflow_new_then_sync() {
 #[test]
 fn test_workflow_clean_dry_run() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "clean-test", "--no-ai"]));
+    assert!(repo.cw_ok(&["new", "clean-test", "--no-term"]));
 
     let output = repo.cw(&["clean", "--merged", "--dry-run"]);
     assert!(output.status.success());
@@ -137,7 +137,7 @@ fn test_workflow_clean_dry_run() {
 #[test]
 fn test_workflow_path_list_branches() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "path-test", "--no-ai"]));
+    assert!(repo.cw_ok(&["new", "path-test", "--no-term"]));
 
     let output = repo.cw_stdout(&["_path", "--list-branches"]);
     assert!(output.contains("main") || output.contains("path-test"));
@@ -146,7 +146,7 @@ fn test_workflow_path_list_branches() {
 #[test]
 fn test_workflow_backup_create_list() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "backup-wf", "--no-ai"]));
+    assert!(repo.cw_ok(&["new", "backup-wf", "--no-term"]));
 
     let output = repo.cw(&["backup", "create", "backup-wf"]);
     assert!(output.status.success());

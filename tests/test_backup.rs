@@ -16,7 +16,7 @@ fn test_backup_list_runs() {
 fn test_backup_create_current() {
     let repo = TestRepo::new();
     // Create a worktree first
-    let output = repo.cw(&["new", "backup-test", "--no-ai"]);
+    let output = repo.cw(&["new", "backup-test", "--no-term"]);
     assert!(output.status.success());
 
     // Backup
@@ -33,7 +33,7 @@ fn test_backup_create_current() {
 #[test]
 fn test_backup_list_after_create() {
     let repo = TestRepo::new();
-    repo.cw(&["new", "list-test", "--no-ai"]);
+    repo.cw(&["new", "list-test", "--no-term"]);
     repo.cw(&["backup", "create", "list-test"]);
 
     let stdout = repo.cw_stdout(&["backup", "list"]);
@@ -48,7 +48,7 @@ fn test_backup_list_after_create() {
 #[test]
 fn test_backup_create_with_uncommitted_changes() {
     let repo = TestRepo::new();
-    repo.cw(&["new", "dirty-test", "--no-ai"]);
+    repo.cw(&["new", "dirty-test", "--no-term"]);
 
     // Find the worktree path and make it dirty
     let list = repo.cw_stdout(&["list"]);
@@ -77,8 +77,8 @@ fn test_backup_restore_nonexistent_branch() {
 #[test]
 fn test_backup_list_filter_by_branch() {
     let repo = TestRepo::new();
-    repo.cw(&["new", "filter-a", "--no-ai"]);
-    repo.cw(&["new", "filter-b", "--no-ai"]);
+    repo.cw(&["new", "filter-a", "--no-term"]);
+    repo.cw(&["new", "filter-b", "--no-term"]);
     repo.cw(&["backup", "create", "filter-a"]);
 
     let stdout = repo.cw_stdout(&["backup", "list", "filter-a"]);

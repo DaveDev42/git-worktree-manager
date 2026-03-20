@@ -17,6 +17,7 @@ use crate::registry;
 use crate::shared_files;
 
 use super::helpers::resolve_worktree_target;
+use crate::messages;
 
 /// Create a new worktree with a feature branch.
 pub fn create_worktree(
@@ -31,10 +32,8 @@ pub fn create_worktree(
     // Validate branch name
     if !git::is_valid_branch_name(branch_name, Some(&repo)) {
         let error_msg = git::get_branch_name_error(branch_name);
-        return Err(CwError::InvalidBranch(format!(
-            "Invalid branch name: {}\n\
-             Hint: Use alphanumeric characters, hyphens, and slashes.",
-            error_msg
+        return Err(CwError::InvalidBranch(messages::invalid_branch_name(
+            &error_msg,
         )));
     }
 
@@ -96,20 +95,13 @@ pub fn create_worktree(
     } else if let Some(b) = base_branch {
         b.to_string()
     } else {
-        git::get_current_branch(Some(&repo)).map_err(|_| {
-            CwError::InvalidBranch(
-                "Cannot determine base branch. Specify with --branch or checkout a branch first."
-                    .to_string(),
-            )
-        })?
+        git::get_current_branch(Some(&repo))
+            .map_err(|_| CwError::InvalidBranch(messages::cannot_determine_base_branch()))?
     };
 
     // Verify base branch
     if (!is_remote_only || base_branch.is_some()) && !git::branch_exists(&base, Some(&repo)) {
-        return Err(CwError::InvalidBranch(format!(
-            "Base branch '{}' not found",
-            base
-        )));
+        return Err(CwError::InvalidBranch(messages::branch_not_found(&base)));
     }
 
     // Determine worktree path
@@ -207,18 +199,23 @@ pub fn create_worktree(
         Some(&repo),
     );
 
-    // AI tool launch would happen here (Phase 3)
+    // Launch AI tool in the new worktree
     if !no_ai {
-        // TODO: Phase 3 — launch AI tool
+        let _ = super::ai_tools::launch_ai_tool(&worktree_path, _term, false, None);
     }
 
     Ok(worktree_path)
 }
 
 /// Delete a worktree by branch name, worktree directory name, or path.
-pub fn delete_worktree(target: Option<&str>, keep_branch: bool, delete_remote: bool) -> Result<()> {
+pub fn delete_worktree(
+    target: Option<&str>,
+    keep_branch: bool,
+    delete_remote: bool,
+    lookup_mode: Option<&str>,
+) -> Result<()> {
     let main_repo = git::get_main_repo_root(None)?;
-    let (worktree_path, branch_name) = resolve_delete_target(target, &main_repo)?;
+    let (worktree_path, branch_name) = resolve_delete_target(target, &main_repo, lookup_mode)?;
 
     // Safety: don't delete main repo
     let wt_resolved = worktree_path
@@ -228,9 +225,7 @@ pub fn delete_worktree(target: Option<&str>, keep_branch: bool, delete_remote: b
         .canonicalize()
         .unwrap_or_else(|_| main_repo.clone());
     if wt_resolved == main_resolved {
-        return Err(CwError::Git(
-            "Cannot delete main repository worktree".to_string(),
-        ));
+        return Err(CwError::Git(messages::cannot_delete_main_worktree()));
     }
 
     // If cwd is inside worktree, change to main repo
@@ -338,6 +333,7 @@ pub fn delete_worktree(target: Option<&str>, keep_branch: bool, delete_remote: b
 fn resolve_delete_target(
     target: Option<&str>,
     main_repo: &Path,
+    lookup_mode: Option<&str>,
 ) -> Result<(PathBuf, Option<String>)> {
     let target = target.map(|t| t.to_string()).unwrap_or_else(|| {
         std::env::current_dir()
@@ -355,25 +351,34 @@ fn resolve_delete_target(
         return Ok((resolved, branch));
     }
 
-    // Try branch lookup
-    if let Some(path) = git::find_worktree_by_intended_branch(main_repo, &target)? {
-        return Ok((path, Some(target)));
+    // Try branch lookup (skip if lookup_mode is "worktree")
+    if lookup_mode != Some("worktree") {
+        if let Some(path) = git::find_worktree_by_intended_branch(main_repo, &target)? {
+            return Ok((path, Some(target)));
+        }
     }
 
-    // Try worktree name lookup
-    if let Some(path) = git::find_worktree_by_name(main_repo, &target)? {
-        let branch = super::helpers::get_branch_for_worktree(main_repo, &path);
-        return Ok((path, branch));
+    // Try worktree name lookup (skip if lookup_mode is "branch")
+    if lookup_mode != Some("branch") {
+        if let Some(path) = git::find_worktree_by_name(main_repo, &target)? {
+            let branch = super::helpers::get_branch_for_worktree(main_repo, &path);
+            return Ok((path, branch));
+        }
     }
 
-    Err(CwError::WorktreeNotFound(format!(
-        "No worktree found for '{}'. Try: full path, branch name, or worktree name.",
-        target
+    Err(CwError::WorktreeNotFound(messages::worktree_not_found(
+        &target,
     )))
 }
 
 /// Sync worktree with base branch.
-pub fn sync_worktree(target: Option<&str>, all: bool, _fetch_only: bool) -> Result<()> {
+pub fn sync_worktree(
+    target: Option<&str>,
+    all: bool,
+    _fetch_only: bool,
+    ai_merge: bool,
+    lookup_mode: Option<&str>,
+) -> Result<()> {
     let repo = git::get_repo_root(None)?;
 
     // Fetch first
@@ -403,7 +408,7 @@ pub fn sync_worktree(target: Option<&str>, all: bool, _fetch_only: bool) -> Resu
             })
             .collect::<Vec<_>>()
     } else {
-        let (path, branch, _) = resolve_worktree_target(target, None)?;
+        let (path, branch, _) = resolve_worktree_target(target, lookup_mode)?;
         vec![(branch, path)]
     };
 
@@ -437,13 +442,51 @@ pub fn sync_worktree(target: Option<&str>, all: bool, _fetch_only: bool) -> Resu
                     println!("{} Rebase successful\n", style("*").green().bold());
                 }
                 _ => {
-                    // Abort rebase on failure
-                    let _ = git::git_command(&["rebase", "--abort"], Some(wt_path), false, false);
-                    println!(
-                        "{} Rebase failed for '{}'. Resolve conflicts manually.\n",
-                        style("!").yellow(),
-                        branch
-                    );
+                    if ai_merge {
+                        let conflicts = git::git_command(
+                            &["diff", "--name-only", "--diff-filter=U"],
+                            Some(wt_path),
+                            false,
+                            true,
+                        )
+                        .ok()
+                        .and_then(|r| {
+                            if r.returncode == 0 && !r.stdout.trim().is_empty() {
+                                Some(r.stdout.trim().to_string())
+                            } else {
+                                None
+                            }
+                        });
+
+                        let _ =
+                            git::git_command(&["rebase", "--abort"], Some(wt_path), false, false);
+
+                        let conflict_list = conflicts.as_deref().unwrap_or("(unknown)");
+                        let prompt = format!(
+                            "Resolve merge conflicts in this repository. The rebase of '{}' onto '{}' \
+                             failed with conflicts in: {}\n\
+                             Please examine the conflicted files and resolve them.",
+                            branch, rebase_target, conflict_list
+                        );
+
+                        println!(
+                            "\n{} Launching AI to resolve conflicts for '{}'...\n",
+                            style("*").cyan().bold(),
+                            branch
+                        );
+                        let _ =
+                            super::ai_tools::launch_ai_tool(wt_path, None, false, Some(&prompt));
+                    } else {
+                        // Abort rebase on failure
+                        let _ =
+                            git::git_command(&["rebase", "--abort"], Some(wt_path), false, false);
+                        println!(
+                            "{} Rebase failed for '{}'. Resolve conflicts manually.\n\
+                             Tip: Use --ai-merge flag to get AI assistance with conflicts\n",
+                            style("!").yellow(),
+                            branch
+                        );
+                    }
                 }
             }
         } else {

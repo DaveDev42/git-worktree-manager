@@ -15,6 +15,7 @@ use crate::hooks;
 use crate::registry;
 
 use super::helpers::{get_worktree_metadata, resolve_worktree_target};
+use crate::messages;
 
 /// Create a GitHub Pull Request for the worktree.
 pub fn create_pr_worktree(
@@ -23,16 +24,13 @@ pub fn create_pr_worktree(
     title: Option<&str>,
     body: Option<&str>,
     draft: bool,
+    lookup_mode: Option<&str>,
 ) -> Result<()> {
     if !git::has_command("gh") {
-        return Err(CwError::Git(
-            "GitHub CLI (gh) is required to create pull requests.\n\
-             Install it from: https://cli.github.com/"
-                .to_string(),
-        ));
+        return Err(CwError::Git(messages::gh_cli_not_found()));
     }
 
-    let (cwd, feature_branch, worktree_repo) = resolve_worktree_target(target, None)?;
+    let (cwd, feature_branch, worktree_repo) = resolve_worktree_target(target, lookup_mode)?;
     let (base_branch, base_path) = get_worktree_metadata(&feature_branch, &worktree_repo)?;
 
     println!("\n{}", style("Creating Pull Request:").cyan().bold());
@@ -104,18 +102,14 @@ pub fn create_pr_worktree(
 
             let _ = git::git_command(&["rebase", "--abort"], Some(&cwd), false, false);
 
-            let mut msg = format!(
-                "Rebase failed. Please resolve conflicts manually:\n  cd {}\n  git rebase {}",
-                cwd.display(),
-                rebase_target
-            );
-            if let Some(files) = conflicts {
-                msg.push_str("\n\nConflicted files:\n");
-                for f in files.lines() {
-                    msg.push_str(&format!("  - {}\n", f));
-                }
-            }
-            return Err(CwError::Rebase(msg));
+            let conflict_vec = conflicts
+                .as_ref()
+                .map(|c| c.lines().map(String::from).collect::<Vec<_>>());
+            return Err(CwError::Rebase(messages::rebase_failed(
+                &cwd.display().to_string(),
+                &rebase_target,
+                conflict_vec.as_deref(),
+            )));
         }
     }
 
@@ -207,10 +201,7 @@ pub fn create_pr_worktree(
         let _ = hooks::run_hooks("pr.post", &hook_ctx, Some(&cwd), Some(&base_path));
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(CwError::Git(format!(
-            "Failed to create pull request: {}",
-            stderr
-        )));
+        return Err(CwError::Git(messages::pr_creation_failed(&stderr)));
     }
 
     Ok(())
@@ -222,8 +213,10 @@ pub fn merge_worktree(
     push: bool,
     _interactive: bool,
     dry_run: bool,
+    ai_merge: bool,
+    lookup_mode: Option<&str>,
 ) -> Result<()> {
-    let (cwd, feature_branch, worktree_repo) = resolve_worktree_target(target, None)?;
+    let (cwd, feature_branch, worktree_repo) = resolve_worktree_target(target, lookup_mode)?;
     let (base_branch, base_path) = get_worktree_metadata(&feature_branch, &worktree_repo)?;
     let repo = &base_path;
 
@@ -304,11 +297,46 @@ pub fn merge_worktree(
     match git::git_command(&["rebase", &rebase_target], Some(&cwd), false, true) {
         Ok(r) if r.returncode == 0 => {}
         _ => {
+            if ai_merge {
+                // Try AI-assisted conflict resolution
+                let conflicts = git::git_command(
+                    &["diff", "--name-only", "--diff-filter=U"],
+                    Some(&cwd),
+                    false,
+                    true,
+                )
+                .ok()
+                .and_then(|r| {
+                    if r.returncode == 0 && !r.stdout.trim().is_empty() {
+                        Some(r.stdout.trim().to_string())
+                    } else {
+                        None
+                    }
+                });
+
+                let _ = git::git_command(&["rebase", "--abort"], Some(&cwd), false, false);
+
+                let conflict_list = conflicts.as_deref().unwrap_or("(unknown)");
+                let prompt = format!(
+                    "Resolve merge conflicts in this repository. The rebase of '{}' onto '{}' \
+                     failed with conflicts in: {}\n\
+                     Please examine the conflicted files and resolve them.",
+                    feature_branch, rebase_target, conflict_list
+                );
+
+                println!(
+                    "\n{} Launching AI to resolve conflicts...\n",
+                    style("*").cyan().bold()
+                );
+                let _ = super::ai_tools::launch_ai_tool(&cwd, None, false, Some(&prompt));
+                return Ok(());
+            }
+
             let _ = git::git_command(&["rebase", "--abort"], Some(&cwd), false, false);
-            return Err(CwError::Rebase(format!(
-                "Rebase failed. Resolve conflicts manually:\n  cd {}\n  git rebase {}",
-                cwd.display(),
-                rebase_target
+            return Err(CwError::Rebase(messages::rebase_failed(
+                &cwd.display().to_string(),
+                &rebase_target,
+                None,
             )));
         }
     }
@@ -317,9 +345,8 @@ pub fn merge_worktree(
 
     // Verify base path
     if !base_path.exists() {
-        return Err(CwError::WorktreeNotFound(format!(
-            "Base repository not found at: {}",
-            base_path.display()
+        return Err(CwError::WorktreeNotFound(messages::base_repo_not_found(
+            &base_path.display().to_string(),
         )));
     }
 
@@ -356,10 +383,9 @@ pub fn merge_worktree(
     ) {
         Ok(r) if r.returncode == 0 => {}
         _ => {
-            return Err(CwError::Merge(format!(
-                "Fast-forward merge failed. Manual intervention required:\n  cd {}\n  git merge {}",
-                base_path.display(),
-                feature_branch
+            return Err(CwError::Merge(messages::merge_failed(
+                &base_path.display().to_string(),
+                &feature_branch,
             )));
         }
     }

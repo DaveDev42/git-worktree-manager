@@ -7,6 +7,7 @@ use console::style;
 
 use crate::error::{CwError, Result};
 use crate::git;
+use crate::messages;
 
 /// Open interactive shell or execute command in a worktree.
 pub fn shell_worktree(worktree: Option<&str>, command: Option<Vec<String>>) -> Result<()> {
@@ -19,9 +20,7 @@ pub fn shell_worktree(worktree: Option<&str>, command: Option<Vec<String>>) -> R
                 &repo,
                 &format!("refs/heads/{}", git::normalize_branch_name(wt)),
             )?)
-            .ok_or_else(|| {
-                CwError::WorktreeNotFound(format!("No worktree found for branch '{}'", wt))
-            })?;
+            .ok_or_else(|| CwError::WorktreeNotFound(messages::worktree_not_found(wt)))?;
         target_path = path;
     } else {
         target_path = std::env::current_dir()?;
@@ -30,9 +29,8 @@ pub fn shell_worktree(worktree: Option<&str>, command: Option<Vec<String>>) -> R
     }
 
     if !target_path.exists() {
-        return Err(CwError::WorktreeNotFound(format!(
-            "Worktree directory does not exist: {}",
-            target_path.display()
+        return Err(CwError::WorktreeNotFound(messages::worktree_dir_not_found(
+            &target_path.display().to_string(),
         )));
     }
 
