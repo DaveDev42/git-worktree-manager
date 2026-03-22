@@ -1,6 +1,5 @@
 //! Standardized error and informational messages for git-worktree-manager.
 //!
-//! Mirrors src/git_worktree_manager/messages.py.
 
 pub fn worktree_not_found(branch: &str) -> String {
     format!(

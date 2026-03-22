@@ -1,6 +1,5 @@
 //! Global worktree management operations.
 //!
-//! Mirrors src/git_worktree_manager/operations/global_ops.py (237 lines).
 //! Business logic for cross-repository worktree commands (`gw -g`).
 
 use console::style;

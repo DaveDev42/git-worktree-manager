@@ -1,6 +1,5 @@
 //! Arrow-key TUI selector for interactive worktree selection.
 //!
-//! Mirrors src/git_worktree_manager/tui.py.
 
 use std::io::{IsTerminal, Write};
 

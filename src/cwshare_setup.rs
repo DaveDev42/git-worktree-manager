@@ -1,6 +1,5 @@
 /// Setup prompt for .cwshare file creation.
 ///
-/// Mirrors src/git_worktree_manager/cwshare_setup.py.
 use std::path::Path;
 
 use console::style;

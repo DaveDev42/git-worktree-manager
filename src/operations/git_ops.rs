@@ -1,6 +1,5 @@
 /// Git operations for pull requests and merging.
 ///
-/// Mirrors src/git_worktree_manager/operations/git_ops.py (412 lines).
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;

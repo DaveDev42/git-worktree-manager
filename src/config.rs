@@ -1,6 +1,5 @@
 /// Configuration management for git-worktree-manager.
 ///
-/// Mirrors src/git_worktree_manager/config.py (596 lines).
 /// Supports multiple AI coding assistants with customizable commands.
 /// Configuration stored in ~/.config/git-worktree-manager/config.json.
 use std::collections::HashMap;

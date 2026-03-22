@@ -1,6 +1,5 @@
 /// Core worktree lifecycle operations.
 ///
-/// Mirrors src/git_worktree_manager/operations/worktree_ops.py (1433 lines).
 use std::path::{Path, PathBuf};
 
 use console::style;

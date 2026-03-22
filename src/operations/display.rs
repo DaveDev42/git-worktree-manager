@@ -1,6 +1,5 @@
 /// Display and information operations for git-worktree-manager.
 ///
-/// Mirrors src/git_worktree_manager/operations/display.py (537 lines).
 use std::path::Path;
 
 use console::style;

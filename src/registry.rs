@@ -1,6 +1,5 @@
 /// Global repository registry for cross-repo worktree management.
 ///
-/// Mirrors src/git_worktree_manager/registry.py (267 lines).
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 

@@ -1,6 +1,5 @@
 /// Helper functions shared across operations modules.
 ///
-/// Mirrors src/git_worktree_manager/operations/helpers.py (444 lines).
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 

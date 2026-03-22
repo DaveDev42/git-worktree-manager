@@ -1,6 +1,5 @@
 /// Batch cleanup of worktrees.
 ///
-/// Mirrors clean_worktrees from worktree_ops.py.
 use console::style;
 
 use crate::constants::{format_config_key, path_age_days, CONFIG_KEY_BASE_BRANCH};

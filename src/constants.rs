@@ -1,6 +1,5 @@
 /// Constants and default values for git-worktree-manager.
 ///
-/// Mirrors src/git_worktree_manager/constants.py.
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;

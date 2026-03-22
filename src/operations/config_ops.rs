@@ -1,6 +1,5 @@
 /// Configuration-related operations.
 ///
-/// Mirrors src/git_worktree_manager/operations/config_ops.py.
 use std::path::PathBuf;
 
 use console::style;

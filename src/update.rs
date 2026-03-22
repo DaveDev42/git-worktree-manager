@@ -1,6 +1,5 @@
 /// Auto-update check via GitHub Releases.
 ///
-/// Mirrors src/git_worktree_manager/update.py — but uses GitHub API instead of PyPI.
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};

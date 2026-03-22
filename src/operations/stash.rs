@@ -1,6 +1,5 @@
 /// Stash operations for git-worktree-manager.
 ///
-/// Mirrors src/git_worktree_manager/operations/stash_ops.py.
 use std::collections::HashMap;
 
 use console::style;
