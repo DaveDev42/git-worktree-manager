@@ -166,9 +166,7 @@ pub fn clean_worktrees(
 
     println!(
         "\n{}\n",
-        style(messages::cleanup_complete(deleted))
-        .green()
-        .bold()
+        style(messages::cleanup_complete(deleted)).green().bold()
     );
 
     // Prune stale metadata

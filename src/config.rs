@@ -8,7 +8,9 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::constants::{home_dir_or_fallback, launch_method_aliases, LaunchMethod, MAX_SESSION_NAME_LENGTH};
+use crate::constants::{
+    home_dir_or_fallback, launch_method_aliases, LaunchMethod, MAX_SESSION_NAME_LENGTH,
+};
 use crate::error::{CwError, Result};
 
 /// Typed configuration structure matching the JSON schema.

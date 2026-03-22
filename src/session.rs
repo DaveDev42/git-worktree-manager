@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::constants::{home_dir_or_fallback, sanitize_branch_name, CLAUDE_SESSION_PREFIX_LENGTH, SECS_PER_DAY};
+use crate::constants::{
+    home_dir_or_fallback, sanitize_branch_name, CLAUDE_SESSION_PREFIX_LENGTH, SECS_PER_DAY,
+};
 use crate::error::Result;
 use crate::git::normalize_branch_name;
 
@@ -66,9 +68,7 @@ pub fn claude_native_session_exists(worktree_path: &Path) -> bool {
         .map(|c| if c.is_alphanumeric() { c } else { '-' })
         .collect();
 
-    let claude_projects_dir = home_dir_or_fallback()
-        .join(".claude")
-        .join("projects");
+    let claude_projects_dir = home_dir_or_fallback().join(".claude").join("projects");
 
     if !claude_projects_dir.exists() {
         return false;

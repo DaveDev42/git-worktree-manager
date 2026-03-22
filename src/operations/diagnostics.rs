@@ -64,11 +64,8 @@ fn check_git_version(issues: &mut u32) {
                 .nth(2)
                 .unwrap_or("unknown");
 
-            let is_ok = version_meets_minimum(
-                version_str,
-                MIN_GIT_VERSION_MAJOR,
-                MIN_GIT_VERSION_MINOR,
-            );
+            let is_ok =
+                version_meets_minimum(version_str, MIN_GIT_VERSION_MAJOR, MIN_GIT_VERSION_MINOR);
 
             if is_ok {
                 println!(

@@ -83,7 +83,11 @@ pub fn change_base_branch(
 
     println!(
         "{}",
-        style(messages::rebase_in_progress(&feature_branch, &rebase_target)).yellow()
+        style(messages::rebase_in_progress(
+            &feature_branch,
+            &rebase_target
+        ))
+        .yellow()
     );
 
     // Find worktree path for rebase

@@ -59,7 +59,11 @@ pub fn create_pr_worktree(
     // Rebase
     println!(
         "{}",
-        style(messages::rebase_in_progress(&feature_branch, &rebase_target)).yellow()
+        style(messages::rebase_in_progress(
+            &feature_branch,
+            &rebase_target
+        ))
+        .yellow()
     );
 
     match git::git_command(&["rebase", &rebase_target], Some(&cwd), false, true) {
@@ -538,7 +542,8 @@ fn generate_pr_description_with_ai(
     };
 
     // Poll with timeout
-    let deadline = std::time::Instant::now() + Duration::from_secs(crate::constants::AI_TOOL_TIMEOUT_SECS);
+    let deadline =
+        std::time::Instant::now() + Duration::from_secs(crate::constants::AI_TOOL_TIMEOUT_SECS);
     let status = loop {
         match child.try_wait() {
             Ok(Some(s)) => break s,

@@ -48,7 +48,7 @@ jobs:
       - name: Install MSRV toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.80"
+          toolchain: "1.85"
 
       - name: Cache cargo
         uses: actions/cache@v5

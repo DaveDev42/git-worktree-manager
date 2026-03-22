@@ -65,9 +65,7 @@ fn path_age_str(path: &Path) -> String {
     if !path.exists() {
         return String::new();
     }
-    path_age_days(path)
-        .map(format_age)
-        .unwrap_or_default()
+    path_age_days(path).map(format_age).unwrap_or_default()
 }
 
 /// Collected worktree data row for display.

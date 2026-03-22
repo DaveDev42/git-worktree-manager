@@ -5,7 +5,9 @@
 use console::style;
 
 use crate::console as cwconsole;
-use crate::constants::{format_config_key, home_dir_or_fallback, path_age_days, CONFIG_KEY_INTENDED_BRANCH};
+use crate::constants::{
+    format_config_key, home_dir_or_fallback, path_age_days, CONFIG_KEY_INTENDED_BRANCH,
+};
 use crate::error::Result;
 use crate::git;
 use crate::registry;
@@ -99,9 +101,7 @@ pub fn global_list_worktrees() -> Result<()> {
                 git::get_config(&intended_key, Some(repo_path)).unwrap_or(branch_name.clone());
 
             // Compute age
-            let age = path_age_days(path)
-                .map(format_age)
-                .unwrap_or_default();
+            let age = path_age_days(path).map(format_age).unwrap_or_default();
 
             // Relative path
             let rel_path = pathdiff::diff_paths(path, repo_path)
