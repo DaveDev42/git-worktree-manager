@@ -1,11 +1,9 @@
 /// Batch cleanup of worktrees.
 ///
 /// Mirrors clean_worktrees from worktree_ops.py.
-use std::time::SystemTime;
-
 use console::style;
 
-use crate::constants::{format_config_key, CONFIG_KEY_BASE_BRANCH};
+use crate::constants::{format_config_key, path_age_days, CONFIG_KEY_BASE_BRANCH};
 use crate::error::Result;
 use crate::git;
 
@@ -60,18 +58,11 @@ pub fn clean_worktrees(
 
         // Check age
         if let Some(days) = older_than {
-            if path.exists() {
-                if let Ok(meta) = path.metadata() {
-                    if let Ok(modified) = meta.modified() {
-                        if let Ok(age) = SystemTime::now().duration_since(modified) {
-                            let age_days = age.as_secs() / 86400;
-                            if age_days > days {
-                                should_delete = true;
-                                reasons
-                                    .push(format!("older than {} days ({} days)", days, age_days));
-                            }
-                        }
-                    }
+            if let Some(age) = path_age_days(&path) {
+                let age_days = age as u64;
+                if age_days > days {
+                    should_delete = true;
+                    reasons.push(format!("older than {} days ({} days)", days, age_days));
                 }
             }
         }

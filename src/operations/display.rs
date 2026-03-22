@@ -2,14 +2,13 @@
 ///
 /// Mirrors src/git_worktree_manager/operations/display.py (537 lines).
 use std::path::Path;
-use std::time::SystemTime;
 
 use console::style;
 
 use crate::console as cwconsole;
 use crate::constants::{
-    format_config_key, sanitize_branch_name, CONFIG_KEY_BASE_BRANCH, CONFIG_KEY_BASE_PATH,
-    CONFIG_KEY_INTENDED_BRANCH,
+    format_config_key, path_age_days, sanitize_branch_name, CONFIG_KEY_BASE_BRANCH,
+    CONFIG_KEY_BASE_PATH, CONFIG_KEY_INTENDED_BRANCH,
 };
 use crate::error::Result;
 use crate::git;
@@ -67,15 +66,8 @@ fn path_age_str(path: &Path) -> String {
     if !path.exists() {
         return String::new();
     }
-    path.metadata()
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|mtime| {
-            SystemTime::now()
-                .duration_since(mtime)
-                .ok()
-                .map(|d| format_age(d.as_secs_f64() / 86400.0))
-        })
+    path_age_days(path)
+        .map(format_age)
         .unwrap_or_default()
 }
 
@@ -422,17 +414,7 @@ pub fn show_stats() -> Result<()> {
 
     for (branch_name, path) in &feature_worktrees {
         let status = get_worktree_status(path, &repo);
-        let age_days = path
-            .metadata()
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|mtime| {
-                SystemTime::now()
-                    .duration_since(mtime)
-                    .ok()
-                    .map(|d| d.as_secs_f64() / 86400.0)
-            })
-            .unwrap_or(0.0);
+        let age_days = path_age_days(path).unwrap_or(0.0);
 
         let commit_count = git::git_command(
             &["rev-list", "--count", branch_name],

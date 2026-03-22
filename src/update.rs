@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::constants::home_dir_or_fallback;
+
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Cache for update check results.
@@ -16,7 +18,7 @@ struct UpdateCache {
 
 fn get_cache_path() -> PathBuf {
     dirs::cache_dir()
-        .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
+        .unwrap_or_else(home_dir_or_fallback)
         .join("git-worktree-manager")
         .join("update_check.json")
 }

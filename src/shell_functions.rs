@@ -431,4 +431,71 @@ mod tests {
         assert!(generate("unknown").is_none());
         assert!(generate("").is_none());
     }
+
+    /// Verify bash/zsh script has valid syntax using `bash -n`.
+    #[test]
+    fn test_bash_script_syntax() {
+        let script = generate("bash").unwrap();
+
+        // bash -n: check syntax without executing
+        let output = std::process::Command::new("bash")
+            .arg("-n")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write;
+                child.stdin.take().unwrap().write_all(script.as_bytes())?;
+                child.wait_with_output()
+            });
+
+        match output {
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                assert!(
+                    out.status.success(),
+                    "bash -n failed for generated bash/zsh script:\n{}",
+                    stderr
+                );
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                eprintln!("bash not found, skipping syntax check");
+            }
+            Err(e) => panic!("failed to run bash -n: {}", e),
+        }
+    }
+
+    /// Verify fish script has valid syntax using `fish --no-execute`.
+    #[test]
+    fn test_fish_script_syntax() {
+        let script = generate("fish").unwrap();
+
+        let output = std::process::Command::new("fish")
+            .arg("--no-execute")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write;
+                child.stdin.take().unwrap().write_all(script.as_bytes())?;
+                child.wait_with_output()
+            });
+
+        match output {
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                assert!(
+                    out.status.success(),
+                    "fish --no-execute failed for generated fish script:\n{}",
+                    stderr
+                );
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                eprintln!("fish not found, skipping syntax check");
+            }
+            Err(e) => panic!("failed to run fish --no-execute: {}", e),
+        }
+    }
 }

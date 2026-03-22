@@ -3,12 +3,10 @@
 //! Mirrors src/git_worktree_manager/operations/global_ops.py (237 lines).
 //! Business logic for cross-repository worktree commands (`gw -g`).
 
-use std::time::SystemTime;
-
 use console::style;
 
 use crate::console as cwconsole;
-use crate::constants::{format_config_key, CONFIG_KEY_INTENDED_BRANCH};
+use crate::constants::{format_config_key, home_dir_or_fallback, path_age_days, CONFIG_KEY_INTENDED_BRANCH};
 use crate::error::Result;
 use crate::git;
 use crate::registry;
@@ -102,16 +100,8 @@ pub fn global_list_worktrees() -> Result<()> {
                 git::get_config(&intended_key, Some(repo_path)).unwrap_or(branch_name.clone());
 
             // Compute age
-            let age = path
-                .metadata()
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|mtime| {
-                    SystemTime::now()
-                        .duration_since(mtime)
-                        .ok()
-                        .map(|d| format_age(d.as_secs_f64() / 86400.0))
-                })
+            let age = path_age_days(path)
+                .map(format_age)
                 .unwrap_or_default();
 
             // Relative path
@@ -278,7 +268,7 @@ fn global_print_compact(rows: &[GlobalWorktreeRow]) {
 pub fn global_scan(base_dir: Option<&std::path::Path>) -> Result<()> {
     let scan_dir = base_dir
         .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")));
+        .unwrap_or_else(home_dir_or_fallback);
 
     println!(
         "\n{}\n  Directory: {}\n",

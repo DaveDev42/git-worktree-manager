@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::constants::home_dir_or_fallback;
 use crate::error::Result;
 use crate::git;
 
@@ -72,8 +73,7 @@ impl Default for Registry {
 
 /// Get the path to the global registry file.
 pub fn get_registry_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+    home_dir_or_fallback()
         .join(".config")
         .join("git-worktree-manager")
         .join("registry.json")
@@ -208,7 +208,7 @@ fn has_worktrees(repo_path: &Path) -> bool {
 pub fn scan_for_repos(base_dir: Option<&Path>, max_depth: usize) -> Vec<PathBuf> {
     let base = base_dir
         .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")));
+        .unwrap_or_else(home_dir_or_fallback);
 
     let base = crate::git::canonicalize_or(&base);
 

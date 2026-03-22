@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::constants::{launch_method_aliases, LaunchMethod, MAX_SESSION_NAME_LENGTH};
+use crate::constants::{home_dir_or_fallback, launch_method_aliases, LaunchMethod, MAX_SESSION_NAME_LENGTH};
 use crate::error::{CwError, Result};
 
 /// Typed configuration structure matching the JSON schema.
@@ -218,7 +218,7 @@ pub fn claude_preset_names() -> Vec<&'static str> {
 
 /// Get the path to the configuration file.
 pub fn get_config_path() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let home = home_dir_or_fallback();
     home.join(".config")
         .join("git-worktree-manager")
         .join("config.json")
@@ -244,7 +244,7 @@ fn deep_merge(base: Value, over: Value) -> Value {
 
 /// Get the path to the legacy Python configuration file.
 fn get_legacy_config_path() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let home = home_dir_or_fallback();
     home.join(".config")
         .join("claude-worktree")
         .join("config.json")
@@ -584,6 +584,74 @@ pub fn list_presets() -> String {
     }
 
     lines.join("\n")
+}
+
+// ---------------------------------------------------------------------------
+// Shell completion prompt
+// ---------------------------------------------------------------------------
+
+/// Check if shell integration (gw-cd) is already installed in the user's profile.
+fn is_shell_integration_installed() -> bool {
+    let home = home_dir_or_fallback();
+    let shell_env = std::env::var("SHELL").unwrap_or_default();
+
+    let profile_path = if shell_env.contains("zsh") {
+        home.join(".zshrc")
+    } else if shell_env.contains("bash") {
+        home.join(".bashrc")
+    } else if shell_env.contains("fish") {
+        home.join(".config").join("fish").join("config.fish")
+    } else {
+        return false;
+    };
+
+    if let Ok(content) = std::fs::read_to_string(&profile_path) {
+        content.contains("gw _shell-function") || content.contains("gw-cd")
+    } else {
+        false
+    }
+}
+
+/// Prompt user to set up shell integration on first run.
+///
+/// Shows a one-time hint if:
+/// - Shell integration is not already installed
+/// - User has not been prompted before
+///
+/// Updates `shell_completion.prompted` in config after showing.
+pub fn prompt_shell_completion_setup() {
+    let config = match load_config() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    if config.shell_completion.prompted || config.shell_completion.installed {
+        return;
+    }
+
+    if is_shell_integration_installed() {
+        // Already installed — mark both flags and skip
+        let mut config = config;
+        config.shell_completion.prompted = true;
+        config.shell_completion.installed = true;
+        let _ = save_config(&config);
+        return;
+    }
+
+    // Show one-time hint
+    eprintln!(
+        "\n{} Shell integration (gw-cd + tab completion) is not set up.",
+        console::style("Tip:").cyan().bold()
+    );
+    eprintln!(
+        "     Run {} to enable directory navigation and completions.\n",
+        console::style("gw shell-setup").cyan()
+    );
+
+    // Mark as prompted
+    let mut config = config;
+    config.shell_completion.prompted = true;
+    let _ = save_config(&config);
 }
 
 // ---------------------------------------------------------------------------

@@ -25,6 +25,9 @@ fn main() {
     // Auto-update check (non-blocking, once per day)
     update::check_for_update_if_needed();
 
+    // One-time prompt for shell integration setup
+    config::prompt_shell_completion_setup();
+
     // Set global mode flag
     helpers::set_global_mode(cli.global);
 
@@ -427,14 +430,15 @@ fn shell_setup() {
     let shell_env = std::env::var("SHELL").unwrap_or_default();
     let is_powershell = cfg!(target_os = "windows") || std::env::var("PSModulePath").is_ok();
 
+    let home = git_worktree_manager::constants::home_dir_or_fallback();
     let (shell_name, profile_path) = if shell_env.contains("zsh") {
-        ("zsh", dirs::home_dir().map(|h| h.join(".zshrc")))
+        ("zsh", Some(home.join(".zshrc")))
     } else if shell_env.contains("bash") {
-        ("bash", dirs::home_dir().map(|h| h.join(".bashrc")))
+        ("bash", Some(home.join(".bashrc")))
     } else if shell_env.contains("fish") {
         (
             "fish",
-            dirs::home_dir().map(|h| h.join(".config").join("fish").join("config.fish")),
+            Some(home.join(".config").join("fish").join("config.fish")),
         )
     } else if is_powershell {
         ("powershell", None::<std::path::PathBuf>)
@@ -553,6 +557,14 @@ fn shell_setup() {
             Ok(mut f) => {
                 use std::io::Write;
                 let _ = f.write_all(append.as_bytes());
+
+                // Mark shell completion as installed in config
+                if let Ok(mut cfg) = config::load_config() {
+                    cfg.shell_completion.installed = true;
+                    cfg.shell_completion.prompted = true;
+                    let _ = config::save_config(&cfg);
+                }
+
                 println!("\n* Successfully added to {}", path.display());
                 println!("\nNext steps:");
                 println!("  1. Restart your shell or run: source {}", path.display());

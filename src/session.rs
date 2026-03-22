@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::constants::{sanitize_branch_name, CLAUDE_SESSION_PREFIX_LENGTH};
+use crate::constants::{home_dir_or_fallback, sanitize_branch_name, CLAUDE_SESSION_PREFIX_LENGTH, SECS_PER_DAY};
 use crate::error::Result;
 use crate::git::normalize_branch_name;
 
@@ -19,7 +19,7 @@ pub struct SessionMetadata {
 /// Get the base sessions directory.
 /// Falls back to legacy Python path if the new path doesn't exist.
 pub fn get_sessions_dir() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let home = home_dir_or_fallback();
     let new_dir = home
         .join(".config")
         .join("git-worktree-manager")
@@ -66,8 +66,7 @@ pub fn claude_native_session_exists(worktree_path: &Path) -> bool {
         .map(|c| if c.is_alphanumeric() { c } else { '-' })
         .collect();
 
-    let claude_projects_dir = dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+    let claude_projects_dir = home_dir_or_fallback()
         .join(".claude")
         .join("projects");
 
@@ -221,8 +220,8 @@ fn chrono_now_iso() -> String {
     // Rough ISO format — sufficient for metadata
     let secs = now.as_secs();
     // Convert to rough UTC datetime
-    let days = secs / 86400;
-    let time_secs = secs % 86400;
+    let days = secs / SECS_PER_DAY;
+    let time_secs = secs % SECS_PER_DAY;
     let hours = time_secs / 3600;
     let minutes = (time_secs % 3600) / 60;
     let seconds = time_secs % 60;

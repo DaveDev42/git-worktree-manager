@@ -130,6 +130,27 @@ pub fn launch_method_aliases() -> HashMap<&'static str, &'static str> {
     ])
 }
 
+/// Seconds in one day (24 * 60 * 60).
+pub const SECS_PER_DAY: u64 = 86400;
+
+/// Seconds in one day as f64 (for floating-point age calculations).
+pub const SECS_PER_DAY_F64: f64 = 86400.0;
+
+/// Minimum required Git version for worktree features.
+pub const MIN_GIT_VERSION: &str = "2.31.0";
+
+/// Minimum Git major version.
+pub const MIN_GIT_VERSION_MAJOR: u32 = 2;
+
+/// Minimum Git minor version (when major == MIN_GIT_VERSION_MAJOR).
+pub const MIN_GIT_VERSION_MINOR: u32 = 31;
+
+/// Timeout in seconds for AI tool execution (e.g., PR description generation).
+pub const AI_TOOL_TIMEOUT_SECS: u64 = 60;
+
+/// Poll interval in milliseconds when waiting for AI tool completion.
+pub const AI_TOOL_POLL_MS: u64 = 100;
+
 /// Maximum session name length for tmux/zellij compatibility.
 /// Zellij uses Unix sockets which have a ~108 byte path limit.
 pub const MAX_SESSION_NAME_LENGTH: usize = 50;
@@ -145,6 +166,29 @@ pub const CONFIG_KEY_INTENDED_BRANCH: &str = "worktree.{}.intendedBranch";
 /// Format a git config key by replacing `{}` with the branch name.
 pub fn format_config_key(template: &str, branch: &str) -> String {
     template.replace("{}", branch)
+}
+
+/// Return the user's home directory, falling back to `"."` if unavailable.
+pub fn home_dir_or_fallback() -> PathBuf {
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// Compute the age of a file in fractional days, or `None` on error.
+pub fn path_age_days(path: &Path) -> Option<f64> {
+    let mtime = path.metadata().and_then(|m| m.modified()).ok()?;
+    std::time::SystemTime::now()
+        .duration_since(mtime)
+        .ok()
+        .map(|d| d.as_secs_f64() / SECS_PER_DAY_F64)
+}
+
+/// Check if a semver version string meets a minimum (major, minor).
+pub fn version_meets_minimum(version_str: &str, min_major: u32, min_minor: u32) -> bool {
+    let parts: Vec<u32> = version_str
+        .split('.')
+        .filter_map(|p| p.parse().ok())
+        .collect();
+    parts.len() >= 2 && (parts[0] > min_major || (parts[0] == min_major && parts[1] >= min_minor))
 }
 
 /// Convert branch name to safe directory name.
@@ -243,5 +287,35 @@ mod tests {
             format_config_key(CONFIG_KEY_BASE_BRANCH, "fix-auth"),
             "branch.fix-auth.worktreeBase"
         );
+    }
+
+    #[test]
+    fn test_home_dir_or_fallback() {
+        let home = home_dir_or_fallback();
+        // Should return a non-empty path (either real home or ".")
+        assert!(!home.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_path_age_days() {
+        // Non-existent path returns None
+        assert!(path_age_days(std::path::Path::new("/nonexistent/path")).is_none());
+
+        // Existing path returns Some with non-negative value
+        let tmp = std::env::temp_dir();
+        if let Some(age) = path_age_days(&tmp) {
+            assert!(age >= 0.0);
+        }
+    }
+
+    #[test]
+    fn test_version_meets_minimum() {
+        assert!(version_meets_minimum("2.31.0", 2, 31));
+        assert!(version_meets_minimum("2.40.0", 2, 31));
+        assert!(version_meets_minimum("3.0.0", 2, 31));
+        assert!(!version_meets_minimum("2.30.0", 2, 31));
+        assert!(!version_meets_minimum("1.99.0", 2, 31));
+        assert!(!version_meets_minimum("", 2, 31));
+        assert!(!version_meets_minimum("2", 2, 31));
     }
 }

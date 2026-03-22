@@ -543,7 +543,7 @@ fn generate_pr_description_with_ai(
     };
 
     // Poll with timeout
-    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    let deadline = std::time::Instant::now() + Duration::from_secs(crate::constants::AI_TOOL_TIMEOUT_SECS);
     let status = loop {
         match child.try_wait() {
             Ok(Some(s)) => break s,
@@ -554,7 +554,7 @@ fn generate_pr_description_with_ai(
                     println!("{} AI tool timed out\n", style("!").yellow());
                     return None;
                 }
-                std::thread::sleep(Duration::from_millis(100));
+                std::thread::sleep(Duration::from_millis(crate::constants::AI_TOOL_POLL_MS));
             }
             Err(_) => return None,
         }
