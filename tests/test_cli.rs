@@ -72,10 +72,17 @@ fn test_shell_function_fish() {
 }
 
 #[test]
-fn test_shell_function_invalid() {
+fn test_shell_function_powershell() {
     cw().args(["_shell-function", "powershell"])
         .assert()
-        .failure();
+        .success()
+        .stdout(predicate::str::contains("function gw-cd"))
+        .stdout(predicate::str::contains("Register-ArgumentCompleter"));
+}
+
+#[test]
+fn test_shell_function_invalid() {
+    cw().args(["_shell-function", "tcsh"]).assert().failure();
 }
 
 #[test]

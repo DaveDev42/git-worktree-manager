@@ -343,14 +343,6 @@ pub fn show_tree() -> Result<()> {
         return Ok(());
     }
 
-    let status_icons = |s: &str| match s {
-        "active" => "●",
-        "clean" => "○",
-        "modified" => "◉",
-        "stale" => "x",
-        _ => "○",
-    };
-
     let mut sorted = feature_worktrees;
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -363,7 +355,7 @@ pub fn show_tree() -> Result<()> {
             .to_string_lossy()
             .starts_with(&path.to_string_lossy().to_string());
 
-        let icon = status_icons(&status);
+        let icon = cwconsole::status_icon(&status);
         let st = cwconsole::status_style(&status);
 
         let branch_display = if is_current {
@@ -525,20 +517,10 @@ pub fn show_stats() -> Result<()> {
     // Top by age
     println!("{}", style("Oldest Worktrees:").bold());
     let mut by_age = data.iter().collect::<Vec<_>>();
-    by_age.sort_by(|a, b| {
-        b.age_days
-            .partial_cmp(&a.age_days)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    by_age.sort_by(|a, b| b.age_days.total_cmp(&a.age_days));
     for d in by_age.iter().take(5) {
         if d.age_days > 0.0 {
-            let icon = match d.status.as_str() {
-                "active" => "●",
-                "clean" => "○",
-                "modified" => "◉",
-                "stale" => "x",
-                _ => "○",
-            };
+            let icon = cwconsole::status_icon(&d.status);
             let st = cwconsole::status_style(&d.status);
             println!(
                 "  {} {:<30} {}",
@@ -556,13 +538,7 @@ pub fn show_stats() -> Result<()> {
     by_commits.sort_by(|a, b| b.commit_count.cmp(&a.commit_count));
     for d in by_commits.iter().take(5) {
         if d.commit_count > 0 {
-            let icon = match d.status.as_str() {
-                "active" => "●",
-                "clean" => "○",
-                "modified" => "◉",
-                "stale" => "x",
-                _ => "○",
-            };
+            let icon = cwconsole::status_icon(&d.status);
             let st = cwconsole::status_style(&d.status);
             println!(
                 "  {} {:<30} {} commits",

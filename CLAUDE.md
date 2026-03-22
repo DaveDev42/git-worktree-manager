@@ -50,7 +50,7 @@ git-worktree-manager/
 ```bash
 cargo build                        # Build
 cargo run -- --help                # Run
-cargo test                         # Test (66 tests)
+cargo test                         # Test (460 tests (11 ignored))
 cargo clippy                      # Lint
 cargo fmt --check                  # Format check
 cargo build --release              # Release: target/release/gw (~1.9MB)

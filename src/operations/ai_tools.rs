@@ -2,7 +2,6 @@
 ///
 /// Mirrors src/git_worktree_manager/operations/ai_tools.py (752 lines).
 /// Handles launching AI coding assistants in various terminal environments.
-use std::collections::HashMap;
 use std::path::Path;
 
 use console::style;
@@ -18,7 +17,7 @@ use crate::git;
 use crate::hooks;
 use crate::session;
 
-use super::helpers::resolve_worktree_target;
+use super::helpers::{build_hook_context, resolve_worktree_target};
 use super::launchers;
 
 /// Launch AI coding assistant in the specified directory.
@@ -125,26 +124,23 @@ pub fn resume_worktree(
     term: Option<&str>,
     lookup_mode: Option<&str>,
 ) -> Result<()> {
-    let (worktree_path, branch_name, worktree_repo) =
-        resolve_worktree_target(worktree, lookup_mode)?;
+    let resolved = resolve_worktree_target(worktree, lookup_mode)?;
+    let worktree_path = resolved.path;
+    let branch_name = resolved.branch;
+    let worktree_repo = resolved.repo;
 
     // Pre-resume hooks
     let base_key = format_config_key(CONFIG_KEY_BASE_BRANCH, &branch_name);
     let base_branch = git::get_config(&base_key, Some(&worktree_repo)).unwrap_or_default();
 
-    let mut hook_ctx = HashMap::new();
-    hook_ctx.insert("branch".into(), branch_name.clone());
-    hook_ctx.insert("base_branch".into(), base_branch);
-    hook_ctx.insert(
-        "worktree_path".into(),
-        worktree_path.to_string_lossy().to_string(),
+    let mut hook_ctx = build_hook_context(
+        &branch_name,
+        &base_branch,
+        &worktree_path,
+        &worktree_repo,
+        "resume.pre",
+        "resume",
     );
-    hook_ctx.insert(
-        "repo_path".into(),
-        worktree_repo.to_string_lossy().to_string(),
-    );
-    hook_ctx.insert("event".into(), "resume.pre".into());
-    hook_ctx.insert("operation".into(), "resume".into());
     hooks::run_hooks(
         "resume.pre",
         &hook_ctx,

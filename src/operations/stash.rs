@@ -70,9 +70,12 @@ pub fn stash_list() -> Result<()> {
         let stash_msg = parts[2].trim();
 
         // Extract branch name from our format [branch-name] or from git format
-        let branch_name = if stash_msg.starts_with('[') && stash_msg.contains(']') {
-            let end = stash_msg.find(']').unwrap();
-            stash_msg[1..end].to_string()
+        let branch_name = if stash_msg.starts_with('[') {
+            if let Some(end) = stash_msg.find(']') {
+                stash_msg[1..end].to_string()
+            } else {
+                "unknown".to_string()
+            }
         } else if stash_info.contains("On ") {
             stash_info
                 .split("On ")

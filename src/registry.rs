@@ -210,7 +210,7 @@ pub fn scan_for_repos(base_dir: Option<&Path>, max_depth: usize) -> Vec<PathBuf>
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")));
 
-    let base = base.canonicalize().unwrap_or_else(|_| base.clone());
+    let base = crate::git::canonicalize_or(&base);
 
     let mut found = Vec::new();
 

@@ -137,12 +137,10 @@ fn interactive_path_selection(global_mode: bool) -> Result<()> {
                 continue;
             }
             if let Ok(worktrees) = git::parse_worktrees(repo_path) {
-                let repo_resolved = repo_path
-                    .canonicalize()
-                    .unwrap_or_else(|_| repo_path.clone());
+                let repo_resolved = git::canonicalize_or(repo_path);
                 for (branch, path) in &worktrees {
                     let normalized = git::normalize_branch_name(branch);
-                    let path_resolved = path.canonicalize().unwrap_or_else(|_| path.clone());
+                    let path_resolved = git::canonicalize_or(path);
                     if path_resolved == repo_resolved {
                         entries.insert(
                             0,
@@ -163,11 +161,11 @@ fn interactive_path_selection(global_mode: bool) -> Result<()> {
     } else {
         let repo = git::get_main_repo_root(None)?;
         let worktrees = git::parse_worktrees(&repo)?;
-        let repo_resolved = repo.canonicalize().unwrap_or_else(|_| repo.clone());
+        let repo_resolved = git::canonicalize_or(&repo);
 
         for (branch, path) in &worktrees {
             let normalized = git::normalize_branch_name(branch);
-            let path_resolved = path.canonicalize().unwrap_or_else(|_| path.clone());
+            let path_resolved = git::canonicalize_or(path);
             if path_resolved == repo_resolved {
                 let label = if normalized.is_empty() || normalized == "(detached)" {
                     "main (root)".to_string()

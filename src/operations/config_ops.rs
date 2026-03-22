@@ -25,7 +25,7 @@ pub fn change_base_branch(
     let feature_branch = if let Some(b) = branch {
         // Use resolve_worktree_target to respect lookup_mode
         match super::helpers::resolve_worktree_target(Some(b), lookup_mode) {
-            Ok((_path, resolved_branch, _repo)) => resolved_branch,
+            Ok(resolved) => resolved.branch,
             Err(_) => b.to_string(), // Fallback to raw name
         }
     } else {
@@ -172,7 +172,12 @@ pub fn export_config(output: Option<&str>) -> Result<()> {
     );
 
     let content = serde_json::to_string_pretty(&export_data)?;
-    std::fs::write(&output_path, content)?;
+    std::fs::write(&output_path, &content).map_err(|e| {
+        CwError::Config(format!(
+            "Failed to write export file '{}': {}",
+            output_path, e
+        ))
+    })?;
 
     println!("{} Export complete!\n", style("*").green().bold());
     println!("{}", style("Exported:").bold());
@@ -201,9 +206,18 @@ pub fn import_config(import_file: &str, apply: bool) -> Result<()> {
         import_file
     );
 
-    let content = std::fs::read_to_string(&path)?;
-    let data: Value = serde_json::from_str(&content)
-        .map_err(|e| CwError::Config(format!("Failed to read import file: {}", e)))?;
+    let content = std::fs::read_to_string(&path).map_err(|e| {
+        CwError::Config(format!(
+            "Failed to read import file '{}': {}",
+            import_file, e
+        ))
+    })?;
+    let data: Value = serde_json::from_str(&content).map_err(|e| {
+        CwError::Config(format!(
+            "Failed to parse import file '{}': {}",
+            import_file, e
+        ))
+    })?;
 
     if data.get("export_version").is_none() {
         return Err(CwError::Config("Invalid export file format".to_string()));

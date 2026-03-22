@@ -1,7 +1,6 @@
 /// Core worktree lifecycle operations.
 ///
 /// Mirrors src/git_worktree_manager/operations/worktree_ops.py (1433 lines).
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use console::style;
@@ -16,7 +15,7 @@ use crate::hooks;
 use crate::registry;
 use crate::shared_files;
 
-use super::helpers::resolve_worktree_target;
+use super::helpers::{build_hook_context, resolve_worktree_target};
 use crate::messages;
 
 /// Create a new worktree with a feature branch.
@@ -119,16 +118,14 @@ pub fn create_worktree(
     println!("  Path:        {}\n", style(worktree_path.display()).blue());
 
     // Pre-create hooks
-    let mut hook_ctx = HashMap::new();
-    hook_ctx.insert("branch".into(), branch_name.to_string());
-    hook_ctx.insert("base_branch".into(), base.clone());
-    hook_ctx.insert(
-        "worktree_path".into(),
-        worktree_path.to_string_lossy().to_string(),
+    let mut hook_ctx = build_hook_context(
+        branch_name,
+        &base,
+        &worktree_path,
+        &repo,
+        "worktree.pre_create",
+        "new",
     );
-    hook_ctx.insert("repo_path".into(), repo.to_string_lossy().to_string());
-    hook_ctx.insert("event".into(), "worktree.pre_create".into());
-    hook_ctx.insert("operation".into(), "new".into());
     hooks::run_hooks("worktree.pre_create", &hook_ctx, Some(&repo), Some(&repo))?;
 
     // Create parent dir
@@ -219,12 +216,8 @@ pub fn delete_worktree(
     let (worktree_path, branch_name) = resolve_delete_target(target, &main_repo, lookup_mode)?;
 
     // Safety: don't delete main repo
-    let wt_resolved = worktree_path
-        .canonicalize()
-        .unwrap_or_else(|_| worktree_path.clone());
-    let main_resolved = main_repo
-        .canonicalize()
-        .unwrap_or_else(|_| main_repo.clone());
+    let wt_resolved = git::canonicalize_or(&worktree_path);
+    let main_resolved = git::canonicalize_or(&main_repo);
     if wt_resolved == main_resolved {
         return Err(CwError::Git(messages::cannot_delete_main_worktree()));
     }
@@ -247,16 +240,14 @@ pub fn delete_worktree(
         })
         .unwrap_or_default();
 
-    let mut hook_ctx = HashMap::new();
-    hook_ctx.insert("branch".into(), branch_name.clone().unwrap_or_default());
-    hook_ctx.insert("base_branch".into(), base_branch);
-    hook_ctx.insert(
-        "worktree_path".into(),
-        worktree_path.to_string_lossy().to_string(),
+    let mut hook_ctx = build_hook_context(
+        &branch_name.clone().unwrap_or_default(),
+        &base_branch,
+        &worktree_path,
+        &main_repo,
+        "worktree.pre_delete",
+        "delete",
     );
-    hook_ctx.insert("repo_path".into(), main_repo.to_string_lossy().to_string());
-    hook_ctx.insert("event".into(), "worktree.pre_delete".into());
-    hook_ctx.insert("operation".into(), "delete".into());
     hooks::run_hooks(
         "worktree.pre_delete",
         &hook_ctx,
@@ -409,8 +400,8 @@ pub fn sync_worktree(
             })
             .collect::<Vec<_>>()
     } else {
-        let (path, branch, _) = resolve_worktree_target(target, lookup_mode)?;
-        vec![(branch, path)]
+        let resolved = resolve_worktree_target(target, lookup_mode)?;
+        vec![(resolved.branch, resolved.path)]
     };
 
     for (branch, wt_path) in &worktrees_to_sync {
@@ -423,7 +414,7 @@ pub fn sync_worktree(
             println!("  Base:   {}", style(&base).green());
             println!("  Path:   {}\n", style(wt_path.display()).blue());
 
-            // Determine rebase target
+            // Determine rebase target (fetch already done above)
             let rebase_target = {
                 let origin_base = format!("origin/{}", base);
                 if git::branch_exists(&origin_base, Some(wt_path)) {

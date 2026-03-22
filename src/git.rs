@@ -7,6 +7,11 @@ use std::process::{Command, Output};
 use crate::constants::sanitize_branch_name;
 use crate::error::{CwError, Result};
 
+/// Canonicalize a path, falling back to the original path on failure.
+pub fn canonicalize_or(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
 /// Result of running a command, with stdout captured as String.
 #[derive(Debug)]
 pub struct CommandResult {
@@ -194,14 +199,11 @@ pub fn get_feature_worktrees(repo: Option<&Path>) -> Result<Vec<(String, PathBuf
         return Ok(Vec::new());
     }
 
-    let main_path = worktrees[0]
-        .1
-        .canonicalize()
-        .unwrap_or_else(|_| worktrees[0].1.clone());
+    let main_path = canonicalize_or(&worktrees[0].1);
 
     let mut result = Vec::new();
     for (branch, path) in &worktrees {
-        let resolved = path.canonicalize().unwrap_or_else(|_| path.clone());
+        let resolved = canonicalize_or(path);
         if resolved == main_path {
             continue;
         }
@@ -315,12 +317,12 @@ pub fn find_worktree_by_intended_branch(
         .unwrap_or_default();
     let expected_suffix = format!("{}-{}", repo_name, sanitize_branch_name(intended_branch));
     let worktrees = parse_worktrees(repo)?;
-    let repo_resolved = repo.canonicalize().unwrap_or_else(|_| repo.to_path_buf());
+    let repo_resolved = canonicalize_or(repo);
 
     for (_, path) in &worktrees {
         if let Some(name) = path.file_name() {
             if name.to_string_lossy() == expected_suffix {
-                let path_resolved = path.canonicalize().unwrap_or_else(|_| path.clone());
+                let path_resolved = canonicalize_or(path);
                 if path_resolved != repo_resolved {
                     return Ok(Some(path.clone()));
                 }
@@ -329,6 +331,29 @@ pub fn find_worktree_by_intended_branch(
     }
 
     Ok(None)
+}
+
+/// Fetch from remote and determine the rebase target for a base branch.
+///
+/// Returns `(fetch_ok, rebase_target)` where `rebase_target` is `origin/<base>`
+/// if fetch succeeded and the remote ref exists, otherwise just `<base>`.
+pub fn fetch_and_rebase_target(base_branch: &str, repo: &Path, cwd: &Path) -> (bool, String) {
+    let fetch_ok = git_command(&["fetch", "--all", "--prune"], Some(repo), false, true)
+        .map(|r| r.returncode == 0)
+        .unwrap_or(false);
+
+    let rebase_target = if fetch_ok {
+        let origin_ref = format!("origin/{}", base_branch);
+        if branch_exists(&origin_ref, Some(cwd)) {
+            origin_ref
+        } else {
+            base_branch.to_string()
+        }
+    } else {
+        base_branch.to_string()
+    };
+
+    (fetch_ok, rebase_target)
 }
 
 /// Check if a command is available in PATH.
@@ -449,11 +474,7 @@ pub fn get_branch_name_error(branch_name: &str) -> String {
 
 /// Remove a git worktree with platform-safe fallback.
 pub fn remove_worktree_safe(worktree_path: &Path, repo: &Path, force: bool) -> Result<()> {
-    let worktree_str = worktree_path
-        .canonicalize()
-        .unwrap_or_else(|_| worktree_path.to_path_buf())
-        .to_string_lossy()
-        .to_string();
+    let worktree_str = canonicalize_or(worktree_path).to_string_lossy().to_string();
 
     let mut args = vec!["worktree", "remove", &worktree_str];
     if force {
@@ -494,6 +515,31 @@ pub fn remove_worktree_safe(worktree_path: &Path, repo: &Path, force: bool) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_canonicalize_or_existing_path() {
+        // /tmp should exist on all Unix systems
+        let path = Path::new("/tmp");
+        let result = canonicalize_or(path);
+        // Should resolve to a real path (e.g., /private/tmp on macOS)
+        assert!(result.is_absolute());
+    }
+
+    #[test]
+    fn test_canonicalize_or_nonexistent_path() {
+        let path = Path::new("/nonexistent/path/that/does/not/exist");
+        let result = canonicalize_or(path);
+        // Should return the original path as-is
+        assert_eq!(result, path);
+    }
+
+    #[test]
+    fn test_canonicalize_or_relative_path() {
+        let path = Path::new("relative/path");
+        let result = canonicalize_or(path);
+        // Non-existent relative path should return as-is
+        assert_eq!(result, path);
+    }
 
     #[test]
     fn test_normalize_branch_name() {

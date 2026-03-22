@@ -341,10 +341,10 @@ pub enum Commands {
         interactive: bool,
     },
 
-    /// Generate shell function for cw-cd
+    /// Generate shell function for gw-cd / cw-cd
     #[command(name = "_shell-function", hide = true)]
     ShellFunction {
-        /// Shell type: bash, zsh, or fish
+        /// Shell type: bash, zsh, fish, or powershell
         shell: String,
     },
 }

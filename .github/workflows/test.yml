@@ -40,6 +40,28 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install MSRV toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.80"
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: msrv-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check MSRV
+        run: cargo check --verbose
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -51,3 +73,28 @@ jobs:
         run: cargo fmt -- --check
       - name: Clippy
         run: cargo clippy -- -D warnings
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      - name: Security audit
+        run: cargo audit
+
+  ci-gate:
+    runs-on: ubuntu-latest
+    needs: [test, msrv, lint, audit]
+    if: always()
+    steps:
+      - name: Check all jobs
+        run: |
+          if [[ "${{ needs.test.result }}" != "success" ]] || \
+             [[ "${{ needs.msrv.result }}" != "success" ]] || \
+             [[ "${{ needs.lint.result }}" != "success" ]] || \
+             [[ "${{ needs.audit.result }}" != "success" ]]; then
+            echo "One or more jobs failed"
+            exit 1
+          fi
+          echo "All jobs passed"

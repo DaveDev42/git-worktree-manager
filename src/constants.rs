@@ -3,9 +3,16 @@
 /// Mirrors src/git_worktree_manager/constants.py.
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+
+/// Pre-compiled regex patterns for branch name sanitization.
+static UNSAFE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"[/<>:"|?*\\#@&;$`!~%^()\[\]{}=+]+"#).unwrap());
+static WHITESPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
+static MULTI_HYPHEN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"-+").unwrap());
 
 /// Terminal launch methods for AI tool execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -153,14 +160,9 @@ pub fn format_config_key(template: &str, branch: &str) -> String {
 /// assert_eq!(sanitize_branch_name("hotfix/v2.0"), "hotfix-v2.0");
 /// ```
 pub fn sanitize_branch_name(branch_name: &str) -> String {
-    // Characters unsafe for directory names across platforms
-    let unsafe_re = Regex::new(r#"[/<>:"|?*\\#@&;$`!~%^()\[\]{}=+]+"#).unwrap();
-    let whitespace_re = Regex::new(r"\s+").unwrap();
-    let multi_hyphen_re = Regex::new(r"-+").unwrap();
-
-    let safe = unsafe_re.replace_all(branch_name, "-");
-    let safe = whitespace_re.replace_all(&safe, "-");
-    let safe = multi_hyphen_re.replace_all(&safe, "-");
+    let safe = UNSAFE_RE.replace_all(branch_name, "-");
+    let safe = WHITESPACE_RE.replace_all(&safe, "-");
+    let safe = MULTI_HYPHEN_RE.replace_all(&safe, "-");
     let safe = safe.trim_matches('-');
 
     if safe.is_empty() {

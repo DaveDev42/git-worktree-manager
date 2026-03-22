@@ -1,11 +1,13 @@
 /// Git operations for pull requests and merging.
 ///
 /// Mirrors src/git_worktree_manager/operations/git_ops.py (412 lines).
-use std::collections::HashMap;
+use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
 use console::style;
 
+use crate::config;
 use crate::constants::{
     format_config_key, CONFIG_KEY_BASE_BRANCH, CONFIG_KEY_BASE_PATH, CONFIG_KEY_INTENDED_BRANCH,
 };
@@ -14,7 +16,7 @@ use crate::git;
 use crate::hooks;
 use crate::registry;
 
-use super::helpers::{get_worktree_metadata, resolve_worktree_target};
+use super::helpers::{build_hook_context, get_worktree_metadata, resolve_worktree_target};
 use crate::messages;
 
 /// Create a GitHub Pull Request for the worktree.
@@ -30,8 +32,10 @@ pub fn create_pr_worktree(
         return Err(CwError::Git(messages::gh_cli_not_found()));
     }
 
-    let (cwd, feature_branch, worktree_repo) = resolve_worktree_target(target, lookup_mode)?;
-    let (base_branch, base_path) = get_worktree_metadata(&feature_branch, &worktree_repo)?;
+    let resolved = resolve_worktree_target(target, lookup_mode)?;
+    let cwd = resolved.path;
+    let feature_branch = resolved.branch;
+    let (base_branch, base_path) = get_worktree_metadata(&feature_branch, &resolved.repo)?;
 
     println!("\n{}", style("Creating Pull Request:").cyan().bold());
     println!("  Feature:     {}", style(&feature_branch).green());
@@ -39,37 +43,19 @@ pub fn create_pr_worktree(
     println!("  Repo:        {}\n", style(base_path.display()).blue());
 
     // Pre-PR hooks
-    let mut hook_ctx = HashMap::new();
-    hook_ctx.insert("branch".into(), feature_branch.clone());
-    hook_ctx.insert("base_branch".into(), base_branch.clone());
-    hook_ctx.insert("worktree_path".into(), cwd.to_string_lossy().to_string());
-    hook_ctx.insert("repo_path".into(), base_path.to_string_lossy().to_string());
-    hook_ctx.insert("event".into(), "pr.pre".into());
-    hook_ctx.insert("operation".into(), "pr".into());
+    let mut hook_ctx = build_hook_context(
+        &feature_branch,
+        &base_branch,
+        &cwd,
+        &base_path,
+        "pr.pre",
+        "pr",
+    );
     hooks::run_hooks("pr.pre", &hook_ctx, Some(&cwd), Some(&base_path))?;
 
-    // Fetch
+    // Fetch and determine rebase target
     println!("{}", style("Fetching updates from remote...").yellow());
-    let fetch_ok = git::git_command(
-        &["fetch", "--all", "--prune"],
-        Some(&base_path),
-        false,
-        true,
-    )
-    .map(|r| r.returncode == 0)
-    .unwrap_or(false);
-
-    // Determine rebase target
-    let rebase_target = if fetch_ok {
-        let origin_ref = format!("origin/{}", base_branch);
-        if git::branch_exists(&origin_ref, Some(&cwd)) {
-            origin_ref
-        } else {
-            base_branch.clone()
-        }
-    } else {
-        base_branch.clone()
-    };
+    let (_fetch_ok, rebase_target) = git::fetch_and_rebase_target(&base_branch, &base_path, &cwd);
 
     // Rebase
     println!(
@@ -173,7 +159,16 @@ pub fn create_pr_worktree(
             pr_args.extend(["--body".to_string(), b.to_string()]);
         }
     } else {
-        pr_args.push("--fill".to_string());
+        // Try AI-generated PR description
+        match generate_pr_description_with_ai(&feature_branch, &base_branch, &cwd) {
+            Some((ai_title, ai_body)) => {
+                pr_args.extend(["--title".to_string(), ai_title]);
+                pr_args.extend(["--body".to_string(), ai_body]);
+            }
+            None => {
+                pr_args.push("--fill".to_string());
+            }
+        }
     }
 
     if draft {
@@ -211,13 +206,15 @@ pub fn create_pr_worktree(
 pub fn merge_worktree(
     target: Option<&str>,
     push: bool,
-    _interactive: bool,
+    interactive: bool,
     dry_run: bool,
     ai_merge: bool,
     lookup_mode: Option<&str>,
 ) -> Result<()> {
-    let (cwd, feature_branch, worktree_repo) = resolve_worktree_target(target, lookup_mode)?;
-    let (base_branch, base_path) = get_worktree_metadata(&feature_branch, &worktree_repo)?;
+    let resolved = resolve_worktree_target(target, lookup_mode)?;
+    let cwd = resolved.path;
+    let feature_branch = resolved.branch;
+    let (base_branch, base_path) = get_worktree_metadata(&feature_branch, &resolved.repo)?;
     let repo = &base_path;
 
     println!("\n{}", style("Finishing worktree:").cyan().bold());
@@ -226,13 +223,14 @@ pub fn merge_worktree(
     println!("  Repo:        {}\n", style(repo.display()).blue());
 
     // Pre-merge hooks
-    let mut hook_ctx = HashMap::new();
-    hook_ctx.insert("branch".into(), feature_branch.clone());
-    hook_ctx.insert("base_branch".into(), base_branch.clone());
-    hook_ctx.insert("worktree_path".into(), cwd.to_string_lossy().to_string());
-    hook_ctx.insert("repo_path".into(), repo.to_string_lossy().to_string());
-    hook_ctx.insert("event".into(), "merge.pre".into());
-    hook_ctx.insert("operation".into(), "merge".into());
+    let mut hook_ctx = build_hook_context(
+        &feature_branch,
+        &base_branch,
+        &cwd,
+        repo,
+        "merge.pre",
+        "merge",
+    );
     if !dry_run {
         hooks::run_hooks("merge.pre", &hook_ctx, Some(&cwd), Some(repo))?;
     }
@@ -268,76 +266,89 @@ pub fn merge_worktree(
         return Ok(());
     }
 
-    // Fetch
-    let fetch_ok = git::git_command(&["fetch", "--all", "--prune"], Some(repo), false, true)
-        .map(|r| r.returncode == 0)
-        .unwrap_or(false);
-
-    let rebase_target = if fetch_ok {
-        let origin_ref = format!("origin/{}", base_branch);
-        if git::branch_exists(&origin_ref, Some(&cwd)) {
-            origin_ref
-        } else {
-            base_branch.clone()
-        }
-    } else {
-        base_branch.clone()
-    };
+    // Fetch and determine rebase target
+    let (_fetch_ok, rebase_target) = git::fetch_and_rebase_target(&base_branch, repo, &cwd);
 
     // Rebase
-    println!(
-        "{}",
-        style(format!(
-            "Rebasing {} onto {}...",
-            feature_branch, rebase_target
-        ))
-        .yellow()
-    );
+    if interactive {
+        // Interactive rebase requires a TTY — run directly via inherited stdio
+        println!(
+            "{}",
+            style(format!(
+                "Interactive rebase of {} onto {}...",
+                feature_branch, rebase_target
+            ))
+            .yellow()
+        );
+        let status = Command::new("git")
+            .args(["rebase", "-i", &rebase_target])
+            .current_dir(&cwd)
+            .status();
+        match status {
+            Ok(s) if s.success() => {}
+            _ => {
+                return Err(CwError::Rebase(messages::rebase_failed(
+                    &cwd.display().to_string(),
+                    &rebase_target,
+                    None,
+                )));
+            }
+        }
+    } else {
+        println!(
+            "{}",
+            style(format!(
+                "Rebasing {} onto {}...",
+                feature_branch, rebase_target
+            ))
+            .yellow()
+        );
 
-    match git::git_command(&["rebase", &rebase_target], Some(&cwd), false, true) {
-        Ok(r) if r.returncode == 0 => {}
-        _ => {
-            if ai_merge {
-                // Try AI-assisted conflict resolution
-                let conflicts = git::git_command(
-                    &["diff", "--name-only", "--diff-filter=U"],
-                    Some(&cwd),
-                    false,
-                    true,
-                )
-                .ok()
-                .and_then(|r| {
-                    if r.returncode == 0 && !r.stdout.trim().is_empty() {
-                        Some(r.stdout.trim().to_string())
-                    } else {
-                        None
-                    }
-                });
+        match git::git_command(&["rebase", &rebase_target], Some(&cwd), false, true) {
+            Ok(r) if r.returncode == 0 => {}
+            _ => {
+                if ai_merge {
+                    // Try AI-assisted conflict resolution
+                    let conflicts = git::git_command(
+                        &["diff", "--name-only", "--diff-filter=U"],
+                        Some(&cwd),
+                        false,
+                        true,
+                    )
+                    .ok()
+                    .and_then(|r| {
+                        if r.returncode == 0 && !r.stdout.trim().is_empty() {
+                            Some(r.stdout.trim().to_string())
+                        } else {
+                            None
+                        }
+                    });
+
+                    let _ = git::git_command(&["rebase", "--abort"], Some(&cwd), false, false);
+
+                    let conflict_list = conflicts.as_deref().unwrap_or("(unknown)");
+                    let prompt = format!(
+                        "Resolve merge conflicts in this repository. The rebase of '{}' onto '{}' \
+                         failed with conflicts in: {}\n\
+                         Please examine the conflicted files and resolve them.",
+                        feature_branch, rebase_target, conflict_list
+                    );
+
+                    println!(
+                        "\n{} Launching AI to resolve conflicts...\n",
+                        style("*").cyan().bold()
+                    );
+                    let _ = super::ai_tools::launch_ai_tool(&cwd, None, false, Some(&prompt));
+                    return Ok(());
+                }
 
                 let _ = git::git_command(&["rebase", "--abort"], Some(&cwd), false, false);
-
-                let conflict_list = conflicts.as_deref().unwrap_or("(unknown)");
-                let prompt = format!(
-                    "Resolve merge conflicts in this repository. The rebase of '{}' onto '{}' \
-                     failed with conflicts in: {}\n\
-                     Please examine the conflicted files and resolve them.",
-                    feature_branch, rebase_target, conflict_list
-                );
-
-                println!(
-                    "\n{} Launching AI to resolve conflicts...\n",
-                    style("*").cyan().bold()
-                );
-                let _ = super::ai_tools::launch_ai_tool(&cwd, None, false, Some(&prompt));
-                return Ok(());
+                return Err(CwError::Rebase(messages::rebase_failed(
+                    &cwd.display().to_string(),
+                    &rebase_target,
+                    None,
+                )));
             }
-
-            let _ = git::git_command(&["rebase", "--abort"], Some(&cwd), false, false);
-            return Err(CwError::Rebase(messages::rebase_failed(
-                &cwd.display().to_string(),
-                &rebase_target,
-                None,
-            )));
         }
     }
 
@@ -442,4 +453,238 @@ pub fn merge_worktree(
     let _ = registry::update_last_seen(repo);
 
     Ok(())
+}
+
+/// Generate PR title and body using AI tool by analyzing commit history.
+///
+/// Returns `Some((title, body))` on success, `None` if AI is not configured or fails.
+fn generate_pr_description_with_ai(
+    feature_branch: &str,
+    base_branch: &str,
+    cwd: &Path,
+) -> Option<(String, String)> {
+    let ai_command = config::get_ai_tool_command().ok()?;
+    if ai_command.is_empty() {
+        return None;
+    }
+
+    // Get commit log for the feature branch
+    let log_result = git::git_command(
+        &[
+            "log",
+            &format!("{}..{}", base_branch, feature_branch),
+            "--pretty=format:Commit: %h%nAuthor: %an%nDate: %ad%nMessage: %s%n%b%n---",
+            "--date=short",
+        ],
+        Some(cwd),
+        false,
+        true,
+    )
+    .ok()?;
+
+    let commits_log = log_result.stdout.trim().to_string();
+    if commits_log.is_empty() {
+        return None;
+    }
+
+    // Get diff stats
+    let diff_stats = git::git_command(
+        &[
+            "diff",
+            "--stat",
+            &format!("{}...{}", base_branch, feature_branch),
+        ],
+        Some(cwd),
+        false,
+        true,
+    )
+    .ok()
+    .map(|r| r.stdout.trim().to_string())
+    .unwrap_or_default();
+
+    let prompt = format!(
+        "Analyze the following git commits and generate a pull request title and description.\n\n\
+         Branch: {} -> {}\n\n\
+         Commits:\n{}\n\n\
+         Diff Statistics:\n{}\n\n\
+         Please provide:\n\
+         1. A concise PR title (one line, following conventional commit format if applicable)\n\
+         2. A detailed PR description with:\n\
+            - Summary of changes (2-3 sentences)\n\
+            - Test plan (bullet points)\n\n\
+         Format your response EXACTLY as:\n\
+         TITLE: <your title here>\n\
+         BODY:\n\
+         <your body here>",
+        feature_branch, base_branch, commits_log, diff_stats
+    );
+
+    // Build AI command with prompt as positional argument
+    let ai_cmd = config::get_ai_tool_merge_command(&prompt).ok()?;
+    if ai_cmd.is_empty() {
+        return None;
+    }
+
+    println!("{}", style("Generating PR description with AI...").yellow());
+
+    // Run AI command with 60-second timeout
+    let mut child = match Command::new(&ai_cmd[0])
+        .args(&ai_cmd[1..])
+        .current_dir(cwd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => {
+            println!("{} Failed to start AI tool\n", style("!").yellow());
+            return None;
+        }
+    };
+
+    // Poll with timeout
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) => {
+                if std::time::Instant::now() > deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    println!("{} AI tool timed out\n", style("!").yellow());
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(_) => return None,
+        }
+    };
+
+    if !status.success() {
+        println!("{} AI tool failed\n", style("!").yellow());
+        return None;
+    }
+
+    // Read stdout from the completed child process
+    let mut stdout_buf = String::new();
+    if let Some(mut pipe) = child.stdout.take() {
+        use std::io::Read;
+        let _ = pipe.read_to_string(&mut stdout_buf);
+    }
+    let stdout = stdout_buf;
+    let text = stdout.trim();
+
+    // Parse TITLE: and BODY: from output
+    match parse_ai_pr_output(text) {
+        Some((t, b)) => {
+            println!(
+                "{} AI generated PR description\n",
+                style("*").green().bold()
+            );
+            println!("  {} {}", style("Title:").dim(), t);
+            let preview = if b.len() > 100 {
+                format!("{}...", &b[..100])
+            } else {
+                b.clone()
+            };
+            println!("  {} {}\n", style("Body:").dim(), preview);
+            Some((t, b))
+        }
+        None => {
+            println!("{} Could not parse AI output\n", style("!").yellow());
+            None
+        }
+    }
+}
+
+/// Parse AI-generated PR output into (title, body).
+///
+/// Expects format:
+/// ```text
+/// TITLE: <title>
+/// BODY:
+/// <body lines>
+/// ```
+fn parse_ai_pr_output(text: &str) -> Option<(String, String)> {
+    let mut title: Option<String> = None;
+    let mut body: Option<String> = None;
+    let lines: Vec<&str> = text.lines().collect();
+
+    for (i, line) in lines.iter().enumerate() {
+        if let Some(t) = line.strip_prefix("TITLE:") {
+            title = Some(t.trim().to_string());
+        } else if line.starts_with("BODY:") {
+            if i + 1 < lines.len() {
+                body = Some(lines[i + 1..].join("\n").trim().to_string());
+            } else {
+                body = Some(String::new());
+            }
+            break;
+        }
+    }
+
+    match (title, body) {
+        (Some(t), Some(b)) if !t.is_empty() && !b.is_empty() => Some((t, b)),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_ai_pr_output_normal() {
+        let text = "TITLE: feat: add login page\nBODY:\n## Summary\nAdded login page\n\n## Test plan\n- Manual test";
+        let result = parse_ai_pr_output(text);
+        assert!(result.is_some());
+        let (title, body) = result.unwrap();
+        assert_eq!(title, "feat: add login page");
+        assert!(body.contains("## Summary"));
+        assert!(body.contains("## Test plan"));
+    }
+
+    #[test]
+    fn test_parse_ai_pr_output_empty() {
+        assert!(parse_ai_pr_output("").is_none());
+    }
+
+    #[test]
+    fn test_parse_ai_pr_output_title_only() {
+        let text = "TITLE: some title";
+        assert!(parse_ai_pr_output(text).is_none());
+    }
+
+    #[test]
+    fn test_parse_ai_pr_output_body_only() {
+        let text = "BODY:\nsome body text";
+        assert!(parse_ai_pr_output(text).is_none());
+    }
+
+    #[test]
+    fn test_parse_ai_pr_output_garbage() {
+        let text = "This is just some random AI output\nwithout proper format";
+        assert!(parse_ai_pr_output(text).is_none());
+    }
+
+    #[test]
+    fn test_parse_ai_pr_output_body_at_last_line() {
+        // BODY: is the last line — boundary check
+        let text = "TITLE: fix: something\nBODY:";
+        assert!(parse_ai_pr_output(text).is_none());
+    }
+
+    #[test]
+    fn test_parse_ai_pr_output_empty_title() {
+        let text = "TITLE:   \nBODY:\nsome body";
+        assert!(parse_ai_pr_output(text).is_none());
+    }
+
+    #[test]
+    fn test_parse_ai_pr_output_multiline_body() {
+        let text = "TITLE: chore: cleanup\nBODY:\nLine 1\nLine 2\nLine 3";
+        let result = parse_ai_pr_output(text).unwrap();
+        assert_eq!(result.0, "chore: cleanup");
+        assert_eq!(result.1, "Line 1\nLine 2\nLine 3");
+    }
 }

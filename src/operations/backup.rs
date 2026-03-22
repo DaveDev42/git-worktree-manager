@@ -40,8 +40,8 @@ pub fn backup_worktree(branch: Option<&str>, all: bool) -> Result<()> {
     let branches_to_backup: Vec<(String, PathBuf)> = if all {
         git::get_feature_worktrees(Some(&repo))?
     } else {
-        let (path, branch_name, _) = super::helpers::resolve_worktree_target(branch, None)?;
-        vec![(branch_name, path)]
+        let resolved = super::helpers::resolve_worktree_target(branch, None)?;
+        vec![(resolved.branch, resolved.path)]
     };
 
     let backups_root = get_backups_dir();
@@ -105,7 +105,13 @@ pub fn backup_worktree(branch: Option<&str>, all: bool) -> Result<()> {
             );
             let patch_file = branch_backup_dir.join("stash.patch");
             if let Ok(r) = git::git_command(&["diff", "HEAD"], Some(worktree_path), false, true) {
-                let _ = std::fs::write(&patch_file, &r.stdout);
+                if let Err(e) = std::fs::write(&patch_file, &r.stdout) {
+                    println!(
+                        "  {} Failed to write stash patch: {}",
+                        style("!").yellow(),
+                        e
+                    );
+                }
                 Some(patch_file.to_string_lossy().to_string())
             } else {
                 None
@@ -126,8 +132,23 @@ pub fn backup_worktree(branch: Option<&str>, all: bool) -> Result<()> {
             stash_file,
         };
 
-        if let Ok(content) = serde_json::to_string_pretty(&metadata) {
-            let _ = std::fs::write(&metadata_file, content);
+        match serde_json::to_string_pretty(&metadata) {
+            Ok(content) => {
+                if let Err(e) = std::fs::write(&metadata_file, content) {
+                    println!(
+                        "  {} Failed to write backup metadata: {}",
+                        style("!").yellow(),
+                        e
+                    );
+                }
+            }
+            Err(e) => {
+                println!(
+                    "  {} Failed to serialize backup metadata: {}",
+                    style("!").yellow(),
+                    e
+                );
+            }
         }
 
         println!(

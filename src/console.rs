@@ -40,7 +40,48 @@ pub fn status_style(status: &str) -> Style {
     }
 }
 
+/// Map worktree status string to a display icon.
+pub fn status_icon(status: &str) -> &'static str {
+    match status {
+        "active" => "●",
+        "clean" => "○",
+        "modified" => "◉",
+        "stale" => "x",
+        _ => "○",
+    }
+}
+
 /// Get current terminal width (fallback 80).
 pub fn terminal_width() -> usize {
     Term::stdout().size().1 as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_status_icon_all_variants() {
+        assert_eq!(status_icon("active"), "●");
+        assert_eq!(status_icon("clean"), "○");
+        assert_eq!(status_icon("modified"), "◉");
+        assert_eq!(status_icon("stale"), "x");
+    }
+
+    #[test]
+    fn test_status_icon_unknown_fallback() {
+        assert_eq!(status_icon("unknown"), "○");
+        assert_eq!(status_icon(""), "○");
+        assert_eq!(status_icon("something_else"), "○");
+    }
+
+    #[test]
+    fn test_status_style_known() {
+        // Just ensure no panic for all known statuses
+        let _ = status_style("active");
+        let _ = status_style("clean");
+        let _ = status_style("modified");
+        let _ = status_style("stale");
+        let _ = status_style("unknown");
+    }
 }

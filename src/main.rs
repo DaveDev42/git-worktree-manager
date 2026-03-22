@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use clap::Parser;
 use git_worktree_manager::cli::{
     BackupAction, Cli, Commands, ConfigAction, HookAction, StashAction,
@@ -314,7 +312,7 @@ fn main() {
                 Ok(())
             }
             None => Err(git_worktree_manager::error::CwError::Config(format!(
-                "Unsupported shell: {}. Use bash, zsh, or fish.",
+                "Unsupported shell: {}. Use bash, zsh, fish, or powershell.",
                 shell
             ))),
         },
@@ -417,14 +415,8 @@ fn run_hooks_manual(event: &str, dry_run: bool) -> git_worktree_manager::error::
         return Ok(());
     }
 
-    let mut context = HashMap::new();
-    context.insert("event".into(), event.to_string());
-    context.insert("operation".into(), "manual".to_string());
-    context.insert("branch".into(), String::new());
-    context.insert("base_branch".into(), String::new());
     let cwd = std::env::current_dir().unwrap_or_default();
-    context.insert("worktree_path".into(), cwd.to_string_lossy().to_string());
-    context.insert("repo_path".into(), cwd.to_string_lossy().to_string());
+    let context = helpers::build_hook_context("", "", &cwd, &cwd, event, "manual");
 
     hooks::run_hooks(event, &context, Some(&cwd), None)?;
     Ok(())
@@ -433,6 +425,8 @@ fn run_hooks_manual(event: &str, dry_run: bool) -> git_worktree_manager::error::
 fn shell_setup() {
     // Detect shell
     let shell_env = std::env::var("SHELL").unwrap_or_default();
+    let is_powershell = cfg!(target_os = "windows") || std::env::var("PSModulePath").is_ok();
+
     let (shell_name, profile_path) = if shell_env.contains("zsh") {
         ("zsh", dirs::home_dir().map(|h| h.join(".zshrc")))
     } else if shell_env.contains("bash") {
@@ -442,19 +436,33 @@ fn shell_setup() {
             "fish",
             dirs::home_dir().map(|h| h.join(".config").join("fish").join("config.fish")),
         )
+    } else if is_powershell {
+        ("powershell", None::<std::path::PathBuf>)
     } else {
         println!("Could not detect your shell automatically.\n");
-        println!("Please manually add the cw-cd function to your shell:\n");
-        println!("  bash/zsh: source <(gw _shell-function bash)");
-        println!("  fish:     gw _shell-function fish | source");
+        println!("Please manually add the gw-cd function to your shell:\n");
+        println!("  bash/zsh:    source <(gw _shell-function bash)");
+        println!("  fish:        gw _shell-function fish | source");
+        println!("  PowerShell:  gw _shell-function powershell | Out-String | Invoke-Expression");
         return;
     };
 
     println!("Detected shell: {}\n", shell_name);
 
-    let line = match shell_name {
-        "fish" => "gw _shell-function fish | source",
-        _ => &format!("source <(gw _shell-function {})", shell_name),
+    // PowerShell: provide instructions instead of auto-install
+    if shell_name == "powershell" {
+        println!("To enable gw-cd in PowerShell, add the following to your $PROFILE:\n");
+        println!("  gw _shell-function powershell | Out-String | Invoke-Expression\n");
+        println!("To find your PowerShell profile location, run: $PROFILE");
+        println!(
+            "\nIf the profile file doesn't exist, create it with: New-Item -Path $PROFILE -ItemType File -Force"
+        );
+        return;
+    }
+
+    let shell_function_line = match shell_name {
+        "fish" => "gw _shell-function fish | source".to_string(),
+        _ => format!("source <(gw _shell-function {})", shell_name),
     };
 
     // Check if already installed
@@ -478,8 +486,23 @@ fn shell_setup() {
             .map(|p| p.display().to_string())
             .unwrap_or("your profile".to_string())
     );
-    println!("\n  # git-worktree-manager shell integration");
-    println!("  {}\n", line);
+
+    match shell_name {
+        "zsh" => {
+            println!("\n  # git-worktree-manager shell integration (gw-cd + tab completion)");
+            println!("  {}\n", shell_function_line);
+        }
+        "bash" => {
+            println!("\n  # git-worktree-manager shell integration");
+            println!("  {}", shell_function_line);
+            println!("\n  # git-worktree-manager tab completion");
+            println!("  eval \"$(gw --generate-completion bash 2>/dev/null || true)\"\n");
+        }
+        _ => {
+            println!("\n  # git-worktree-manager shell integration");
+            println!("  {}\n", shell_function_line);
+        }
+    }
 
     print!("Add to your shell profile? [Y/n]: ");
     use std::io::Write;
@@ -499,7 +522,28 @@ fn shell_setup() {
             let _ = std::fs::create_dir_all(parent);
         }
 
-        let append = format!("\n# git-worktree-manager shell integration\n{}\n", line);
+        let append = match shell_name {
+            "zsh" => {
+                format!(
+                    "\n# git-worktree-manager shell integration (gw-cd + tab completion)\n{}\n",
+                    shell_function_line
+                )
+            }
+            "bash" => {
+                format!(
+                    "\n# git-worktree-manager shell integration\n{}\n\n\
+                     # git-worktree-manager tab completion\n\
+                     eval \"$(gw --generate-completion bash 2>/dev/null || true)\"\n",
+                    shell_function_line
+                )
+            }
+            _ => {
+                format!(
+                    "\n# git-worktree-manager shell integration\n{}\n",
+                    shell_function_line
+                )
+            }
+        };
 
         match std::fs::OpenOptions::new()
             .create(true)
@@ -512,12 +556,12 @@ fn shell_setup() {
                 println!("\n* Successfully added to {}", path.display());
                 println!("\nNext steps:");
                 println!("  1. Restart your shell or run: source {}", path.display());
-                println!("  2. Try: gw-cd <branch-name>");
+                println!("  2. Try directory navigation: gw-cd <branch-name>");
+                println!("  3. Try tab completion: gw <TAB> or gw new <TAB>");
             }
             Err(e) => {
                 println!("\nError: Failed to update {}: {}", path.display(), e);
-                println!("\nTo install manually, add:");
-                println!("  {}", line);
+                println!("\nTo install manually, add the lines shown above to your profile");
             }
         }
     }

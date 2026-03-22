@@ -1,12 +1,20 @@
 /// Helper functions shared across operations modules.
 ///
 /// Mirrors src/git_worktree_manager/operations/helpers.py (444 lines).
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::constants::{format_config_key, CONFIG_KEY_BASE_BRANCH, CONFIG_KEY_BASE_PATH};
 use crate::error::{CwError, Result};
 use crate::git;
 use crate::messages;
+
+/// Resolved worktree target with named fields for clarity.
+pub struct ResolvedTarget {
+    pub path: PathBuf,
+    pub branch: String,
+    pub repo: PathBuf,
+}
 
 // Thread-local global mode flag.
 std::thread_local! {
@@ -34,12 +42,10 @@ pub fn parse_repo_branch_target(target: &str) -> (Option<&str>, &str) {
 /// Get the branch for a worktree path from parse_worktrees output.
 pub fn get_branch_for_worktree(repo: &Path, worktree_path: &Path) -> Option<String> {
     let worktrees = git::parse_worktrees(repo).ok()?;
-    let resolved = worktree_path
-        .canonicalize()
-        .unwrap_or_else(|_| worktree_path.to_path_buf());
+    let resolved = git::canonicalize_or(worktree_path);
 
     for (branch, path) in &worktrees {
-        let p_resolved = path.canonicalize().unwrap_or_else(|_| path.clone());
+        let p_resolved = git::canonicalize_or(path);
         if p_resolved == resolved {
             if branch == "(detached)" {
                 return None;
@@ -50,14 +56,14 @@ pub fn get_branch_for_worktree(repo: &Path, worktree_path: &Path) -> Option<Stri
     None
 }
 
-/// Resolve worktree target to (worktree_path, branch_name, worktree_repo).
+/// Resolve worktree target to a [`ResolvedTarget`] with path, branch, and repo.
 ///
 /// Supports branch name lookup, worktree directory name lookup,
 /// and disambiguation when both match.
 pub fn resolve_worktree_target(
     target: Option<&str>,
     lookup_mode: Option<&str>,
-) -> Result<(PathBuf, String, PathBuf)> {
+) -> Result<ResolvedTarget> {
     if target.is_none() && is_global_mode() {
         return Err(CwError::WorktreeNotFound(
             "Global mode requires an explicit target (branch or worktree name).".to_string(),
@@ -69,7 +75,11 @@ pub fn resolve_worktree_target(
         let cwd = std::env::current_dir()?;
         let branch = git::get_current_branch(Some(&cwd))?;
         let repo = git::get_repo_root(Some(&cwd))?;
-        return Ok((cwd, branch, repo));
+        return Ok(ResolvedTarget {
+            path: cwd,
+            branch,
+            repo,
+        });
     }
 
     let target = target.unwrap();
@@ -97,32 +107,42 @@ pub fn resolve_worktree_target(
 
     match (branch_match, worktree_match) {
         (Some(bp), Some(wp)) => {
-            let bp_resolved = bp.canonicalize().unwrap_or_else(|_| bp.clone());
-            let wp_resolved = wp.canonicalize().unwrap_or_else(|_| wp.clone());
+            let bp_resolved = git::canonicalize_or(&bp);
+            let wp_resolved = git::canonicalize_or(&wp);
             if bp_resolved == wp_resolved {
                 let repo = git::get_repo_root(Some(&bp))?;
-                Ok((bp, target.to_string(), repo))
+                Ok(ResolvedTarget {
+                    path: bp,
+                    branch: target.to_string(),
+                    repo,
+                })
             } else {
-                // Ambiguous — in non-interactive mode, prefer branch match
-                if git::is_non_interactive() {
-                    let repo = git::get_repo_root(Some(&bp))?;
-                    Ok((bp, target.to_string(), repo))
-                } else {
-                    // Default to branch match
-                    let repo = git::get_repo_root(Some(&bp))?;
-                    Ok((bp, target.to_string(), repo))
-                }
+                // Ambiguous — prefer branch match
+                let repo = git::get_repo_root(Some(&bp))?;
+                Ok(ResolvedTarget {
+                    path: bp,
+                    branch: target.to_string(),
+                    repo,
+                })
             }
         }
         (Some(bp), None) => {
             let repo = git::get_repo_root(Some(&bp))?;
-            Ok((bp, target.to_string(), repo))
+            Ok(ResolvedTarget {
+                path: bp,
+                branch: target.to_string(),
+                repo,
+            })
         }
         (None, Some(wp)) => {
             let branch =
                 get_branch_for_worktree(&main_repo, &wp).unwrap_or_else(|| target.to_string());
             let repo = git::get_repo_root(Some(&wp))?;
-            Ok((wp, branch, repo))
+            Ok(ResolvedTarget {
+                path: wp,
+                branch,
+                repo,
+            })
         }
         (None, None) => Err(CwError::WorktreeNotFound(messages::worktree_not_found(
             target,
@@ -131,10 +151,7 @@ pub fn resolve_worktree_target(
 }
 
 /// Global mode target resolution.
-fn resolve_global_target(
-    target: &str,
-    lookup_mode: Option<&str>,
-) -> Result<(PathBuf, String, PathBuf)> {
+fn resolve_global_target(target: &str, lookup_mode: Option<&str>) -> Result<ResolvedTarget> {
     let repos = crate::registry::get_all_registered_repos();
     let (repo_filter, branch_target) = parse_repo_branch_target(target);
 
@@ -153,7 +170,11 @@ fn resolve_global_target(
             if let Ok(Some(path)) = git::find_worktree_by_intended_branch(repo_path, branch_target)
             {
                 let repo = git::get_repo_root(Some(&path)).unwrap_or(repo_path.clone());
-                return Ok((path, branch_target.to_string(), repo));
+                return Ok(ResolvedTarget {
+                    path,
+                    branch: branch_target.to_string(),
+                    repo,
+                });
             }
         }
 
@@ -163,7 +184,7 @@ fn resolve_global_target(
                 let branch = get_branch_for_worktree(repo_path, &path)
                     .unwrap_or_else(|| branch_target.to_string());
                 let repo = git::get_repo_root(Some(&path)).unwrap_or(repo_path.clone());
-                return Ok((path, branch, repo));
+                return Ok(ResolvedTarget { path, branch, repo });
             }
         }
     }
@@ -231,4 +252,61 @@ pub fn get_worktree_metadata(branch: &str, repo: &Path) -> Result<(String, PathB
     eprintln!("  Inferred base path: {}", inferred_base_path.display());
 
     Ok((base, inferred_base_path))
+}
+
+/// Build a hook context HashMap with standard fields.
+pub fn build_hook_context(
+    branch: &str,
+    base_branch: &str,
+    worktree_path: &Path,
+    repo_path: &Path,
+    event: &str,
+    operation: &str,
+) -> HashMap<String, String> {
+    HashMap::from([
+        ("branch".into(), branch.to_string()),
+        ("base_branch".into(), base_branch.to_string()),
+        (
+            "worktree_path".into(),
+            worktree_path.to_string_lossy().to_string(),
+        ),
+        ("repo_path".into(), repo_path.to_string_lossy().to_string()),
+        ("event".into(), event.to_string()),
+        ("operation".into(), operation.to_string()),
+    ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_build_hook_context_all_fields() {
+        let ctx = build_hook_context(
+            "feat/login",
+            "main",
+            Path::new("/tmp/worktree"),
+            Path::new("/tmp/repo"),
+            "worktree.pre_create",
+            "new",
+        );
+
+        assert_eq!(ctx.len(), 6);
+        assert_eq!(ctx["branch"], "feat/login");
+        assert_eq!(ctx["base_branch"], "main");
+        assert_eq!(ctx["worktree_path"], "/tmp/worktree");
+        assert_eq!(ctx["repo_path"], "/tmp/repo");
+        assert_eq!(ctx["event"], "worktree.pre_create");
+        assert_eq!(ctx["operation"], "new");
+    }
+
+    #[test]
+    fn test_parse_repo_branch_target() {
+        assert_eq!(
+            parse_repo_branch_target("myrepo:feat/x"),
+            (Some("myrepo"), "feat/x")
+        );
+        assert_eq!(parse_repo_branch_target("feat/x"), (None, "feat/x"));
+        assert_eq!(parse_repo_branch_target(":feat/x"), (None, ":feat/x"));
+        assert_eq!(parse_repo_branch_target("myrepo:"), (None, "myrepo:"));
+    }
 }

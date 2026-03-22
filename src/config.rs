@@ -517,7 +517,7 @@ pub fn set_config_value(key_path: &str, value: &str) -> Result<()> {
         }
         current = current
             .as_object_mut()
-            .unwrap()
+            .ok_or_else(|| CwError::Config(format!("Invalid config path: {}", key_path)))?
             .entry(key)
             .or_insert(Value::Object(serde_json::Map::new()));
     }
