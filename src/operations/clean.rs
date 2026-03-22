@@ -6,6 +6,7 @@ use console::style;
 use crate::constants::{format_config_key, path_age_days, CONFIG_KEY_BASE_BRANCH};
 use crate::error::Result;
 use crate::git;
+use crate::messages;
 
 use super::display::get_worktree_status;
 
@@ -166,10 +167,7 @@ pub fn clean_worktrees(
 
     println!(
         "\n{}\n",
-        style(format!(
-            "* Cleanup complete! Deleted {} worktree(s)",
-            deleted
-        ))
+        style(messages::cleanup_complete(deleted))
         .green()
         .bold()
     );

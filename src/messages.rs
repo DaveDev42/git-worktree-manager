@@ -104,6 +104,50 @@ pub fn detached_head_warning() -> String {
         .to_string()
 }
 
+// ---------------------------------------------------------------------------
+// Status / progress messages (used in styled println! calls)
+// ---------------------------------------------------------------------------
+
+pub fn rebase_in_progress(branch: &str, target: &str) -> String {
+    format!("Rebasing {} onto {}...", branch, target)
+}
+
+pub fn pushing_to_origin(branch: &str) -> String {
+    format!("Pushing {} to origin...", branch)
+}
+
+pub fn deleting_local_branch(branch: &str) -> String {
+    format!("Deleting local branch: {}", branch)
+}
+
+pub fn deleting_remote_branch(branch: &str) -> String {
+    format!("Deleting remote branch: origin/{}", branch)
+}
+
+pub fn removing_worktree(path: &std::path::Path) -> String {
+    format!("Removing worktree: {}", path.display())
+}
+
+pub fn cleanup_complete(deleted: u32) -> String {
+    format!("* Cleanup complete! Deleted {} worktree(s)", deleted)
+}
+
+pub fn starting_ai_tool_foreground(tool_name: &str) -> String {
+    format!("Starting {} (Ctrl+C to exit)...", tool_name)
+}
+
+pub fn starting_ai_tool_in(tool_name: &str) -> String {
+    format!("Starting {} in:", tool_name)
+}
+
+pub fn resuming_ai_tool_in(tool_name: &str) -> String {
+    format!("Resuming {} in:", tool_name)
+}
+
+pub fn switched_to_worktree(path: &std::path::Path) -> String {
+    format!("Switched to worktree: {}", path.display())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,5 +296,68 @@ mod tests {
         assert!(msg.contains("detached"));
         assert!(msg.contains("--branch"));
         assert!(msg.contains("--force"));
+    }
+
+    #[test]
+    fn test_rebase_in_progress() {
+        let msg = rebase_in_progress("feat-x", "main");
+        assert!(msg.contains("Rebasing feat-x onto main"));
+    }
+
+    #[test]
+    fn test_pushing_to_origin() {
+        let msg = pushing_to_origin("feat-x");
+        assert!(msg.contains("Pushing feat-x to origin"));
+    }
+
+    #[test]
+    fn test_deleting_local_branch() {
+        let msg = deleting_local_branch("feat-x");
+        assert!(msg.contains("Deleting local branch: feat-x"));
+    }
+
+    #[test]
+    fn test_deleting_remote_branch() {
+        let msg = deleting_remote_branch("feat-x");
+        assert!(msg.contains("origin/feat-x"));
+    }
+
+    #[test]
+    fn test_removing_worktree() {
+        let msg = removing_worktree(std::path::Path::new("/tmp/wt"));
+        assert!(msg.contains("Removing worktree:"));
+        assert!(msg.contains("/tmp/wt"));
+    }
+
+    #[test]
+    fn test_cleanup_complete() {
+        let msg = cleanup_complete(3);
+        assert!(msg.contains("3 worktree(s)"));
+    }
+
+    #[test]
+    fn test_starting_ai_tool_foreground() {
+        let msg = starting_ai_tool_foreground("claude");
+        assert!(msg.contains("Starting claude"));
+        assert!(msg.contains("Ctrl+C"));
+    }
+
+    #[test]
+    fn test_starting_ai_tool_in() {
+        let msg = starting_ai_tool_in("claude");
+        assert_eq!(msg, "Starting claude in:");
+    }
+
+    #[test]
+    fn test_resuming_ai_tool_in() {
+        let msg = resuming_ai_tool_in("claude");
+        assert_eq!(msg, "Resuming claude in:");
+    }
+
+    #[test]
+    fn test_switched_to_worktree() {
+        let msg = switched_to_worktree(std::path::Path::new("/tmp/wt"));
+        assert!(msg.contains("Switched to worktree:"));
+        assert!(msg.contains("/tmp/wt"));
     }
 }

@@ -258,7 +258,7 @@ pub fn delete_worktree(
     // Remove worktree
     println!(
         "{}",
-        style(format!("Removing worktree: {}", worktree_path.display())).yellow()
+        style(messages::removing_worktree(&worktree_path)).yellow()
     );
     git::remove_worktree_safe(&worktree_path, &main_repo, force)?;
     println!("{} Worktree removed\n", style("*").green().bold());
@@ -268,7 +268,7 @@ pub fn delete_worktree(
         if !keep_branch {
             println!(
                 "{}",
-                style(format!("Deleting local branch: {}", branch)).yellow()
+                style(messages::deleting_local_branch(branch)).yellow()
             );
             let _ = git::git_command(&["branch", "-D", branch], Some(&main_repo), false, false);
 
@@ -289,7 +289,7 @@ pub fn delete_worktree(
             if delete_remote {
                 println!(
                     "{}",
-                    style(format!("Deleting remote branch: origin/{}", branch)).yellow()
+                    style(messages::deleting_remote_branch(branch)).yellow()
                 );
                 match git::git_command(
                     &["push", "origin", &format!(":{}", branch)],
@@ -426,7 +426,7 @@ pub fn sync_worktree(
 
             println!(
                 "{}",
-                style(format!("Rebasing {} onto {}...", branch, rebase_target)).yellow()
+                style(messages::rebase_in_progress(branch, &rebase_target)).yellow()
             );
 
             match git::git_command(&["rebase", &rebase_target], Some(wt_path), false, true) {
@@ -491,7 +491,7 @@ pub fn sync_worktree(
 
                 println!(
                     "{}",
-                    style(format!("Rebasing {} onto {}...", branch, origin_ref)).yellow()
+                    style(messages::rebase_in_progress(branch, &origin_ref)).yellow()
                 );
 
                 match git::git_command(&["rebase", &origin_ref], Some(wt_path), false, true) {

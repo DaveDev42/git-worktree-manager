@@ -27,11 +27,14 @@ This document tracks planned features, enhancements, and known issues for the Ru
   - `check_git_version`, `check_worktree_accessibility`, `check_uncommitted_changes`,
     `check_behind_base`, `check_merge_conflicts`, `print_summary`, `print_recommendations`
 
-- [ ] **B-1: Centralize format strings** — `messages.rs` with ~10 functions
-  - ~15 inline `format!()` calls → centralized message helpers
+- [x] **B-1: Centralize format strings** — 10 new functions in `messages.rs`
+  - `rebase_in_progress`, `pushing_to_origin`, `deleting_local_branch`,
+    `deleting_remote_branch`, `removing_worktree`, `cleanup_complete`,
+    `starting_ai_tool_foreground`, `starting_ai_tool_in`, `resuming_ai_tool_in`,
+    `switched_to_worktree` — replaced 15 inline `format!()` calls
 
-- [ ] **`format_age()` edge-case tests**
-  - Boundary values: 0 seconds, exactly 1 day, leap-second edge cases
+- [x] **`format_age()` edge-case tests** — 7 tests in `display::tests`
+  - Boundary: just now, hours, days, weeks, months, years, sub-hour
 
 - [ ] **`gw merge --ai-review`** — AI code review before merge
   - AI analyzes all changes before merging to base

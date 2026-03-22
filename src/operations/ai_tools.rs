@@ -15,6 +15,7 @@ use crate::constants::{
 use crate::error::Result;
 use crate::git;
 use crate::hooks;
+use crate::messages;
 use crate::session;
 
 use super::helpers::{build_hook_context, resolve_worktree_target};
@@ -67,7 +68,7 @@ pub fn launch_ai_tool(
         LaunchMethod::Foreground => {
             println!(
                 "{}\n",
-                style(format!("Starting {} (Ctrl+C to exit)...", ai_tool_name)).cyan()
+                style(messages::starting_ai_tool_foreground(ai_tool_name)).cyan()
             );
             launchers::foreground::run(path, &cmd);
         }
@@ -153,7 +154,7 @@ pub fn resume_worktree(
         let _ = std::env::set_current_dir(&worktree_path);
         println!(
             "{}\n",
-            style(format!("Switched to worktree: {}", worktree_path.display())).dim()
+            style(messages::switched_to_worktree(&worktree_path)).dim()
         );
     }
 
@@ -205,13 +206,13 @@ pub fn resume_worktree(
         if has_session {
             println!(
                 "{} {}\n",
-                style(format!("Resuming {} in:", ai_tool_name)).cyan(),
+                style(messages::resuming_ai_tool_in(ai_tool_name)).cyan(),
                 worktree_path.display()
             );
         } else {
             println!(
                 "{} {}\n",
-                style(format!("Starting {} in:", ai_tool_name)).cyan(),
+                style(messages::starting_ai_tool_in(ai_tool_name)).cyan(),
                 worktree_path.display()
             );
         }

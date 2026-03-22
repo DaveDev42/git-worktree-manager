@@ -60,11 +60,7 @@ pub fn create_pr_worktree(
     // Rebase
     println!(
         "{}",
-        style(format!(
-            "Rebasing {} onto {}...",
-            feature_branch, rebase_target
-        ))
-        .yellow()
+        style(messages::rebase_in_progress(&feature_branch, &rebase_target)).yellow()
     );
 
     match git::git_command(&["rebase", &rebase_target], Some(&cwd), false, true) {
@@ -105,7 +101,7 @@ pub fn create_pr_worktree(
     if push {
         println!(
             "{}",
-            style(format!("Pushing {} to origin...", feature_branch)).yellow()
+            style(messages::pushing_to_origin(&feature_branch)).yellow()
         );
         match git::git_command(
             &["push", "-u", "origin", &feature_branch],
@@ -412,7 +408,7 @@ pub fn merge_worktree(
     if push {
         println!(
             "{}",
-            style(format!("Pushing {} to origin...", base_branch)).yellow()
+            style(messages::pushing_to_origin(&base_branch)).yellow()
         );
         match git::git_command(
             &["push", "origin", &base_branch],

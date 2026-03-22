@@ -614,3 +614,54 @@ pub fn diff_worktrees(branch1: &str, branch2: &str, summary: bool, files: bool) 
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_age_just_now() {
+        assert_eq!(format_age(0.0), "just now");
+        assert_eq!(format_age(0.001), "just now"); // ~1.4 minutes
+    }
+
+    #[test]
+    fn test_format_age_hours() {
+        assert_eq!(format_age(1.0 / 24.0), "1h ago"); // exactly 1 hour
+        assert_eq!(format_age(0.5), "12h ago"); // 12 hours
+        assert_eq!(format_age(0.99), "23h ago"); // ~23.7 hours
+    }
+
+    #[test]
+    fn test_format_age_days() {
+        assert_eq!(format_age(1.0), "1d ago");
+        assert_eq!(format_age(1.5), "1d ago");
+        assert_eq!(format_age(6.9), "6d ago");
+    }
+
+    #[test]
+    fn test_format_age_weeks() {
+        assert_eq!(format_age(7.0), "1w ago");
+        assert_eq!(format_age(14.0), "2w ago");
+        assert_eq!(format_age(29.0), "4w ago");
+    }
+
+    #[test]
+    fn test_format_age_months() {
+        assert_eq!(format_age(30.0), "1mo ago");
+        assert_eq!(format_age(60.0), "2mo ago");
+        assert_eq!(format_age(364.0), "12mo ago");
+    }
+
+    #[test]
+    fn test_format_age_years() {
+        assert_eq!(format_age(365.0), "1y ago");
+        assert_eq!(format_age(730.0), "2y ago");
+    }
+
+    #[test]
+    fn test_format_age_boundary_below_one_hour() {
+        // Less than 1 hour (1/24 day ≈ 0.0417)
+        assert_eq!(format_age(0.04), "just now"); // 0.04 * 24 = 0.96h → 0 as i64
+    }
+}
