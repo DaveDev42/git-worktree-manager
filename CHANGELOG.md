@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.6](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.5...v0.0.6) (2026-03-22)
+
+
+### Features
+
+* register gw/cw tab completion in shell functions ([1eab90d](https://github.com/DaveDev42/git-worktree-manager/commit/1eab90d615edb5d5803a4fcc854968f1b7bcd740))
+
 ## [0.0.5](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.4...v0.0.5) (2026-03-22)
 
 
