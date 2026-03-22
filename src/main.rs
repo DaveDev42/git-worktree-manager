@@ -474,8 +474,16 @@ fn shell_setup() {
         if path.exists() {
             if let Ok(content) = std::fs::read_to_string(path) {
                 if content.contains("gw _shell-function") || content.contains("gw-cd") {
-                    println!("* gw-cd function is already installed!\n");
-                    println!("Found in: {}", path.display());
+                    println!(
+                        "{}",
+                        console::style("Shell integration is already installed.").green()
+                    );
+                    println!("  Found in: {}\n", path.display());
+
+                    // Refresh any cached shell functions
+                    refresh_shell_cache(shell_name);
+
+                    println!("\nRestart your shell or run: source {}", path.display());
                     return;
                 }
             }
@@ -562,6 +570,10 @@ fn shell_setup() {
                 }
 
                 println!("\n* Successfully added to {}", path.display());
+
+                // Refresh any cached shell functions
+                refresh_shell_cache(shell_name);
+
                 println!("\nNext steps:");
                 println!("  1. Restart your shell or run: source {}", path.display());
                 println!("  2. Try directory navigation: gw-cd <branch-name>");
@@ -570,6 +582,56 @@ fn shell_setup() {
             Err(e) => {
                 println!("\nError: Failed to update {}: {}", path.display(), e);
                 println!("\nTo install manually, add the lines shown above to your profile");
+            }
+        }
+    }
+}
+
+/// Refresh cached shell function files to pick up new features.
+fn refresh_shell_cache(shell_name: &str) {
+    let home = git_worktree_manager::constants::home_dir_or_fallback();
+
+    // Common cache locations that users might set up
+    let cache_paths = [
+        home.join(".cache").join("gw-shell-function.zsh"),
+        home.join(".cache").join("gw-shell-function.bash"),
+        home.join(".cache").join("gw-shell-function.fish"),
+    ];
+
+    let mut refreshed = false;
+    for cache_path in &cache_paths {
+        if cache_path.exists() {
+            // Determine the shell for this cache file
+            let cache_shell = cache_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            if let Some(content) = git_worktree_manager::shell_functions::generate(cache_shell) {
+                if std::fs::write(cache_path, content).is_ok() {
+                    println!(
+                        "  {} {}",
+                        console::style("Refreshed cache:").dim(),
+                        cache_path.display()
+                    );
+                    refreshed = true;
+                }
+            }
+        }
+    }
+
+    // Also regenerate for the current shell into the XDG cache dir
+    if !refreshed {
+        let cache_path = home
+            .join(".cache")
+            .join(format!("gw-shell-function.{}", shell_name));
+        if let Some(content) = git_worktree_manager::shell_functions::generate(shell_name) {
+            let _ = std::fs::create_dir_all(cache_path.parent().unwrap_or(&home));
+            if std::fs::write(&cache_path, &content).is_ok() {
+                println!(
+                    "  {} {}",
+                    console::style("Created cache:").dim(),
+                    cache_path.display()
+                );
             }
         }
     }
