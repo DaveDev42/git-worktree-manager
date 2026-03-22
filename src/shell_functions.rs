@@ -434,6 +434,7 @@ mod tests {
 
     /// Verify bash/zsh script has valid syntax using `bash -n`.
     #[test]
+    #[cfg(not(windows))]
     fn test_bash_script_syntax() {
         let script = generate("bash").unwrap();
 

@@ -516,6 +516,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(not(windows))]
     fn test_canonicalize_or_existing_path() {
         // /tmp should exist on all Unix systems
         let path = Path::new("/tmp");
