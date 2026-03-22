@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.3](https://github.com/DaveDev42/git-worktree-manager/compare/git-worktree-manager-v0.0.2...git-worktree-manager-v0.0.3) (2026-03-22)
+
+
+### Features
+
+* auto-upgrade via self-replace from GitHub Releases ([48b948e](https://github.com/DaveDev42/git-worktree-manager/commit/48b948e7a61ebb2826f7006ea19ee5f47b2beb76))
+
 ## [0.0.2](https://github.com/DaveDev42/git-worktree-manager/compare/git-worktree-manager-v0.0.1...git-worktree-manager-v0.0.2) (2026-03-22)
 
 
