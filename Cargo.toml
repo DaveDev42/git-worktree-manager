@@ -31,6 +31,7 @@ dirs = "6"
 walkdir = "2"
 regex = "1"
 pathdiff = "0.2"
+self_update = { version = "0.42.0", features = ["archive-tar", "archive-zip", "compression-flate2", "compression-zip-deflate", "rustls"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -48,7 +49,7 @@ opt-level = "z"
 
 # cargo-binstall support
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/git-worktree-manager-v{ version }/gw-{ target }{ archive-suffix }"
+pkg-url = "{ repo }/releases/download/v{ version }/gw-{ target }{ archive-suffix }"
 bin-dir = "gw{ binary-ext }"
 pkg-fmt = "tgz"
 
