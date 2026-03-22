@@ -497,10 +497,8 @@ fn shell_setup() {
             println!("  {}\n", shell_function_line);
         }
         "bash" => {
-            println!("\n  # git-worktree-manager shell integration");
-            println!("  {}", shell_function_line);
-            println!("\n  # git-worktree-manager tab completion");
-            println!("  eval \"$(gw --generate-completion bash 2>/dev/null || true)\"\n");
+            println!("\n  # git-worktree-manager shell integration (gw-cd + tab completion)");
+            println!("  {}\n", shell_function_line);
         }
         _ => {
             println!("\n  # git-worktree-manager shell integration");
@@ -535,9 +533,7 @@ fn shell_setup() {
             }
             "bash" => {
                 format!(
-                    "\n# git-worktree-manager shell integration\n{}\n\n\
-                     # git-worktree-manager tab completion\n\
-                     eval \"$(gw --generate-completion bash 2>/dev/null || true)\"\n",
+                    "\n# git-worktree-manager shell integration (gw-cd + tab completion)\n{}\n",
                     shell_function_line
                 )
             }

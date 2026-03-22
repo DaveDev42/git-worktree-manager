@@ -117,15 +117,15 @@ _gw_cd_completion() {
 # Register completion for bash
 if [ -n "$BASH_VERSION" ]; then
     complete -F _gw_cd_completion gw-cd
+    eval "$(gw --generate-completion bash 2>/dev/null || true)"
 fi
 
 # Tab completion for zsh
 if [ -n "$ZSH_VERSION" ]; then
-    # Register clap completion for gw CLI inline
-    # (eliminates need for ~/.zfunc/_gw file and FPATH setup)
-    _gw_completion() {
-        eval $(env _GW_COMPLETE=complete_zsh COMP_WORDS="${words[*]}" COMP_CWORD=$((CURRENT-1)) gw --generate-completion zsh 2>/dev/null)
-    }
+    # Register clap completion for gw/cw CLI inline
+    eval "$(gw --generate-completion zsh 2>/dev/null)"
+    compdef _gw gw
+    compdef _gw cw
 
     _gw_cd_zsh() {
         local has_global=0
@@ -249,6 +249,9 @@ complete -c gw-cd -f -n 'not __fish_contains_opt -s g global' -a '(git worktree 
 # Backward compatibility: cw-cd alias
 function cw-cd; gw-cd $argv; end
 complete -c cw-cd -w gw-cd
+
+# Tab completion for gw/cw CLI (clap-generated)
+gw --generate-completion fish 2>/dev/null | source
 "#;
 
 const POWERSHELL_FUNCTION: &str = r#"# git-worktree-manager shell functions for PowerShell
