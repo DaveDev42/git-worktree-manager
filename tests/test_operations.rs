@@ -172,11 +172,11 @@ fn test_create_worktree_existing_branch() {
     let repo = TestRepo::new();
     repo.create_branch("existing-branch");
 
-    // Create worktree from existing branch (with --force to allow)
-    let output = repo.cw(&["new", "existing-branch", "--no-term", "--force"]);
+    // Create worktree from existing branch
+    let output = repo.cw(&["new", "existing-branch", "--no-term"]);
     assert!(
         output.status.success(),
-        "cw new --force for existing branch failed: {}{}",
+        "cw new for existing branch failed: {}{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );

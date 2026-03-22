@@ -242,13 +242,29 @@ fn deep_merge(base: Value, over: Value) -> Value {
     }
 }
 
+/// Get the path to the legacy Python configuration file.
+fn get_legacy_config_path() -> PathBuf {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    home.join(".config")
+        .join("claude-worktree")
+        .join("config.json")
+}
+
 /// Load configuration from file, deep-merged with defaults.
+/// Falls back to legacy Python config path if the new path doesn't exist.
 pub fn load_config() -> Result<Config> {
     let config_path = get_config_path();
 
-    if !config_path.exists() {
-        return Ok(Config::default());
-    }
+    let config_path = if config_path.exists() {
+        config_path
+    } else {
+        let legacy = get_legacy_config_path();
+        if legacy.exists() {
+            legacy
+        } else {
+            return Ok(Config::default());
+        }
+    };
 
     let content = std::fs::read_to_string(&config_path).map_err(|e| {
         CwError::Config(format!(

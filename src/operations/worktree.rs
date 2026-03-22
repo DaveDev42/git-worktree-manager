@@ -212,6 +212,7 @@ pub fn delete_worktree(
     target: Option<&str>,
     keep_branch: bool,
     delete_remote: bool,
+    force: bool,
     lookup_mode: Option<&str>,
 ) -> Result<()> {
     let main_repo = git::get_main_repo_root(None)?;
@@ -268,7 +269,7 @@ pub fn delete_worktree(
         "{}",
         style(format!("Removing worktree: {}", worktree_path.display())).yellow()
     );
-    git::remove_worktree_safe(&worktree_path, &main_repo, true)?;
+    git::remove_worktree_safe(&worktree_path, &main_repo, force)?;
     println!("{} Worktree removed\n", style("*").green().bold());
 
     // Delete branch

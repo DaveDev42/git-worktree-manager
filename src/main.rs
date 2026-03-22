@@ -66,7 +66,6 @@ fn main() {
             name,
             path,
             base,
-            force: _,
             no_term,
             term,
             bg: _,
@@ -91,8 +90,15 @@ fn main() {
             draft,
             no_push,
             worktree: is_worktree,
+            by_branch,
         }) => {
-            let lookup_mode = if is_worktree { Some("worktree") } else { None };
+            let lookup_mode = if is_worktree {
+                Some("worktree")
+            } else if by_branch {
+                Some("branch")
+            } else {
+                None
+            };
             git_ops::create_pr_worktree(
                 branch.as_deref(),
                 !no_push,
@@ -127,8 +133,15 @@ fn main() {
             term,
             bg: _,
             worktree: is_worktree,
+            by_branch,
         }) => {
-            let lookup_mode = if is_worktree { Some("worktree") } else { None };
+            let lookup_mode = if is_worktree {
+                Some("worktree")
+            } else if by_branch {
+                Some("branch")
+            } else {
+                None
+            };
             ai_tools::resume_worktree(branch.as_deref(), term.as_deref(), lookup_mode)
         }
 
@@ -141,11 +154,24 @@ fn main() {
             target,
             keep_branch,
             delete_remote,
-            no_force: _,
+            no_force,
             worktree: is_worktree,
+            branch: is_branch,
         }) => {
-            let lookup_mode = if is_worktree { Some("worktree") } else { None };
-            worktree::delete_worktree(Some(&target), keep_branch, delete_remote, lookup_mode)
+            let lookup_mode = if is_worktree {
+                Some("worktree")
+            } else if is_branch {
+                Some("branch")
+            } else {
+                None
+            };
+            worktree::delete_worktree(
+                target.as_deref(),
+                keep_branch,
+                delete_remote,
+                !no_force,
+                lookup_mode,
+            )
         }
 
         Some(Commands::Clean {
@@ -161,8 +187,15 @@ fn main() {
             fetch_only,
             ai_merge,
             worktree: is_worktree,
+            by_branch,
         }) => {
-            let lookup_mode = if is_worktree { Some("worktree") } else { None };
+            let lookup_mode = if is_worktree {
+                Some("worktree")
+            } else if by_branch {
+                Some("branch")
+            } else {
+                None
+            };
             worktree::sync_worktree(branch.as_deref(), all, fetch_only, ai_merge, lookup_mode)
         }
 
@@ -172,8 +205,15 @@ fn main() {
             dry_run,
             interactive,
             worktree: is_worktree,
+            by_branch,
         }) => {
-            let lookup_mode = if is_worktree { Some("worktree") } else { None };
+            let lookup_mode = if is_worktree {
+                Some("worktree")
+            } else if by_branch {
+                Some("branch")
+            } else {
+                None
+            };
             config_ops::change_base_branch(
                 &new_base,
                 branch.as_deref(),
@@ -191,8 +231,8 @@ fn main() {
                 output: _,
             } => backup::backup_worktree(branch.as_deref(), all),
             BackupAction::List { branch } => backup::list_backups(branch.as_deref()),
-            BackupAction::Restore { branch, path } => {
-                backup::restore_worktree(&branch, path.as_deref())
+            BackupAction::Restore { branch, path, id } => {
+                backup::restore_worktree(&branch, path.as_deref(), id.as_deref())
             }
         },
 
@@ -245,7 +285,7 @@ fn main() {
         }
 
         // Global management
-        Some(Commands::Scan) => global_ops::global_scan(None),
+        Some(Commands::Scan { dir }) => global_ops::global_scan(dir.as_deref()),
 
         Some(Commands::Prune) => global_ops::global_prune(),
 

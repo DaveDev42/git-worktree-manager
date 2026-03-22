@@ -228,25 +228,36 @@ pub fn list_backups(branch: Option<&str>) -> Result<()> {
 }
 
 /// Restore worktree from backup.
-pub fn restore_worktree(branch: &str, path: Option<&str>) -> Result<()> {
+pub fn restore_worktree(branch: &str, path: Option<&str>, id: Option<&str>) -> Result<()> {
     let backups_dir = get_backups_dir();
     let branch_backup_dir = backups_dir.join(branch);
 
     if !branch_backup_dir.exists() {
-        return Err(CwError::Git(messages::backup_not_found("latest", branch)));
+        return Err(CwError::Git(messages::backup_not_found(
+            id.unwrap_or("latest"),
+            branch,
+        )));
     }
 
-    // Use latest backup
-    let mut backups: Vec<_> = std::fs::read_dir(&branch_backup_dir)?
-        .flatten()
-        .filter(|e| e.path().is_dir())
-        .collect();
-    backups.sort_by_key(|e| std::cmp::Reverse(e.file_name()));
+    // Find backup by ID or use latest
+    let backup_dir = if let Some(backup_id) = id {
+        let specific_dir = branch_backup_dir.join(backup_id);
+        if !specific_dir.exists() {
+            return Err(CwError::Git(messages::backup_not_found(backup_id, branch)));
+        }
+        specific_dir
+    } else {
+        let mut backups: Vec<_> = std::fs::read_dir(&branch_backup_dir)?
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .collect();
+        backups.sort_by_key(|e| std::cmp::Reverse(e.file_name()));
 
-    let backup_dir = backups
-        .first()
-        .ok_or_else(|| CwError::Git(messages::backup_not_found("latest", branch)))?
-        .path();
+        backups
+            .first()
+            .ok_or_else(|| CwError::Git(messages::backup_not_found("latest", branch)))?
+            .path()
+    };
 
     let backup_id = backup_dir
         .file_name()

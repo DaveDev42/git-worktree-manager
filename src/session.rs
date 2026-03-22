@@ -17,14 +17,30 @@ pub struct SessionMetadata {
 }
 
 /// Get the base sessions directory.
+/// Falls back to legacy Python path if the new path doesn't exist.
 pub fn get_sessions_dir() -> PathBuf {
-    let dir = dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let new_dir = home
         .join(".config")
         .join("git-worktree-manager")
         .join("sessions");
-    let _ = std::fs::create_dir_all(&dir);
-    dir
+
+    if new_dir.exists() {
+        return new_dir;
+    }
+
+    let legacy_dir = home
+        .join(".config")
+        .join("claude-worktree")
+        .join("sessions");
+
+    if legacy_dir.exists() {
+        return legacy_dir;
+    }
+
+    // Default to new path and create it
+    let _ = std::fs::create_dir_all(&new_dir);
+    new_dir
 }
 
 /// Get the session directory for a specific branch.

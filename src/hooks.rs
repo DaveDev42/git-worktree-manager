@@ -9,6 +9,8 @@ use std::process::Command;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use console::style;
+
 use crate::error::{CwError, Result};
 
 /// Valid hook events.
@@ -247,7 +249,12 @@ pub fn run_hooks(
 
     let is_pre_hook = event.contains(".pre");
 
-    eprintln!("Running {} hook(s) for {}...", enabled.len(), event);
+    eprintln!(
+        "{} Running {} hook(s) for {}...",
+        style("*").cyan().bold(),
+        enabled.len(),
+        style(event).yellow()
+    );
 
     // Build environment
     let mut env: HashMap<String, String> = std::env::vars().collect();
@@ -263,7 +270,12 @@ pub fn run_hooks(
         } else {
             format!(" ({})", hook.description)
         };
-        eprintln!("  Running: {}{}", hook.id, desc_suffix);
+        eprintln!(
+            "  {} {}{}",
+            style("Running:").dim(),
+            style(&hook.id).bold(),
+            style(desc_suffix).dim()
+        );
 
         let mut cmd = if cfg!(target_os = "windows") {
             let mut c = Command::new("cmd");
@@ -287,11 +299,16 @@ pub fn run_hooks(
                 if !output.status.success() {
                     all_succeeded = false;
                     let code = output.status.code().unwrap_or(-1);
-                    eprintln!("  x Hook '{}' failed (exit code {})", hook.id, code);
+                    eprintln!(
+                        "  {} Hook '{}' failed (exit code {})",
+                        style("x").red().bold(),
+                        style(&hook.id).bold(),
+                        code
+                    );
 
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     for line in stderr.lines().take(5) {
-                        eprintln!("    {}", line);
+                        eprintln!("    {}", style(line).dim());
                     }
 
                     if is_pre_hook {
@@ -301,12 +318,21 @@ pub fn run_hooks(
                         )));
                     }
                 } else {
-                    eprintln!("  * Hook '{}' completed", hook.id);
+                    eprintln!(
+                        "  {} Hook '{}' completed",
+                        style("*").green().bold(),
+                        style(&hook.id).bold()
+                    );
                 }
             }
             Err(e) => {
                 all_succeeded = false;
-                eprintln!("  x Hook '{}' failed: {}", hook.id, e);
+                eprintln!(
+                    "  {} Hook '{}' failed: {}",
+                    style("x").red().bold(),
+                    style(&hook.id).bold(),
+                    e
+                );
                 if is_pre_hook {
                     return Err(CwError::Hook(format!(
                         "Pre-hook '{}' failed to execute: {}",
@@ -318,7 +344,10 @@ pub fn run_hooks(
     }
 
     if !all_succeeded && !is_pre_hook {
-        eprintln!("Warning: Some post-hooks failed. See output above.");
+        eprintln!(
+            "{} Some post-hooks failed. See output above.",
+            style("Warning:").yellow().bold()
+        );
     }
 
     Ok(all_succeeded)

@@ -43,10 +43,6 @@ pub enum Commands {
         #[arg(short = 'b', long = "base")]
         base: Option<String>,
 
-        /// Force creation even if branch exists
-        #[arg(short, long)]
-        force: bool,
-
         /// Skip AI tool launch
         #[arg(long = "no-term")]
         no_term: bool,
@@ -70,7 +66,7 @@ pub enum Commands {
         title: Option<String>,
 
         /// PR body
-        #[arg(short, long)]
+        #[arg(short = 'B', long)]
         body: Option<String>,
 
         /// Create as draft PR
@@ -84,6 +80,10 @@ pub enum Commands {
         /// Resolve target as worktree name (instead of branch)
         #[arg(short, long)]
         worktree: bool,
+
+        /// Resolve target as branch name (instead of worktree)
+        #[arg(short = 'b', long = "by-branch", conflicts_with = "worktree")]
+        by_branch: bool,
     },
 
     /// Merge feature branch into base branch
@@ -128,6 +128,10 @@ pub enum Commands {
         /// Resolve target as worktree name (instead of branch)
         #[arg(short, long)]
         worktree: bool,
+
+        /// Resolve target as branch name (instead of worktree)
+        #[arg(short, long, conflicts_with = "worktree")]
+        by_branch: bool,
     },
 
     /// Open interactive shell or execute command in a worktree
@@ -145,8 +149,8 @@ pub enum Commands {
 
     /// Delete a worktree
     Delete {
-        /// Branch name or path of worktree to delete
-        target: String,
+        /// Branch name or path of worktree to delete (default: current worktree)
+        target: Option<String>,
 
         /// Keep the branch (only remove worktree)
         #[arg(short = 'k', long)]
@@ -163,6 +167,10 @@ pub enum Commands {
         /// Resolve target as worktree name (instead of branch)
         #[arg(short, long)]
         worktree: bool,
+
+        /// Resolve target as branch name (instead of worktree)
+        #[arg(short, long, conflicts_with = "worktree")]
+        branch: bool,
     },
 
     /// List all worktrees
@@ -201,10 +209,10 @@ pub enum Commands {
         /// Second branch
         branch2: String,
         /// Show statistics only
-        #[arg(long)]
+        #[arg(short, long)]
         summary: bool,
         /// Show changed files only
-        #[arg(long)]
+        #[arg(short, long)]
         files: bool,
     },
 
@@ -228,6 +236,10 @@ pub enum Commands {
         /// Resolve target as worktree name (instead of branch)
         #[arg(short, long)]
         worktree: bool,
+
+        /// Resolve target as branch name (instead of worktree)
+        #[arg(short, long, conflicts_with = "worktree")]
+        by_branch: bool,
     },
 
     /// Change base branch for a worktree
@@ -248,6 +260,10 @@ pub enum Commands {
         /// Resolve target as worktree name (instead of branch)
         #[arg(short, long)]
         worktree: bool,
+
+        /// Resolve target as branch name (instead of worktree)
+        #[arg(short, long, conflicts_with = "worktree")]
+        by_branch: bool,
     },
 
     /// Configuration management
@@ -292,7 +308,11 @@ pub enum Commands {
     },
 
     /// Scan for repositories (global mode)
-    Scan,
+    Scan {
+        /// Base directory to scan (default: home directory)
+        #[arg(short, long, value_hint = ValueHint::DirPath)]
+        dir: Option<std::path::PathBuf>,
+    },
 
     /// Clean up stale registry entries (global mode)
     Prune,
@@ -379,6 +399,10 @@ pub enum BackupAction {
         /// Custom path for restored worktree
         #[arg(short, long)]
         path: Option<String>,
+
+        /// Backup ID (timestamp) to restore (default: latest)
+        #[arg(long)]
+        id: Option<String>,
     },
 }
 
