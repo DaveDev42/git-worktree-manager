@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.7](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.6...v0.0.7) (2026-03-22)
+
+
+### Features
+
+* refresh shell cache on gw shell-setup ([eebde54](https://github.com/DaveDev42/git-worktree-manager/commit/eebde549cb89446451aa261fe29d0ad45680c504))
+
 ## [0.0.6](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.5...v0.0.6) (2026-03-22)
 
 
