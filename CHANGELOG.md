@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.0.5](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.4...v0.0.5) (2026-03-22)
+
+
+### Bug Fixes
+
+* bump MSRV to 1.85, fix rustfmt formatting ([e59ff8e](https://github.com/DaveDev42/git-worktree-manager/commit/e59ff8ec11f28d88175f4b5867d09377c21a13eb))
+* pin time and base64ct for MSRV 1.85 compatibility ([edf490d](https://github.com/DaveDev42/git-worktree-manager/commit/edf490dbbe8e4e72addb949b79e64234de786c21))
+* skip Unix-only tests on Windows ([79ce973](https://github.com/DaveDev42/git-worktree-manager/commit/79ce973f96902d9351ebea05d3edbfb6d6bda24a))
+
 ## [0.0.4](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.3...v0.0.4) (2026-03-22)
 
 
