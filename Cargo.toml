@@ -48,7 +48,7 @@ opt-level = "z"
 
 # cargo-binstall support
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/gw-{ target }{ archive-suffix }"
+pkg-url = "{ repo }/releases/download/git-worktree-manager-v{ version }/gw-{ target }{ archive-suffix }"
 bin-dir = "gw{ binary-ext }"
 pkg-fmt = "tgz"
 
