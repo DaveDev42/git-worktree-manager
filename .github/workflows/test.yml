@@ -60,7 +60,7 @@ jobs:
           key: msrv-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Check MSRV
-        run: cargo check --verbose
+        run: cargo check --locked --verbose
 
   lint:
     runs-on: ubuntu-latest
