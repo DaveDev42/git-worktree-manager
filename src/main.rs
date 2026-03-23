@@ -53,6 +53,7 @@ fn main() {
         // Config commands
         Some(Commands::Config { action }) => match action {
             ConfigAction::Show => config::show_config().map(|output| println!("{}", output)),
+            ConfigAction::Get { key } => config::get_config_value(&key),
             ConfigAction::Set { key, value } => config::set_config_value(&key, &value),
             ConfigAction::UsePreset { name } => config::use_preset(&name),
             ConfigAction::ListPresets => {
@@ -155,6 +156,7 @@ fn main() {
             target,
             keep_branch,
             delete_remote,
+            force: _,
             no_force,
             worktree: is_worktree,
             branch: is_branch,
@@ -231,7 +233,7 @@ fn main() {
                 all,
                 output: _,
             } => backup::backup_worktree(branch.as_deref(), all),
-            BackupAction::List { branch } => backup::list_backups(branch.as_deref()),
+            BackupAction::List { branch, all } => backup::list_backups(branch.as_deref(), all),
             BackupAction::Restore { branch, path, id } => {
                 backup::restore_worktree(&branch, path.as_deref(), id.as_deref())
             }

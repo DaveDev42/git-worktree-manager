@@ -177,13 +177,23 @@ pub fn backup_worktree(branch: Option<&str>, all: bool) -> Result<()> {
 }
 
 /// List available backups.
-pub fn list_backups(branch: Option<&str>) -> Result<()> {
+///
+/// By default, only shows backups whose metadata matches the current repository.
+/// Use `--all` to show backups from all repositories.
+pub fn list_backups(branch: Option<&str>, all: bool) -> Result<()> {
     let backups_dir = get_backups_dir();
 
     if !backups_dir.exists() {
         println!("\n{}\n", style("No backups found").yellow());
         return Ok(());
     }
+
+    // Get current repo path for filtering
+    let current_repo = if !all {
+        crate::git::get_repo_root(None).ok()
+    } else {
+        None
+    };
 
     println!("\n{}\n", style("Available Backups:").cyan().bold());
 
@@ -200,6 +210,32 @@ pub fn list_backups(branch: Option<&str>) -> Result<()> {
 
         if let Some(filter) = branch {
             if branch_name != filter {
+                continue;
+            }
+        }
+
+        // Filter by current repo: check if any backup's base_path matches
+        if let Some(ref repo_root) = current_repo {
+            let matches_repo = std::fs::read_dir(branch_dir.path())
+                .ok()
+                .into_iter()
+                .flatten()
+                .flatten()
+                .any(|ts_dir| {
+                    let metadata_file = ts_dir.path().join("metadata.json");
+                    std::fs::read_to_string(&metadata_file)
+                        .ok()
+                        .and_then(|c| serde_json::from_str::<BackupMetadata>(&c).ok())
+                        .map(|m| {
+                            m.base_path
+                                .as_deref()
+                                .map(std::path::Path::new)
+                                .map(|p| p == repo_root)
+                                .unwrap_or(false)
+                        })
+                        .unwrap_or(false)
+                });
+            if !matches_repo {
                 continue;
             }
         }

@@ -484,6 +484,33 @@ pub fn reset_config() -> Result<()> {
     save_config(&Config::default())
 }
 
+/// Get a configuration value by dot-separated key path.
+pub fn get_config_value(key_path: &str) -> Result<()> {
+    let config = load_config()?;
+    let json = serde_json::to_value(&config)?;
+
+    let keys: Vec<&str> = key_path.split('.').collect();
+    let mut current = &json;
+    for &key in &keys {
+        current = current
+            .get(key)
+            .ok_or_else(|| CwError::Config(format!("Unknown config key: {}", key_path)))?;
+    }
+
+    match current {
+        serde_json::Value::String(s) => println!("{}", s),
+        serde_json::Value::Bool(b) => println!("{}", b),
+        serde_json::Value::Number(n) => println!("{}", n),
+        serde_json::Value::Null => println!("null"),
+        other => println!(
+            "{}",
+            serde_json::to_string_pretty(other).unwrap_or_default()
+        ),
+    }
+
+    Ok(())
+}
+
 /// Set a configuration value by dot-separated key path.
 pub fn set_config_value(key_path: &str, value: &str) -> Result<()> {
     let mut config = load_config()?;

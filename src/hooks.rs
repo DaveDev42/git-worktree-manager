@@ -133,6 +133,47 @@ fn generate_hook_id(command: &str) -> String {
     format!("hook-{:08x}", hasher.finish() as u32)
 }
 
+/// Normalize hook event names: accept kebab-case aliases.
+/// e.g., "post-create" → "worktree.post_create", "pre-merge" → "merge.pre"
+pub fn normalize_event_name(event: &str) -> String {
+    // Already valid canonical name
+    if HOOK_EVENTS.contains(&event) {
+        return event.to_string();
+    }
+
+    // Try converting kebab-case to canonical form
+    let normalized = event.replace('-', "_");
+    if HOOK_EVENTS.contains(&normalized.as_str()) {
+        return normalized;
+    }
+
+    // Try short aliases: "post-create" → "worktree.post_create"
+    let short_aliases = [
+        ("pre_create", "worktree.pre_create"),
+        ("post_create", "worktree.post_create"),
+        ("pre_delete", "worktree.pre_delete"),
+        ("post_delete", "worktree.post_delete"),
+        ("pre_merge", "merge.pre"),
+        ("post_merge", "merge.post"),
+        ("pre_pr", "pr.pre"),
+        ("post_pr", "pr.post"),
+        ("pre_resume", "resume.pre"),
+        ("post_resume", "resume.post"),
+        ("pre_sync", "sync.pre"),
+        ("post_sync", "sync.post"),
+    ];
+
+    let kebab_to_snake = event.replace('-', "_");
+    for (alias, canonical) in &short_aliases {
+        if kebab_to_snake == *alias {
+            return canonical.to_string();
+        }
+    }
+
+    // Return as-is (will fail validation)
+    event.to_string()
+}
+
 /// Add a new hook for an event.
 pub fn add_hook(
     event: &str,
@@ -140,16 +181,21 @@ pub fn add_hook(
     hook_id: Option<&str>,
     description: Option<&str>,
 ) -> Result<String> {
-    if !HOOK_EVENTS.contains(&event) {
+    let event = normalize_event_name(event);
+    if !HOOK_EVENTS.contains(&event.as_str()) {
         return Err(CwError::Hook(format!(
-            "Invalid hook event: {}. Valid events: {}",
+            "Invalid hook event: {}.\n\nValid events:\n  {}",
             event,
-            HOOK_EVENTS.join(", ")
+            HOOK_EVENTS
+                .iter()
+                .map(|e| format!("  {}", e))
+                .collect::<Vec<_>>()
+                .join("\n")
         )));
     }
 
     let mut hooks = load_hooks_config(None);
-    let event_hooks = hooks.entry(event.to_string()).or_default();
+    let event_hooks = hooks.entry(event.clone()).or_default();
 
     let id = hook_id
         .map(|s| s.to_string())

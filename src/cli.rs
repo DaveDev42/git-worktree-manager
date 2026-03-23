@@ -160,6 +160,10 @@ pub enum Commands {
         #[arg(short = 'r', long)]
         delete_remote: bool,
 
+        /// Force remove even if worktree has changes (default)
+        #[arg(short, long, conflicts_with = "no_force")]
+        force: bool,
+
         /// Don't use --force flag
         #[arg(long)]
         no_force: bool,
@@ -353,6 +357,11 @@ pub enum Commands {
 pub enum ConfigAction {
     /// Show current configuration
     Show,
+    /// Get a configuration value
+    Get {
+        /// Dot-separated config key (e.g., git.default_base_branch)
+        key: String,
+    },
     /// Set a configuration value
     Set {
         /// Dot-separated config key (e.g., git.default_base_branch)
@@ -390,6 +399,10 @@ pub enum BackupAction {
     List {
         /// Filter by branch name
         branch: Option<String>,
+
+        /// Show all backups (not just current repo)
+        #[arg(short, long)]
+        all: bool,
     },
     /// Restore worktree from backup
     Restore {
