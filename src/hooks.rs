@@ -184,7 +184,7 @@ pub fn add_hook(
     let event = normalize_event_name(event);
     if !HOOK_EVENTS.contains(&event.as_str()) {
         return Err(CwError::Hook(format!(
-            "Invalid hook event: {}.\n\nValid events:\n  {}",
+            "Invalid hook event: {}.\n\nValid events:\n{}",
             event,
             HOOK_EVENTS
                 .iter()

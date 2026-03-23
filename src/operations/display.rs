@@ -208,39 +208,45 @@ fn print_worktree_table(rows: &[WorktreeRow]) {
         .map(|r| r.current_branch.len())
         .max()
         .unwrap_or(20);
-    let wt_col = max_wt.clamp(20, 35) + 2;
-    let br_col = max_br.clamp(20, 35) + 2;
+    let wt_col = max_wt.clamp(12, 35) + 2;
+    let br_col = max_br.clamp(12, 35) + 2;
 
     println!(
-        "{:<wt_col$} {:<br_col$} {:<10} {:<12} PATH",
-        "WORKTREE",
-        "CURRENT BRANCH",
-        "STATUS",
-        "AGE",
+        "  {} {:<wt_col$} {:<br_col$} {:<10} {:<12} {}",
+        style(" ").dim(),
+        style("WORKTREE").dim(),
+        style("BRANCH").dim(),
+        style("STATUS").dim(),
+        style("AGE").dim(),
+        style("PATH").dim(),
         wt_col = wt_col,
         br_col = br_col,
     );
-    println!("{}", "─".repeat(wt_col + br_col + 72));
+    let line_width = (wt_col + br_col + 40).min(cwconsole::terminal_width().saturating_sub(4));
+    println!("  {}", style("─".repeat(line_width)).dim());
 
     for row in rows {
+        let icon = cwconsole::status_icon(&row.status);
+        let st = cwconsole::status_style(&row.status);
+
         let branch_display = if row.worktree_id != row.current_branch {
-            style(format!("{} (⚠️)", row.current_branch))
+            style(format!("{} ⚠", row.current_branch))
                 .yellow()
                 .to_string()
         } else {
             row.current_branch.clone()
         };
 
-        let status_styled =
-            cwconsole::status_style(&row.status).apply_to(format!("{:<10}", row.status));
+        let status_styled = st.apply_to(format!("{:<10}", row.status));
 
         println!(
-            "{:<wt_col$} {:<br_col$} {} {:<12} {}",
-            row.worktree_id,
+            "  {} {:<wt_col$} {:<br_col$} {} {:<12} {}",
+            st.apply_to(icon),
+            style(&row.worktree_id).bold(),
             branch_display,
             status_styled,
-            row.age,
-            row.rel_path,
+            style(&row.age).dim(),
+            style(&row.rel_path).dim(),
             wt_col = wt_col,
             br_col = br_col,
         );
@@ -249,17 +255,19 @@ fn print_worktree_table(rows: &[WorktreeRow]) {
 
 fn print_worktree_compact(rows: &[WorktreeRow]) {
     for row in rows {
-        let status_styled = cwconsole::status_style(&row.status).apply_to(&row.status);
+        let icon = cwconsole::status_icon(&row.status);
+        let st = cwconsole::status_style(&row.status);
         let age_part = if row.age.is_empty() {
             String::new()
         } else {
-            format!("  {}", row.age)
+            format!("  {}", style(&row.age).dim())
         };
 
         println!(
-            "  {}  {}{}",
+            "  {} {}  {}{}",
+            st.apply_to(icon),
             style(&row.worktree_id).bold(),
-            status_styled,
+            st.apply_to(&row.status),
             age_part,
         );
 
@@ -267,11 +275,15 @@ fn print_worktree_compact(rows: &[WorktreeRow]) {
         if row.worktree_id != row.current_branch {
             details.push(format!(
                 "branch: {}",
-                style(format!("{} (⚠️)", row.current_branch)).yellow()
+                style(format!("{} ⚠", row.current_branch)).yellow()
             ));
         }
-        details.push(format!("path: {}", row.rel_path));
-        println!("    {}", details.join(" · "));
+        if !row.rel_path.is_empty() {
+            details.push(format!("{}", style(&row.rel_path).dim()));
+        }
+        if !details.is_empty() {
+            println!("      {}", details.join("  "));
+        }
     }
 }
 
@@ -356,7 +368,20 @@ pub fn show_tree() -> Result<()> {
             st.clone().apply_to(branch_name.as_str()).to_string()
         };
 
-        println!("{}{} {}", prefix, st.apply_to(icon), branch_display);
+        let age = path_age_str(path);
+        let age_display = if age.is_empty() {
+            String::new()
+        } else {
+            format!("  {}", style(age).dim())
+        };
+
+        println!(
+            "{}{} {}{}",
+            prefix,
+            st.apply_to(icon),
+            branch_display,
+            age_display
+        );
 
         let path_display = if let Ok(rel) = path.strip_prefix(repo.parent().unwrap_or(&repo)) {
             format!("../{}", rel.display())
@@ -398,7 +423,10 @@ pub fn show_stats() -> Result<()> {
         return Ok(());
     }
 
-    println!("\n{}\n", style("Worktree Statistics").cyan().bold());
+    println!();
+    println!("  {}", style("Worktree Statistics").cyan().bold());
+    println!("  {}", style("─".repeat(40)).dim());
+    println!();
 
     struct WtData {
         branch: String,
@@ -444,17 +472,50 @@ pub fn show_stats() -> Result<()> {
         *status_counts.entry(d.status.as_str()).or_insert(0) += 1;
     }
 
-    println!("{}", style("Overview:").bold());
-    println!("  Total worktrees: {}", data.len());
-    println!(
-        "  Status: {} clean, {} modified, {} active, {} stale",
-        style(status_counts.get("clean").unwrap_or(&0)).green(),
-        style(status_counts.get("modified").unwrap_or(&0)).yellow(),
-        style(status_counts.get("active").unwrap_or(&0))
-            .green()
-            .bold(),
-        style(status_counts.get("stale").unwrap_or(&0)).red(),
-    );
+    println!("  {} {}", style("Total:").bold(), data.len());
+
+    // Status bar visualization
+    let total = data.len();
+    let bar_width = 30;
+    let clean = *status_counts.get("clean").unwrap_or(&0);
+    let modified = *status_counts.get("modified").unwrap_or(&0);
+    let active = *status_counts.get("active").unwrap_or(&0);
+    let stale = *status_counts.get("stale").unwrap_or(&0);
+
+    let bar_clean = (clean * bar_width) / total.max(1);
+    let bar_modified = (modified * bar_width) / total.max(1);
+    let bar_active = (active * bar_width) / total.max(1);
+    let bar_stale = (stale * bar_width) / total.max(1);
+    // Fill remaining with clean if rounding left gaps
+    let bar_remainder = bar_width - bar_clean - bar_modified - bar_active - bar_stale;
+
+    print!("  ");
+    print!("{}", style("█".repeat(bar_clean + bar_remainder)).green());
+    print!("{}", style("█".repeat(bar_modified)).yellow());
+    print!("{}", style("█".repeat(bar_active)).green().bold());
+    print!("{}", style("█".repeat(bar_stale)).red());
+    println!();
+
+    let mut parts = Vec::new();
+    if clean > 0 {
+        parts.push(format!("{}", style(format!("○ {} clean", clean)).green()));
+    }
+    if modified > 0 {
+        parts.push(format!(
+            "{}",
+            style(format!("◉ {} modified", modified)).yellow()
+        ));
+    }
+    if active > 0 {
+        parts.push(format!(
+            "{}",
+            style(format!("● {} active", active)).green().bold()
+        ));
+    }
+    if stale > 0 {
+        parts.push(format!("{}", style(format!("x {} stale", stale)).red()));
+    }
+    println!("  {}", parts.join("  "));
     println!();
 
     // Age statistics
@@ -468,10 +529,13 @@ pub fn show_stats() -> Result<()> {
         let oldest = ages.iter().cloned().fold(0.0_f64, f64::max);
         let newest = ages.iter().cloned().fold(f64::MAX, f64::min);
 
-        println!("{}", style("Age Statistics:").bold());
-        println!("  Average age: {:.1} days", avg);
-        println!("  Oldest: {:.1} days", oldest);
-        println!("  Newest: {:.1} days", newest);
+        println!("  {} Age", style("◷").dim());
+        println!(
+            "    avg {}  oldest {}  newest {}",
+            style(format!("{:.1}d", avg)).bold(),
+            style(format!("{:.1}d", oldest)).yellow(),
+            style(format!("{:.1}d", newest)).green(),
+        );
         println!();
     }
 
@@ -486,44 +550,57 @@ pub fn show_stats() -> Result<()> {
         let avg = total as f64 / commits.len() as f64;
         let max_c = *commits.iter().max().unwrap_or(&0);
 
-        println!("{}", style("Commit Statistics:").bold());
-        println!("  Total commits across all worktrees: {}", total);
-        println!("  Average commits per worktree: {:.1}", avg);
-        println!("  Most commits in a worktree: {}", max_c);
+        println!("  {} Commits", style("⟲").dim());
+        println!(
+            "    total {}  avg {:.1}  max {}",
+            style(total).bold(),
+            avg,
+            style(max_c).bold(),
+        );
         println!();
     }
 
     // Top by age
-    println!("{}", style("Oldest Worktrees:").bold());
+    println!("  {}", style("Oldest Worktrees").bold());
     let mut by_age = data.iter().collect::<Vec<_>>();
     by_age.sort_by(|a, b| b.age_days.total_cmp(&a.age_days));
+    let max_age = by_age.first().map(|d| d.age_days).unwrap_or(1.0).max(1.0);
     for d in by_age.iter().take(5) {
         if d.age_days > 0.0 {
             let icon = cwconsole::status_icon(&d.status);
             let st = cwconsole::status_style(&d.status);
+            let bar_len = ((d.age_days / max_age) * 15.0) as usize;
             println!(
-                "  {} {:<30} {}",
+                "    {} {:<25} {} {}",
                 st.apply_to(icon),
                 d.branch,
-                format_age(d.age_days),
+                style("▓".repeat(bar_len.max(1))).dim(),
+                style(format_age(d.age_days)).dim(),
             );
         }
     }
     println!();
 
     // Top by commits
-    println!("{}", style("Most Active Worktrees (by commits):").bold());
+    println!("  {}", style("Most Active (by commits)").bold());
     let mut by_commits = data.iter().collect::<Vec<_>>();
     by_commits.sort_by(|a, b| b.commit_count.cmp(&a.commit_count));
+    let max_commits = by_commits
+        .first()
+        .map(|d| d.commit_count)
+        .unwrap_or(1)
+        .max(1);
     for d in by_commits.iter().take(5) {
         if d.commit_count > 0 {
             let icon = cwconsole::status_icon(&d.status);
             let st = cwconsole::status_style(&d.status);
+            let bar_len = (d.commit_count * 15) / max_commits;
             println!(
-                "  {} {:<30} {} commits",
+                "    {} {:<25} {} {}",
                 st.apply_to(icon),
                 d.branch,
-                d.commit_count,
+                style("▓".repeat(bar_len.max(1))).cyan(),
+                style(format!("{} commits", d.commit_count)).dim(),
             );
         }
     }

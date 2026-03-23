@@ -6,6 +6,35 @@ pub mod global;
 
 use clap::{Parser, Subcommand, ValueHint};
 
+/// Parse duration strings like "30", "30d", "2w", "1m" into days.
+fn parse_duration_days(s: &str) -> Result<u64, String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err("empty duration".into());
+    }
+
+    // Pure number = days
+    if let Ok(n) = s.parse::<u64>() {
+        return Ok(n);
+    }
+
+    let (num_str, suffix) = s.split_at(s.len() - 1);
+    let n: u64 = num_str
+        .parse()
+        .map_err(|_| format!("invalid duration: '{}'. Use e.g. 30, 7d, 2w, 1m", s))?;
+
+    match suffix {
+        "d" => Ok(n),
+        "w" => Ok(n * 7),
+        "m" => Ok(n * 30),
+        "y" => Ok(n * 365),
+        _ => Err(format!(
+            "unknown duration suffix '{}'. Use d (days), w (weeks), m (months), y (years)",
+            suffix
+        )),
+    }
+}
+
 /// Git worktree manager CLI.
 #[derive(Parser, Debug)]
 #[command(
@@ -187,8 +216,8 @@ pub enum Commands {
         #[arg(long)]
         merged: bool,
 
-        /// Delete worktrees older than N days
-        #[arg(long, value_name = "DAYS")]
+        /// Delete worktrees older than duration (e.g., 7, 30d, 2w, 1m)
+        #[arg(long, value_name = "DURATION", value_parser = parse_duration_days)]
         older_than: Option<u64>,
 
         /// Interactive selection UI
