@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.10](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.9...v0.0.10) (2026-03-23)
+
+
+### Features
+
+* QA improvements — config get, delete --force, hook aliases, backup filtering ([b8a7cc0](https://github.com/DaveDev42/git-worktree-manager/commit/b8a7cc048b4593f935646d21245cccd1cd09dc67))
+* rich TUI output, duration parsing, hook error formatting ([7047b87](https://github.com/DaveDev42/git-worktree-manager/commit/7047b873c1175315156613b61d9ff42da27b9c9b))
+
 ## [0.0.9](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.8...v0.0.9) (2026-03-23)
 
 
