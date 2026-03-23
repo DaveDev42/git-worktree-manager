@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.8](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.7...v0.0.8) (2026-03-23)
+
+
+### Features
+
+* add SHA256 checksums to release artifacts ([d70336e](https://github.com/DaveDev42/git-worktree-manager/commit/d70336ef9aada8ec58e0c66f53ed873342306bea))
+
 ## [0.0.7](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.6...v0.0.7) (2026-03-22)
 
 
