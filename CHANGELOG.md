@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.0.11](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.10...v0.0.11) (2026-03-24)
+
+
+### Features
+
+* auto-detect repository default branch ([2e4321c](https://github.com/DaveDev42/git-worktree-manager/commit/2e4321c62c5d4a1274eece01b901c599fcf16a8b))
+* config list table, config key tab completion, cw bash completion ([8ad734f](https://github.com/DaveDev42/git-worktree-manager/commit/8ad734f14dd736d693532f1c47b42a98fcf3f2c2))
+* show launch method display names in config show/list ([b0f552f](https://github.com/DaveDev42/git-worktree-manager/commit/b0f552f9ed35a93ae2658fb77ea23f6183b97cdb))
+* smart config set for ai_tool and launch.method ([79f2102](https://github.com/DaveDev42/git-worktree-manager/commit/79f21026a5a742fe92c739543848e03b5a2c63e7))
+
 ## [0.0.10](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.9...v0.0.10) (2026-03-23)
 
 
