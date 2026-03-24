@@ -92,6 +92,32 @@ impl LaunchMethod {
     }
 }
 
+impl LaunchMethod {
+    /// Human-readable display name.
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Foreground => "Foreground",
+            Self::Detach => "Detach (background)",
+            Self::ItermWindow => "iTerm2 — New Window",
+            Self::ItermTab => "iTerm2 — New Tab",
+            Self::ItermPaneH => "iTerm2 — Horizontal Pane",
+            Self::ItermPaneV => "iTerm2 — Vertical Pane",
+            Self::Tmux => "tmux — New Session",
+            Self::TmuxWindow => "tmux — New Window",
+            Self::TmuxPaneH => "tmux — Horizontal Pane",
+            Self::TmuxPaneV => "tmux — Vertical Pane",
+            Self::Zellij => "Zellij — New Session",
+            Self::ZellijTab => "Zellij — New Tab",
+            Self::ZellijPaneH => "Zellij — Horizontal Pane",
+            Self::ZellijPaneV => "Zellij — Vertical Pane",
+            Self::WeztermWindow => "WezTerm — New Window",
+            Self::WeztermTab => "WezTerm — New Tab",
+            Self::WeztermPaneH => "WezTerm — Horizontal Pane",
+            Self::WeztermPaneV => "WezTerm — Vertical Pane",
+        }
+    }
+}
+
 impl std::fmt::Display for LaunchMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())

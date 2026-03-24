@@ -484,6 +484,15 @@ pub fn reset_config() -> Result<()> {
     save_config(&Config::default())
 }
 
+/// Resolve a launch method value (possibly an alias) to its display name.
+pub fn resolve_launch_display_name(method: &str) -> String {
+    let aliases = launch_method_aliases();
+    let canonical = aliases.get(method).copied().unwrap_or(method);
+    LaunchMethod::from_str_opt(canonical)
+        .map(|m| format!("{} ({})", m.display_name(), method))
+        .unwrap_or_else(|| method.to_string())
+}
+
 /// All known configuration keys with descriptions.
 pub const CONFIG_KEYS: &[(&str, &str)] = &[
     (
@@ -554,7 +563,7 @@ pub fn list_config() -> Result<()> {
         let value_str = if !found {
             style("(unset)".to_string()).dim().to_string()
         } else {
-            match current {
+            let raw = match current {
                 serde_json::Value::String(s) => s.clone(),
                 serde_json::Value::Bool(b) => b.to_string(),
                 serde_json::Value::Number(n) => n.to_string(),
@@ -567,6 +576,12 @@ pub fn list_config() -> Result<()> {
                     }
                 }
                 other => serde_json::to_string(other).unwrap_or_default(),
+            };
+            // Show display name for launch.method
+            if *key == "launch.method" && raw != "null" {
+                resolve_launch_display_name(&raw)
+            } else {
+                raw
             }
         };
 
@@ -681,9 +696,10 @@ pub fn show_config() -> Result<String> {
     lines.push(String::new());
 
     if let Some(ref method) = config.launch.method {
-        lines.push(format!("  Launch method: {}", method));
+        let display = resolve_launch_display_name(method);
+        lines.push(format!("  Launch method: {}", display));
     } else {
-        lines.push("  Launch method: foreground (default)".to_string());
+        lines.push("  Launch method: Foreground (default)".to_string());
     }
 
     lines.push(format!(
