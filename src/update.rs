@@ -94,20 +94,39 @@ pub fn check_for_update_if_needed() {
     }
 }
 
-/// Fetch latest version string from GitHub Releases API (lightweight, no heavy deps).
-fn fetch_latest_version() -> Option<String> {
-    let output = Command::new("curl")
-        .args([
-            "-s",
-            "-H",
-            "Accept: application/vnd.github+json",
-            &format!(
-                "https://api.github.com/repos/{}/{}/releases/latest",
-                REPO_OWNER, REPO_NAME
-            ),
-        ])
+/// Get a GitHub auth token from gh CLI if available.
+fn gh_auth_token() -> Option<String> {
+    Command::new("gh")
+        .args(["auth", "token"])
         .output()
-        .ok()?;
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|t| !t.is_empty())
+}
+
+/// Fetch latest version string from GitHub Releases API.
+/// Uses gh auth token if available to avoid unauthenticated rate limits (60/hr).
+fn fetch_latest_version() -> Option<String> {
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/releases/latest",
+        REPO_OWNER, REPO_NAME
+    );
+
+    let mut args = vec![
+        "-s".to_string(),
+        "-H".to_string(),
+        "Accept: application/vnd.github+json".to_string(),
+    ];
+
+    if let Some(token) = gh_auth_token() {
+        args.push("-H".to_string());
+        args.push(format!("Authorization: Bearer {}", token));
+    }
+
+    args.push(url);
+
+    let output = Command::new("curl").args(&args).output().ok()?;
 
     if !output.status.success() {
         return None;
