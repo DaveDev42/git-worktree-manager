@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.0.12](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.11...v0.0.12) (2026-03-24)
+
+
+### Bug Fixes
+
+* check GITHUB_TOKEN/GH_TOKEN env before spawning gh CLI ([e62c3f7](https://github.com/DaveDev42/git-worktree-manager/commit/e62c3f78d87bce74fe7e55f9d756514fd092b9be))
+* use gh auth token for GitHub API to avoid rate limits ([ef4e498](https://github.com/DaveDev42/git-worktree-manager/commit/ef4e4987b185ea79b1df14a281f16f2d7fd3da35))
+
+
+### Performance Improvements
+
+* zero-latency startup update check with background refresh ([cb6550d](https://github.com/DaveDev42/git-worktree-manager/commit/cb6550d296bb9beebb5ffa58674629c0efbb108b))
+
 ## [0.0.11](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.10...v0.0.11) (2026-03-24)
 
 
