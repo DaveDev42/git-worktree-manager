@@ -53,6 +53,7 @@ fn main() {
         // Config commands
         Some(Commands::Config { action }) => match action {
             ConfigAction::Show => config::show_config().map(|output| println!("{}", output)),
+            ConfigAction::List => config::list_config(),
             ConfigAction::Get { key } => config::get_config_value(&key),
             ConfigAction::Set { key, value } => config::set_config_value(&key, &value),
             ConfigAction::UsePreset { name } => config::use_preset(&name),
@@ -321,6 +322,13 @@ fn main() {
                 shell
             ))),
         },
+
+        Some(Commands::ConfigKeys) => {
+            for (key, _desc) in config::CONFIG_KEYS {
+                println!("{}", key);
+            }
+            Ok(())
+        }
 
         None => Ok(()),
     };

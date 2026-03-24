@@ -6,6 +6,11 @@ pub mod global;
 
 use clap::{Parser, Subcommand, ValueHint};
 
+/// Validate config key (accepts any string but provides completion hints).
+fn parse_config_key(s: &str) -> Result<String, String> {
+    Ok(s.to_string())
+}
+
 /// Parse duration strings like "30", "30d", "2w", "1m" into days.
 fn parse_duration_days(s: &str) -> Result<u64, String> {
     let s = s.trim();
@@ -380,20 +385,29 @@ pub enum Commands {
         /// Shell type: bash, zsh, fish, or powershell
         shell: String,
     },
+
+    /// List config keys (for tab completion)
+    #[command(name = "_config-keys", hide = true)]
+    ConfigKeys,
 }
 
 #[derive(Subcommand, Debug)]
 pub enum ConfigAction {
-    /// Show current configuration
+    /// Show current configuration summary
     Show,
+    /// List all configuration keys, values, and descriptions
+    #[command(alias = "ls")]
+    List,
     /// Get a configuration value
     Get {
         /// Dot-separated config key (e.g., git.default_base_branch)
+        #[arg(value_parser = parse_config_key)]
         key: String,
     },
     /// Set a configuration value
     Set {
         /// Dot-separated config key (e.g., git.default_base_branch)
+        #[arg(value_parser = parse_config_key)]
         key: String,
         /// Value to set
         value: String,

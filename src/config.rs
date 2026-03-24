@@ -484,6 +484,104 @@ pub fn reset_config() -> Result<()> {
     save_config(&Config::default())
 }
 
+/// All known configuration keys with descriptions.
+pub const CONFIG_KEYS: &[(&str, &str)] = &[
+    (
+        "ai_tool.command",
+        "AI tool command name (e.g., claude, codex)",
+    ),
+    ("ai_tool.args", "Additional arguments passed to AI tool"),
+    (
+        "launch.method",
+        "Terminal launch method (foreground, tmux, wezterm, ...)",
+    ),
+    (
+        "launch.tmux_session_prefix",
+        "Prefix for tmux session names",
+    ),
+    (
+        "launch.wezterm_ready_timeout",
+        "Timeout (seconds) waiting for WezTerm",
+    ),
+    (
+        "git.default_base_branch",
+        "Default base branch for new worktrees",
+    ),
+    (
+        "update.auto_check",
+        "Automatically check for updates on startup",
+    ),
+    (
+        "shell_completion.prompted",
+        "Whether shell completion setup was prompted",
+    ),
+    (
+        "shell_completion.installed",
+        "Whether shell completion is installed",
+    ),
+];
+
+/// List all configuration keys with their current values and descriptions.
+pub fn list_config() -> Result<()> {
+    use console::style;
+
+    let config = load_config()?;
+    let json = serde_json::to_value(&config)?;
+
+    println!();
+    println!(
+        "  {:<35} {:<25} {}",
+        style("KEY").dim(),
+        style("VALUE").dim(),
+        style("DESCRIPTION").dim(),
+    );
+    println!("  {}", style("─".repeat(90)).dim());
+
+    for (key, desc) in CONFIG_KEYS {
+        let keys: Vec<&str> = key.split('.').collect();
+        let mut current = &json;
+        let mut found = true;
+        for &k in &keys {
+            match current.get(k) {
+                Some(v) => current = v,
+                None => {
+                    found = false;
+                    break;
+                }
+            }
+        }
+
+        let value_str = if !found {
+            style("(unset)".to_string()).dim().to_string()
+        } else {
+            match current {
+                serde_json::Value::String(s) => s.clone(),
+                serde_json::Value::Bool(b) => b.to_string(),
+                serde_json::Value::Number(n) => n.to_string(),
+                serde_json::Value::Null => "null".to_string(),
+                serde_json::Value::Array(a) => {
+                    if a.is_empty() {
+                        "[]".to_string()
+                    } else {
+                        serde_json::to_string(a).unwrap_or_default()
+                    }
+                }
+                other => serde_json::to_string(other).unwrap_or_default(),
+            }
+        };
+
+        println!(
+            "  {:<35} {:<25} {}",
+            style(key).bold(),
+            value_str,
+            style(desc).dim(),
+        );
+    }
+    println!();
+
+    Ok(())
+}
+
 /// Get a configuration value by dot-separated key path.
 pub fn get_config_value(key_path: &str) -> Result<()> {
     let config = load_config()?;

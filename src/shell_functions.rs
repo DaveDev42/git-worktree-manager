@@ -117,15 +117,42 @@ _gw_cd_completion() {
 # Register completion for bash
 if [ -n "$BASH_VERSION" ]; then
     complete -F _gw_cd_completion gw-cd
+    complete -F _gw_cd_completion cw-cd
     eval "$(gw --generate-completion bash 2>/dev/null || true)"
+
+    # Wrap _gw to add config key completion for bash
+    _gw_with_config() {
+        # If completing "config get <key>" or "config set <key>"
+        if [[ ${COMP_WORDS[1]} == "config" && ( ${COMP_WORDS[2]} == "get" || ${COMP_WORDS[2]} == "set" ) && $COMP_CWORD -eq 3 ]]; then
+            local keys
+            keys=$(gw _config-keys 2>/dev/null)
+            COMPREPLY=($(compgen -W "$keys" -- "${COMP_WORDS[COMP_CWORD]}"))
+            return
+        fi
+        _gw "$@"
+    }
+    complete -F _gw_with_config -o bashdefault -o default gw
+    complete -F _gw_with_config -o bashdefault -o default cw
 fi
 
 # Tab completion for zsh
 if [ -n "$ZSH_VERSION" ]; then
     # Register clap completion for gw/cw CLI inline
     eval "$(gw --generate-completion zsh 2>/dev/null)"
-    compdef _gw gw
-    compdef _gw cw
+
+    # Wrap _gw to add config key completion
+    _gw_with_config() {
+        # If completing "config get <key>" or "config set <key>", offer config keys
+        if [[ ${words[2]} == "config" && ( ${words[3]} == "get" || ${words[3]} == "set" ) && $CURRENT -eq 4 ]]; then
+            local -a keys
+            keys=(${(f)"$(gw _config-keys 2>/dev/null)"})
+            _describe 'config key' keys
+            return
+        fi
+        _gw "$@"
+    }
+    compdef _gw_with_config gw
+    compdef _gw_with_config cw
 
     _gw_cd_zsh() {
         local has_global=0
@@ -252,6 +279,10 @@ complete -c cw-cd -w gw-cd
 
 # Tab completion for gw/cw CLI (clap-generated)
 gw --generate-completion fish 2>/dev/null | source
+
+# Config key completion for gw config get/set
+complete -c gw -f -n '__fish_seen_subcommand_from config; and __fish_seen_subcommand_from get set' -a '(gw _config-keys 2>/dev/null)'
+complete -c cw -f -n '__fish_seen_subcommand_from config; and __fish_seen_subcommand_from get set' -a '(gw _config-keys 2>/dev/null)'
 "#;
 
 const POWERSHELL_FUNCTION: &str = r#"# git-worktree-manager shell functions for PowerShell
