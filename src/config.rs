@@ -732,10 +732,18 @@ pub fn show_config() -> Result<String> {
         lines.push("  Launch method: Foreground (default)".to_string());
     }
 
+    // Show auto-detected default branch for current repo
+    let detected = crate::git::detect_default_branch(None);
     lines.push(format!(
-        "  Default base branch: {}",
-        config.git.default_base_branch
+        "  Default base branch: {} (auto-detected)",
+        detected,
     ));
+    if config.git.default_base_branch != detected {
+        lines.push(format!(
+            "    Config fallback: {}",
+            config.git.default_base_branch
+        ));
+    }
     lines.push(String::new());
     lines.push(format!("Config file: {}", get_config_path().display()));
 

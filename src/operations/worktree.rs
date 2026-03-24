@@ -88,13 +88,10 @@ pub fn create_worktree(
     }
 
     // Determine base branch
-    let base = if is_remote_only && base_branch.is_none() {
-        git::get_current_branch(Some(&repo)).unwrap_or_else(|_| "main".to_string())
-    } else if let Some(b) = base_branch {
+    let base = if let Some(b) = base_branch {
         b.to_string()
     } else {
-        git::get_current_branch(Some(&repo))
-            .map_err(|_| CwError::InvalidBranch(messages::cannot_determine_base_branch()))?
+        git::detect_default_branch(Some(&repo))
     };
 
     // Verify base branch

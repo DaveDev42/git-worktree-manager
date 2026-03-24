@@ -107,6 +107,49 @@ pub fn get_current_branch(repo: Option<&Path>) -> Result<String> {
     Ok(branch)
 }
 
+/// Auto-detect the repository's default branch.
+///
+/// Priority:
+/// 1. `origin/HEAD` symref (most reliable — set by `git clone`)
+/// 2. Local `main` branch exists
+/// 3. Local `master` branch exists
+/// 4. Config fallback
+pub fn detect_default_branch(repo: Option<&Path>) -> String {
+    // 1. origin/HEAD
+    if let Ok(r) = git_command(
+        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+        repo,
+        false,
+        true,
+    ) {
+        if r.returncode == 0 {
+            let branch = r
+                .stdout
+                .trim()
+                .strip_prefix("origin/")
+                .unwrap_or(r.stdout.trim());
+            if !branch.is_empty() {
+                return branch.to_string();
+            }
+        }
+    }
+
+    // 2. main
+    if branch_exists("main", repo) {
+        return "main".to_string();
+    }
+
+    // 3. master
+    if branch_exists("master", repo) {
+        return "master".to_string();
+    }
+
+    // 4. config fallback
+    crate::config::load_config()
+        .map(|c| c.git.default_base_branch)
+        .unwrap_or_else(|_| "main".to_string())
+}
+
 /// Check if a branch exists.
 pub fn branch_exists(branch: &str, repo: Option<&Path>) -> bool {
     git_command(&["rev-parse", "--verify", branch], repo, false, true)
