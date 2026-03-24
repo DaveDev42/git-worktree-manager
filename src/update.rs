@@ -134,15 +134,47 @@ pub fn refresh_cache() {
     }
 }
 
-/// Get a GitHub auth token from gh CLI if available.
+/// Get a GitHub auth token if available.
+/// Checks GITHUB_TOKEN env var first, then falls back to `gh auth token`.
 fn gh_auth_token() -> Option<String> {
-    Command::new("gh")
-        .args(["auth", "token"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|t| !t.is_empty())
+    // 1. Environment variable (fast, no subprocess)
+    if let Ok(token) = std::env::var("GITHUB_TOKEN") {
+        if !token.is_empty() {
+            return Some(token);
+        }
+    }
+    if let Ok(token) = std::env::var("GH_TOKEN") {
+        if !token.is_empty() {
+            return Some(token);
+        }
+    }
+
+    // 2. gh CLI (only if binary exists)
+    if which_exists("gh") {
+        return Command::new("gh")
+            .args(["auth", "token"])
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|t| !t.is_empty());
+    }
+
+    None
+}
+
+/// Check if a command exists in PATH without running it.
+fn which_exists(cmd: &str) -> bool {
+    std::env::var_os("PATH")
+        .map(|paths| {
+            std::env::split_paths(&paths).any(|dir| {
+                let full = dir.join(cmd);
+                full.is_file() || (cfg!(windows) && dir.join(format!("{}.exe", cmd)).is_file())
+            })
+        })
+        .unwrap_or(false)
 }
 
 /// Fetch latest version string from GitHub Releases API.
