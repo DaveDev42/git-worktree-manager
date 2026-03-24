@@ -625,7 +625,37 @@ pub fn get_config_value(key_path: &str) -> Result<()> {
 }
 
 /// Set a configuration value by dot-separated key path.
+///
+/// Special handling:
+/// - `ai_tool <preset>` — sets command + args from preset (e.g., `ai_tool claude-yolo`)
+/// - `launch.method <alias>` — resolves alias (e.g., `w-t` → `wezterm-tab`)
 pub fn set_config_value(key_path: &str, value: &str) -> Result<()> {
+    // Shortcut: "ai_tool <preset_name>" applies the preset
+    if key_path == "ai_tool" {
+        let presets = ai_tool_presets();
+        if presets.contains_key(value) {
+            return use_preset(value);
+        }
+        // Not a preset — treat as raw command name
+        return set_ai_tool(value, None);
+    }
+
+    // Shortcut: resolve launch method aliases
+    if key_path == "launch.method" {
+        let aliases = launch_method_aliases();
+        let canonical = aliases.get(value).copied().unwrap_or(value);
+        // Validate
+        if value != "null"
+            && LaunchMethod::from_str_opt(canonical).is_none()
+            && LaunchMethod::from_str_opt(value).is_none()
+        {
+            return Err(CwError::Config(format!(
+                "Unknown launch method: '{}'. Use 'gw config list-presets' or 'gw --help' for options.",
+                value
+            )));
+        }
+    }
+
     let mut config = load_config()?;
     let mut json = serde_json::to_value(&config)?;
 
