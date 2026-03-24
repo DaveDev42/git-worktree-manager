@@ -400,13 +400,13 @@ pub enum ConfigAction {
     List,
     /// Get a configuration value
     Get {
-        /// Dot-separated config key (e.g., git.default_base_branch)
+        /// Dot-separated config key (e.g., ai_tool.command)
         #[arg(value_parser = parse_config_key)]
         key: String,
     },
     /// Set a configuration value
     Set {
-        /// Dot-separated config key (e.g., git.default_base_branch)
+        /// Dot-separated config key (e.g., ai_tool.command)
         #[arg(value_parser = parse_config_key)]
         key: String,
         /// Value to set

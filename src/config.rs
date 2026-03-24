@@ -36,9 +36,9 @@ pub struct LaunchConfig {
     pub wezterm_ready_timeout: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GitConfig {
-    pub default_base_branch: String,
+    // default_base_branch removed — auto-detected per repo via git::detect_default_branch()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,9 +64,7 @@ impl Default for Config {
                 tmux_session_prefix: "gw".to_string(),
                 wezterm_ready_timeout: 5.0,
             },
-            git: GitConfig {
-                default_base_branch: "main".to_string(),
-            },
+            git: GitConfig {},
             update: UpdateConfig { auto_check: true },
             shell_completion: ShellCompletionConfig {
                 prompted: false,
@@ -513,10 +511,6 @@ pub const CONFIG_KEYS: &[(&str, &str)] = &[
         "Timeout (seconds) waiting for WezTerm",
     ),
     (
-        "git.default_base_branch",
-        "Default base branch for new worktrees",
-    ),
-    (
         "update.auto_check",
         "Automatically check for updates on startup",
     ),
@@ -738,12 +732,6 @@ pub fn show_config() -> Result<String> {
         "  Default base branch: {} (auto-detected)",
         detected,
     ));
-    if config.git.default_base_branch != detected {
-        lines.push(format!(
-            "    Config fallback: {}",
-            config.git.default_base_branch
-        ));
-    }
     lines.push(String::new());
     lines.push(format!("Config file: {}", get_config_path().display()));
 
@@ -939,7 +927,6 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.ai_tool.command, "claude");
         assert!(config.ai_tool.args.is_empty());
-        assert_eq!(config.git.default_base_branch, "main");
         assert!(config.update.auto_check);
     }
 

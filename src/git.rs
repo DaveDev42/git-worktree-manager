@@ -144,10 +144,8 @@ pub fn detect_default_branch(repo: Option<&Path>) -> String {
         return "master".to_string();
     }
 
-    // 4. config fallback
-    crate::config::load_config()
-        .map(|c| c.git.default_base_branch)
-        .unwrap_or_else(|_| "main".to_string())
+    // 4. fallback
+    "main".to_string()
 }
 
 /// Check if a branch exists.
