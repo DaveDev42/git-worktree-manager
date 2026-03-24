@@ -22,11 +22,21 @@ fn main() {
         return;
     }
 
-    // Auto-update check (non-blocking, once per day)
-    update::check_for_update_if_needed();
+    // Skip startup checks for internal commands (avoid recursion / unnecessary I/O)
+    let is_internal = matches!(
+        &cli.command,
+        Some(Commands::UpdateCache | Commands::ConfigKeys)
+    );
+
+    // Auto-update check (instant from cache, background refresh)
+    if !is_internal {
+        update::check_for_update_if_needed();
+    }
 
     // One-time prompt for shell integration setup
-    config::prompt_shell_completion_setup();
+    if !is_internal {
+        config::prompt_shell_completion_setup();
+    }
 
     // Set global mode flag
     helpers::set_global_mode(cli.global);
@@ -322,6 +332,11 @@ fn main() {
                 shell
             ))),
         },
+
+        Some(Commands::UpdateCache) => {
+            update::refresh_cache();
+            Ok(())
+        }
 
         Some(Commands::ConfigKeys) => {
             for (key, _desc) in config::CONFIG_KEYS {

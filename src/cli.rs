@@ -389,6 +389,10 @@ pub enum Commands {
     /// List config keys (for tab completion)
     #[command(name = "_config-keys", hide = true)]
     ConfigKeys,
+
+    /// Refresh update cache (background process)
+    #[command(name = "_update-cache", hide = true)]
+    UpdateCache,
 }
 
 #[derive(Subcommand, Debug)]

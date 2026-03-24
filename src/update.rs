@@ -13,9 +13,17 @@ const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const REPO_OWNER: &str = "DaveDev42";
 const REPO_NAME: &str = "git-worktree-manager";
 
+/// How often to check for updates (in seconds). Default: 6 hours.
+const CHECK_INTERVAL_SECS: u64 = 6 * 60 * 60;
+
 /// Cache for update check results.
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct UpdateCache {
+    /// Unix timestamp of last check.
+    #[serde(default)]
+    last_check_ts: u64,
+    /// Legacy date string (for backward compat).
+    #[serde(default)]
     last_check: String,
     latest_version: Option<String>,
 }
@@ -48,47 +56,79 @@ fn save_cache(cache: &UpdateCache) {
     }
 }
 
-fn today_str() -> String {
-    crate::session::chrono_now_iso_pub()
-        .split('T')
-        .next()
-        .unwrap_or("")
-        .to_string()
+fn now_ts() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
-fn should_check() -> bool {
+fn cache_is_fresh(cache: &UpdateCache) -> bool {
+    let age = now_ts().saturating_sub(cache.last_check_ts);
+    age < CHECK_INTERVAL_SECS
+}
+
+/// Check for updates (called on startup).
+///
+/// Phase 1 (instant, no I/O): show notification from cache if newer version known.
+/// Phase 2 (background): if cache is stale, fork a background process to refresh it.
+pub fn check_for_update_if_needed() {
     let config = crate::config::load_config().unwrap_or_default();
     if !config.update.auto_check {
-        return false;
-    }
-    let cache = load_cache();
-    cache.last_check != today_str()
-}
-
-/// Check for updates (called on startup, non-blocking).
-pub fn check_for_update_if_needed() {
-    if !should_check() {
         return;
     }
 
+    let cache = load_cache();
+
+    // Phase 1: instant notification from cache (zero latency)
+    if let Some(ref latest) = cache.latest_version {
+        if is_newer(latest, CURRENT_VERSION) {
+            eprintln!(
+                "\n{} {} is available (current: {})",
+                style("git-worktree-manager").bold(),
+                style(format!("v{}", latest)).green(),
+                style(format!("v{}", CURRENT_VERSION)).dim(),
+            );
+            eprintln!("Run '{}' to update.\n", style("gw upgrade").cyan().bold());
+        }
+    }
+
+    // Phase 2: if cache is stale, refresh in background
+    if !cache_is_fresh(&cache) {
+        spawn_background_check();
+    }
+}
+
+/// Spawn a background process to check for updates without blocking startup.
+fn spawn_background_check() {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    // Use a hidden subcommand to do the actual check
+    let _ = Command::new(exe)
+        .arg("_update-cache")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+}
+
+/// Refresh the update cache (called by background process).
+pub fn refresh_cache() {
     if let Some(latest) = fetch_latest_version() {
         let cache = UpdateCache {
-            last_check: today_str(),
-            latest_version: Some(latest.clone()),
+            last_check_ts: now_ts(),
+            latest_version: Some(latest),
+            ..Default::default()
         };
         save_cache(&cache);
-
-        if is_newer(&latest, CURRENT_VERSION) {
-            eprintln!(
-                "\ngit-worktree-manager {} is available (current: {})",
-                latest, CURRENT_VERSION
-            );
-            eprintln!("Run 'gw upgrade' to update.\n");
-        }
     } else {
+        // Save timestamp even on failure to avoid hammering
         let cache = UpdateCache {
-            last_check: today_str(),
-            latest_version: None,
+            last_check_ts: now_ts(),
+            latest_version: load_cache().latest_version, // keep previous
+            ..Default::default()
         };
         save_cache(&cache);
     }
@@ -115,6 +155,8 @@ fn fetch_latest_version() -> Option<String> {
 
     let mut args = vec![
         "-s".to_string(),
+        "--max-time".to_string(),
+        "10".to_string(),
         "-H".to_string(),
         "Accept: application/vnd.github+json".to_string(),
     ];
@@ -154,13 +196,11 @@ fn is_homebrew_install() -> bool {
         Ok(p) => p,
         Err(_) => return false,
     };
-    // Resolve symlinks to get the real path
     let real_path = match std::fs::canonicalize(&exe) {
         Ok(p) => p,
         Err(_) => exe,
     };
     let path_str = real_path.to_string_lossy();
-    // Homebrew installs to /opt/homebrew/Cellar/... or /usr/local/Cellar/...
     path_str.contains("/Cellar/") || path_str.contains("/homebrew/")
 }
 
@@ -188,6 +228,14 @@ pub fn upgrade() {
             return;
         }
     };
+
+    // Update cache with fresh data
+    let cache = UpdateCache {
+        last_check_ts: now_ts(),
+        latest_version: Some(latest_version.clone()),
+        ..Default::default()
+    };
+    save_cache(&cache);
 
     if !is_newer(&latest_version, CURRENT_VERSION) {
         println!("{}", style("Already up to date.").green());
@@ -230,12 +278,11 @@ pub fn upgrade() {
         .current_version(CURRENT_VERSION)
         .target_version_tag(&format!("v{}", latest_version))
         .show_download_progress(true)
-        .no_confirm(true) // We already confirmed above
+        .no_confirm(true)
         .build()
         .and_then(|updater| updater.update())
     {
         Ok(status) => {
-            // Also update the cw binary if it exists alongside gw
             update_companion_binary();
             println!(
                 "{}",
@@ -255,9 +302,6 @@ pub fn upgrade() {
 }
 
 /// Update the `cw` companion binary alongside `gw`.
-///
-/// self_update only replaces the running binary (gw). Since cw is the same
-/// binary, we copy the newly installed gw to cw.
 fn update_companion_binary() {
     let current_exe = match std::env::current_exe() {
         Ok(p) => p,
@@ -291,7 +335,26 @@ mod tests {
 
     #[test]
     fn test_is_homebrew_install() {
-        // Current binary is not from Homebrew in test context
         assert!(!is_homebrew_install());
+    }
+
+    #[test]
+    fn test_cache_freshness() {
+        let fresh = UpdateCache {
+            last_check_ts: now_ts(),
+            latest_version: Some("1.0.0".into()),
+            ..Default::default()
+        };
+        assert!(cache_is_fresh(&fresh));
+
+        let stale = UpdateCache {
+            last_check_ts: now_ts() - CHECK_INTERVAL_SECS - 1,
+            latest_version: Some("1.0.0".into()),
+            ..Default::default()
+        };
+        assert!(!cache_is_fresh(&stale));
+
+        let empty = UpdateCache::default();
+        assert!(!cache_is_fresh(&empty));
     }
 }
