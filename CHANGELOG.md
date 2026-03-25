@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.0.13](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.12...v0.0.13) (2026-03-25)
+
+
+### Bug Fixes
+
+* disable zip default-features to fix MSRV 1.85 and remove time vulnerability ([78ffb28](https://github.com/DaveDev42/git-worktree-manager/commit/78ffb283c609c566d2d50d71adb101ce1db261de))
+* remove invalid [warnings] section from audit.toml ([67433d3](https://github.com/DaveDev42/git-worktree-manager/commit/67433d316de723256e3fc503cf3516a6dd93d91c))
+* replace self_update with reqwest[rustls-native-roots] for enterprise MDM TLS support ([cb12a30](https://github.com/DaveDev42/git-worktree-manager/commit/cb12a30aff4315857460e577572e0a8fcc2dbd81))
+* restore audit.toml ignores for zip→time and indicatif→number_prefix ([ec6ceed](https://github.com/DaveDev42/git-worktree-manager/commit/ec6ceedf0c71d5e8644af8cc1a10ebd1cbedc39a))
+
 ## [0.0.12](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.11...v0.0.12) (2026-03-24)
 
 
