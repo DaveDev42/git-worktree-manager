@@ -1,2 +1,9 @@
 [advisories]
-ignore = []
+# time 0.3.41 pinned for MSRV 1.85 compatibility; fix (0.3.47) requires Rust 1.88.
+# Transitive dep via zip; not directly exploitable in a CLI tool.
+ignore = ["RUSTSEC-2026-0009"]
+
+[warnings]
+# number_prefix 0.4.0 unmaintained; transitive dep via indicatif.
+# No replacement available yet.
+unmaintained = "allow"
