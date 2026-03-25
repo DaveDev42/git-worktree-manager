@@ -36,7 +36,7 @@ self-replace = "1.5"
 indicatif = "0.17"
 tar = "0.4"
 flate2 = "1"
-zip = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
