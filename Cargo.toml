@@ -31,7 +31,7 @@ dirs = "6"
 walkdir = "2"
 regex = "1"
 pathdiff = "0.2"
-self_update = { version = "0.42.0", default-features = false, features = ["archive-tar", "archive-zip", "compression-flate2", "compression-zip-deflate", "rustls"] }
+self_update = { version = "0.43.1", default-features = false, features = ["archive-tar", "archive-zip", "compression-flate2", "compression-zip-deflate", "rustls"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
