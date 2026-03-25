@@ -1,7 +1,2 @@
 [advisories]
 ignore = []
-
-[warnings]
-# number_prefix 0.4.0 unmaintained; transitive dep via indicatif.
-# No replacement available yet.
-unmaintained = "allow"
