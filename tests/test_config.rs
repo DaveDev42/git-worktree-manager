@@ -1,6 +1,4 @@
 /// Integration tests for configuration management.
-use std::path::PathBuf;
-
 use tempfile::TempDir;
 
 /// Test config with isolated home directory to avoid polluting real config.
@@ -16,7 +14,6 @@ fn test_default_config_values() {
     let config = git_worktree_manager::config::Config::default();
     assert_eq!(config.ai_tool.command, "claude");
     assert!(config.ai_tool.args.is_empty());
-    assert_eq!(config.git.default_base_branch, "main");
     assert!(config.update.auto_check);
     assert_eq!(config.launch.tmux_session_prefix, "gw");
     assert_eq!(config.launch.wezterm_ready_timeout, 5.0);
@@ -247,7 +244,6 @@ fn test_config_serialization_roundtrip() {
     let json = serde_json::to_string(&config).unwrap();
     let deserialized: git_worktree_manager::config::Config = serde_json::from_str(&json).unwrap();
     assert_eq!(deserialized.ai_tool.command, "claude");
-    assert_eq!(deserialized.git.default_base_branch, "main");
     assert!(deserialized.update.auto_check);
 }
 

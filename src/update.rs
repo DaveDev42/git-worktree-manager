@@ -1,6 +1,6 @@
 /// Auto-update check and self-upgrade via GitHub Releases.
 ///
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Read};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -236,6 +236,205 @@ fn is_homebrew_install() -> bool {
     path_str.contains("/Cellar/") || path_str.contains("/homebrew/")
 }
 
+/// Determine the current platform target triple.
+fn current_target() -> &'static str {
+    #[cfg(all(target_arch = "x86_64", target_os = "macos"))]
+    {
+        "x86_64-apple-darwin"
+    }
+    #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
+    {
+        "aarch64-apple-darwin"
+    }
+    #[cfg(all(target_arch = "x86_64", target_os = "windows"))]
+    {
+        "x86_64-pc-windows-msvc"
+    }
+    #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+    {
+        "x86_64-unknown-linux-musl"
+    }
+    #[cfg(all(target_arch = "aarch64", target_os = "linux"))]
+    {
+        "aarch64-unknown-linux-musl"
+    }
+}
+
+/// Archive extension for the current platform.
+fn archive_ext() -> &'static str {
+    if cfg!(windows) {
+        "zip"
+    } else {
+        "tar.gz"
+    }
+}
+
+/// Download the release asset and extract the binary to a temp file.
+/// Returns the path to the extracted binary.
+fn download_and_extract(version: &str) -> Result<PathBuf, String> {
+    let target = current_target();
+    let asset_name = format!("gw-{}.{}", target, archive_ext());
+    let url = format!(
+        "https://github.com/{}/{}/releases/download/v{}/{}",
+        REPO_OWNER, REPO_NAME, version, asset_name
+    );
+
+    // Build HTTP client (uses system CA store via rustls-native-roots)
+    let client = reqwest::blocking::Client::builder()
+        .user_agent(format!("gw/{}", CURRENT_VERSION))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let response = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("Download failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Download failed: HTTP {} for {}",
+            response.status(),
+            asset_name
+        ));
+    }
+
+    let total_size = response.content_length().unwrap_or(0);
+
+    // Set up progress bar
+    let pb = if total_size > 0 {
+        let pb = indicatif::ProgressBar::new(total_size);
+        pb.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template("{bar:40.cyan/blue} {bytes}/{total_bytes} ({eta})")
+                .unwrap_or_else(|_| indicatif::ProgressStyle::default_bar())
+                .progress_chars("█▓░"),
+        );
+        pb
+    } else {
+        let pb = indicatif::ProgressBar::new_spinner();
+        pb.set_style(
+            indicatif::ProgressStyle::default_spinner()
+                .template("{spinner} {bytes} downloaded")
+                .unwrap_or_else(|_| indicatif::ProgressStyle::default_spinner()),
+        );
+        pb
+    };
+
+    // Download to memory with progress
+    let mut downloaded: Vec<u8> = Vec::with_capacity(total_size as usize);
+    let mut reader = response;
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| format!("Read error: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        downloaded.extend_from_slice(&buf[..n]);
+        pb.set_position(downloaded.len() as u64);
+    }
+    pb.finish_and_clear();
+
+    // Extract binary
+    let tmp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
+    let bin_name = if cfg!(windows) { "gw.exe" } else { "gw" };
+
+    if cfg!(windows) {
+        extract_zip(&downloaded, tmp_dir.path(), bin_name)?;
+    } else {
+        extract_tar_gz(&downloaded, tmp_dir.path(), bin_name)?;
+    }
+
+    let extracted_bin = tmp_dir.path().join(bin_name);
+    if !extracted_bin.exists() {
+        return Err(format!(
+            "Binary '{}' not found in archive. Contents may have unexpected layout.",
+            bin_name
+        ));
+    }
+
+    // Move to a persistent temp file (tempdir would delete on drop)
+    let persistent_path = std::env::temp_dir().join(format!("gw-update-{}", version));
+    std::fs::copy(&extracted_bin, &persistent_path)
+        .map_err(|e| format!("Failed to copy binary: {}", e))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&persistent_path, std::fs::Permissions::from_mode(0o755));
+    }
+
+    Ok(persistent_path)
+}
+
+/// Extract a tar.gz archive and find the binary.
+#[cfg(not(windows))]
+fn extract_tar_gz(data: &[u8], dest: &std::path::Path, bin_name: &str) -> Result<(), String> {
+    let gz = flate2::read::GzDecoder::new(data);
+    let mut archive = tar::Archive::new(gz);
+
+    for entry in archive.entries().map_err(|e| format!("tar error: {}", e))? {
+        let mut entry = entry.map_err(|e| format!("tar entry error: {}", e))?;
+        let path = entry
+            .path()
+            .map_err(|e| format!("tar path error: {}", e))?
+            .into_owned();
+
+        // Extract only the binary (may be at root or in a subdirectory)
+        if path.file_name().and_then(|n| n.to_str()) == Some(bin_name) {
+            let out_path = dest.join(bin_name);
+            let mut out_file = std::fs::File::create(&out_path)
+                .map_err(|e| format!("Failed to create file: {}", e))?;
+            std::io::copy(&mut entry, &mut out_file)
+                .map_err(|e| format!("Failed to write file: {}", e))?;
+            return Ok(());
+        }
+    }
+    Err(format!("'{}' not found in tar.gz archive", bin_name))
+}
+
+/// Extract a zip archive and find the binary.
+#[cfg(windows)]
+fn extract_zip(data: &[u8], dest: &std::path::Path, bin_name: &str) -> Result<(), String> {
+    let cursor = std::io::Cursor::new(data);
+    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("zip error: {}", e))?;
+
+    for i in 0..archive.len() {
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| format!("zip entry error: {}", e))?;
+        let name = file.name().to_string();
+
+        if name.ends_with(bin_name)
+            || std::path::Path::new(&name)
+                .file_name()
+                .and_then(|n| n.to_str())
+                == Some(bin_name)
+        {
+            let out_path = dest.join(bin_name);
+            let mut out_file = std::fs::File::create(&out_path)
+                .map_err(|e| format!("Failed to create file: {}", e))?;
+            std::io::copy(&mut file, &mut out_file)
+                .map_err(|e| format!("Failed to write file: {}", e))?;
+            return Ok(());
+        }
+    }
+    Err(format!("'{}' not found in zip archive", bin_name))
+}
+
+// Provide stub functions for platforms where the other archive format isn't used,
+// so the code compiles on all targets (they're never called).
+#[cfg(windows)]
+fn extract_tar_gz(_data: &[u8], _dest: &std::path::Path, _bin_name: &str) -> Result<(), String> {
+    Err("tar.gz extraction not supported on Windows".to_string())
+}
+
+#[cfg(not(windows))]
+fn extract_zip(_data: &[u8], _dest: &std::path::Path, _bin_name: &str) -> Result<(), String> {
+    Err("zip extraction not used on Unix".to_string())
+}
+
 /// Manual upgrade command — downloads and installs the latest version.
 pub fn upgrade() {
     println!("git-worktree-manager v{}", CURRENT_VERSION);
@@ -301,24 +500,31 @@ pub fn upgrade() {
         return;
     }
 
-    // Use self_update to download and replace
-    println!("Downloading and installing...");
-    match self_update::backends::github::Update::configure()
-        .repo_owner(REPO_OWNER)
-        .repo_name(REPO_NAME)
-        .bin_name("gw")
-        .current_version(CURRENT_VERSION)
-        .target_version_tag(&format!("v{}", latest_version))
-        .show_download_progress(true)
-        .no_confirm(true)
-        .build()
-        .and_then(|updater| updater.update())
-    {
-        Ok(status) => {
+    println!("Downloading v{}...", latest_version);
+
+    match download_and_extract(&latest_version) {
+        Ok(new_binary) => {
+            // Replace the running binary
+            if let Err(e) = self_replace::self_replace(&new_binary) {
+                println!(
+                    "{}",
+                    style(format!("Failed to replace binary: {}", e)).red()
+                );
+                println!(
+                    "Download manually: https://github.com/{}/{}/releases/latest",
+                    REPO_OWNER, REPO_NAME
+                );
+                let _ = std::fs::remove_file(&new_binary);
+                return;
+            }
+
+            // Clean up temp file
+            let _ = std::fs::remove_file(&new_binary);
+
             update_companion_binary();
             println!(
                 "{}",
-                style(format!("Upgraded to v{}!", status.version()))
+                style(format!("Upgraded to v{}!", latest_version))
                     .green()
                     .bold()
             );
@@ -388,5 +594,30 @@ mod tests {
 
         let empty = UpdateCache::default();
         assert!(!cache_is_fresh(&empty));
+    }
+
+    #[test]
+    fn test_current_target() {
+        let target = current_target();
+        assert!(!target.is_empty());
+        // Should match one of our supported targets
+        let valid = [
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc",
+            "x86_64-unknown-linux-musl",
+            "aarch64-unknown-linux-musl",
+        ];
+        assert!(valid.contains(&target));
+    }
+
+    #[test]
+    fn test_archive_ext() {
+        let ext = archive_ext();
+        if cfg!(windows) {
+            assert_eq!(ext, "zip");
+        } else {
+            assert_eq!(ext, "tar.gz");
+        }
     }
 }

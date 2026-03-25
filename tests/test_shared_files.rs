@@ -1,6 +1,5 @@
 /// Tests for .cwshare file sharing functionality.
 /// Ported from tests/test_shared_files.py (14 tests).
-use std::path::Path;
 use tempfile::TempDir;
 
 use git_worktree_manager::shared_files::{parse_cwshare, share_files};
