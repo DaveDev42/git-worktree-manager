@@ -445,6 +445,19 @@ pub fn get_ai_tool_merge_command(prompt: &str) -> Result<Vec<String>> {
     Ok(cmd)
 }
 
+/// Get the AI tool command with an initial prompt for interactive delegation.
+///
+/// Appends the prompt as a positional argument so the AI tool starts in interactive mode
+/// with the given task. For Claude Code: `claude "<prompt>"` starts interactive with initial prompt.
+pub fn get_ai_tool_delegate_command(prompt: &str) -> Result<Vec<String>> {
+    let mut cmd = get_ai_tool_command()?;
+    if cmd.is_empty() {
+        return Ok(cmd);
+    }
+    cmd.push(prompt.to_string());
+    Ok(cmd)
+}
+
 /// Check if the currently configured AI tool is Claude-based.
 pub fn is_claude_tool() -> Result<bool> {
     if let Ok(env_tool) = std::env::var("CW_AI_TOOL") {

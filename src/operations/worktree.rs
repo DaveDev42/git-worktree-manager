@@ -24,6 +24,7 @@ pub fn create_worktree(
     path: Option<&str>,
     _term: Option<&str>,
     no_ai: bool,
+    initial_prompt: Option<&str>,
 ) -> Result<PathBuf> {
     let repo = git::get_repo_root(None)?;
 
@@ -194,7 +195,8 @@ pub fn create_worktree(
 
     // Launch AI tool in the new worktree
     if !no_ai {
-        let _ = super::ai_tools::launch_ai_tool(&worktree_path, _term, false, None);
+        let _ =
+            super::ai_tools::launch_ai_tool(&worktree_path, _term, false, None, initial_prompt);
     }
 
     Ok(worktree_path)
@@ -462,8 +464,13 @@ pub fn sync_worktree(
                             style("*").cyan().bold(),
                             branch
                         );
-                        let _ =
-                            super::ai_tools::launch_ai_tool(wt_path, None, false, Some(&prompt));
+                        let _ = super::ai_tools::launch_ai_tool(
+                            wt_path,
+                            None,
+                            false,
+                            Some(&prompt),
+                            None,
+                        );
                     } else {
                         // Abort rebase on failure
                         let _ =
