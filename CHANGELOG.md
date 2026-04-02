@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.16](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.15...v0.0.16) (2026-04-02)
+
+
+### Bug Fixes
+
+* prevent env var race condition and config leakage in launch method tests ([378c4eb](https://github.com/DaveDev42/git-worktree-manager/commit/378c4ebd5435d118b4f7b3471b81fc0a49b86fdf))
+* prevent env var race condition in launch method tests ([cf0e62f](https://github.com/DaveDev42/git-worktree-manager/commit/cf0e62fef81c03f50dd8f5986f89b095db63de9c))
+
 ## [0.0.15](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.14...v0.0.15) (2026-04-02)
 
 
