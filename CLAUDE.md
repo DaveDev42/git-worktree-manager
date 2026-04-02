@@ -61,6 +61,12 @@ cargo build --release              # Release: target/release/gw (~1.9MB)
 Reads existing `~/.config/claude-worktree/config.json` from the Python version.
 Same git config metadata keys and session storage paths.
 
+## Git & Release
+
+- PR merge method: **merge commit** (`--merge`). Do not use squash or rebase merge.
+- Release process: [release-please](https://github.com/googleapis/release-please) automates versioning via conventional commits
+- Commit messages: conventional commits (`feat:`, `fix:`, `perf:`, `chore:`, etc.)
+
 ## Code Conventions
 
 - Error handling: `Result<T>` with `CwError` enum, no `unwrap()` in production
