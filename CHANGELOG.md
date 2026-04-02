@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.14](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.13...v0.0.14) (2026-04-02)
+
+
+### Features
+
+* add dynamic branch name tab completion for all subcommands ([b2d895c](https://github.com/DaveDev42/git-worktree-manager/commit/b2d895cd3c9cf91e40a98d271964b73bc567dc39))
+
 ## [0.0.13](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.12...v0.0.13) (2026-03-25)
 
 
