@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.0.17](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.16...v0.0.17) (2026-04-02)
+
+
+### Features
+
+* add Claude Code skill for worktree task delegation ([52f0d06](https://github.com/DaveDev42/git-worktree-manager/commit/52f0d06d24fb258780c1c7e1549cfacda50cdf94))
+* add Claude Code skill for worktree task delegation ([478619b](https://github.com/DaveDev42/git-worktree-manager/commit/478619bf4d95389f473feaed594a3a8ef407ae5a))
+* expand skill with full gw reference and references/ support ([aa1a9c1](https://github.com/DaveDev42/git-worktree-manager/commit/aa1a9c123b89b5f3000af3ddaba0434bab2a4b39))
+
 ## [0.0.16](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.15...v0.0.16) (2026-04-02)
 
 
