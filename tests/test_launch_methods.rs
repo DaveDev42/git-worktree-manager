@@ -3,6 +3,7 @@
 /// Mirrors the Python test file tests/test_launch_methods.py.
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Mutex;
 
 use git_worktree_manager::config::{
     ai_tool_merge_presets, ai_tool_presets, ai_tool_resume_presets, claude_preset_names,
@@ -13,11 +14,16 @@ use git_worktree_manager::constants::{
 };
 use git_worktree_manager::operations::launchers;
 
+/// Mutex to serialize tests that modify the CW_LAUNCH_METHOD env var.
+/// Prevents race conditions when tests run in parallel.
+static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
 // =========================================================================
 // Helper: save/restore an environment variable around a closure.
 // =========================================================================
 
 fn with_env_var<F: FnOnce()>(key: &str, value: Option<&str>, f: F) {
+    let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
     let saved = std::env::var(key).ok();
     match value {
         Some(v) => std::env::set_var(key, v),
@@ -32,6 +38,7 @@ fn with_env_var<F: FnOnce()>(key: &str, value: Option<&str>, f: F) {
 
 /// Run closure with multiple env vars cleared, then restore them.
 fn with_clean_env<F: FnOnce()>(keys: &[&str], f: F) {
+    let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
     let saved: Vec<(&str, Option<String>)> =
         keys.iter().map(|k| (*k, std::env::var(k).ok())).collect();
     for k in keys {
@@ -287,7 +294,11 @@ fn test_full_name_with_session() {
 
 #[test]
 fn test_none_returns_default() {
-    with_clean_env(&["CW_LAUNCH_METHOD"], || {
+    // Isolate from real config file by pointing HOME to a temp dir
+    let tmp = tempfile::tempdir().unwrap();
+    with_clean_env(&["CW_LAUNCH_METHOD", "HOME", "USERPROFILE"], || {
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("USERPROFILE", tmp.path());
         let (method, session) = parse_term_option(None).unwrap();
         // Without env or config, should default to Foreground
         assert_eq!(method, LaunchMethod::Foreground);
@@ -431,7 +442,11 @@ fn test_all_methods_parse() {
 
 #[test]
 fn test_fallback_foreground() {
-    with_clean_env(&["CW_LAUNCH_METHOD"], || {
+    // Isolate from real config file by pointing HOME to a temp dir
+    let tmp = tempfile::tempdir().unwrap();
+    with_clean_env(&["CW_LAUNCH_METHOD", "HOME", "USERPROFILE"], || {
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("USERPROFILE", tmp.path());
         let method = get_default_launch_method().unwrap();
         // Without config file override, should be Foreground
         assert_eq!(method, LaunchMethod::Foreground);
@@ -464,7 +479,12 @@ fn test_env_override_full_name() {
 
 #[test]
 fn test_invalid_env_falls_through() {
-    with_env_var("CW_LAUNCH_METHOD", Some("invalid"), || {
+    // Isolate from real config file by pointing HOME to a temp dir
+    let tmp = tempfile::tempdir().unwrap();
+    with_clean_env(&["CW_LAUNCH_METHOD", "HOME", "USERPROFILE"], || {
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("USERPROFILE", tmp.path());
+        std::env::set_var("CW_LAUNCH_METHOD", "invalid");
         // Invalid env value should fall through to config/default
         let method = get_default_launch_method().unwrap();
         assert_eq!(method, LaunchMethod::Foreground);
