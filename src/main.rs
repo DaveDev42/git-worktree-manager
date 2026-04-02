@@ -8,7 +8,7 @@ use git_worktree_manager::cwshare_setup;
 use git_worktree_manager::hooks;
 use git_worktree_manager::operations::{
     ai_tools, backup, clean, config_ops, diagnostics, display, git_ops, global_ops, helpers,
-    path_cmd, shell, stash, worktree,
+    path_cmd, setup_claude, shell, stash, worktree,
 };
 use git_worktree_manager::shell_functions;
 use git_worktree_manager::update;
@@ -82,6 +82,7 @@ fn main() {
             no_term,
             term,
             bg: _,
+            prompt,
         }) => {
             // Prompt for .cwshare setup on first run
             cwshare_setup::prompt_cwshare_setup();
@@ -92,6 +93,7 @@ fn main() {
                 path.as_deref(),
                 term.as_deref(),
                 no_term,
+                prompt.as_deref(),
             )
             .map(|_| ())
         }
@@ -304,6 +306,8 @@ fn main() {
         Some(Commands::Prune) => global_ops::global_prune(),
 
         Some(Commands::Doctor) => diagnostics::doctor(),
+
+        Some(Commands::SetupClaude) => setup_claude::setup_claude(),
 
         Some(Commands::Upgrade) => {
             update::upgrade();

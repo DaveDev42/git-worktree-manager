@@ -26,12 +26,15 @@ pub fn launch_ai_tool(
     term: Option<&str>,
     resume: bool,
     prompt: Option<&str>,
+    initial_prompt: Option<&str>,
 ) -> Result<()> {
     let (method, session_name) = parse_term_option(term)?;
 
     // Determine command
     let ai_cmd_parts = if let Some(p) = prompt {
         config::get_ai_tool_merge_command(p)?
+    } else if let Some(ip) = initial_prompt {
+        config::get_ai_tool_delegate_command(ip)?
     } else if resume {
         get_ai_tool_resume_command()?
     } else {
@@ -216,7 +219,7 @@ pub fn resume_worktree(
             );
         }
 
-        launch_ai_tool(&worktree_path, term, has_session, None)?;
+        launch_ai_tool(&worktree_path, term, has_session, None, None)?;
     }
 
     // Post-resume hooks

@@ -88,6 +88,10 @@ pub enum Commands {
         /// Launch AI tool in background
         #[arg(long)]
         bg: bool,
+
+        /// Initial prompt to pass to the AI tool (starts interactive session with task)
+        #[arg(long)]
+        prompt: Option<String>,
     },
 
     /// Create GitHub Pull Request from worktree
@@ -360,6 +364,10 @@ pub enum Commands {
 
     /// Check for updates / upgrade
     Upgrade,
+
+    /// Install Claude Code skill for worktree task delegation
+    #[command(name = "setup-claude")]
+    SetupClaude,
 
     /// Interactive shell integration setup
     ShellSetup,

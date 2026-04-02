@@ -10,6 +10,7 @@ use crate::error::Result;
 use crate::git;
 
 use super::display::get_worktree_status;
+use super::setup_claude;
 
 /// Worktree info collected during health check.
 struct WtInfo {
@@ -43,6 +44,9 @@ pub fn doctor() -> Result<()> {
 
     // 5. Check for merge conflicts
     let conflicted = check_merge_conflicts(&worktrees, &mut issues);
+
+    // 6. Check Claude Code integration
+    check_claude_integration();
 
     // Summary
     print_summary(issues, warnings);
@@ -268,6 +272,36 @@ fn check_merge_conflicts(worktrees: &[WtInfo], issues: &mut u32) -> Vec<(String,
     println!();
 
     conflicted
+}
+
+/// Check Claude Code installation and skill integration.
+fn check_claude_integration() {
+    println!("{}", style("6. Checking Claude Code integration...").bold());
+
+    let has_claude = Command::new("which")
+        .arg("claude")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !has_claude {
+        println!(
+            "   {} Claude Code not detected (optional)",
+            style("-").dim()
+        );
+    } else if setup_claude::is_skill_installed() {
+        println!("   {} Claude Code skill installed", style("*").green());
+    } else {
+        println!(
+            "   {} Claude Code detected but delegation skill not installed",
+            style("!").yellow()
+        );
+        println!(
+            "   {}",
+            style("Tip: Run 'gw setup-claude' to enable task delegation via Claude Code").dim()
+        );
+    }
+    println!();
 }
 
 /// Print health check summary.
