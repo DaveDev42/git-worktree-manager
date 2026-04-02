@@ -120,15 +120,72 @@ if [ -n "$BASH_VERSION" ]; then
     complete -F _gw_cd_completion cw-cd
     eval "$(gw --generate-completion bash 2>/dev/null || true)"
 
-    # Wrap _gw to add config key completion for bash
+    # Wrap _gw to add dynamic completion (config keys + branch names)
     _gw_with_config() {
-        # If completing "config get <key>" or "config set <key>"
-        if [[ ${COMP_WORDS[1]} == "config" && ( ${COMP_WORDS[2]} == "get" || ${COMP_WORDS[2]} == "set" ) && $COMP_CWORD -eq 3 ]]; then
+        local cur="${COMP_WORDS[COMP_CWORD]}"
+        local subcmd="${COMP_WORDS[1]}"
+
+        # Config key completion: "config get <key>" or "config set <key>"
+        if [[ $subcmd == "config" && ( ${COMP_WORDS[2]} == "get" || ${COMP_WORDS[2]} == "set" ) && $COMP_CWORD -eq 3 ]]; then
             local keys
             keys=$(gw _config-keys 2>/dev/null)
-            COMPREPLY=($(compgen -W "$keys" -- "${COMP_WORDS[COMP_CWORD]}"))
+            COMPREPLY=($(compgen -W "$keys" -- "$cur"))
             return
         fi
+
+        # Branch completion for subcommands with positional branch args
+        if [[ "$cur" != -* ]]; then
+            # Check for global mode
+            local gflag=""
+            local i
+            for i in "${COMP_WORDS[@]}"; do
+                case "$i" in -g|--global) gflag="-g" ;; esac
+            done
+
+            # Count non-flag positional args after subcommand (skip flag values)
+            local pos_count=0
+            local start_idx=2
+            local max_pos=1
+
+            case "$subcmd" in
+                pr|merge|resume|shell|delete|sync)
+                    max_pos=1
+                    ;;
+                diff|change-base)
+                    max_pos=2
+                    ;;
+                backup)
+                    if [[ ${COMP_WORDS[2]} =~ ^(create|list|restore)$ ]]; then
+                        start_idx=3; max_pos=1
+                    else
+                        max_pos=0
+                    fi
+                    ;;
+                stash)
+                    if [[ ${COMP_WORDS[2]} == "apply" ]]; then
+                        start_idx=3; max_pos=1
+                    else
+                        max_pos=0
+                    fi
+                    ;;
+                *)
+                    max_pos=0
+                    ;;
+            esac
+
+            if [[ $max_pos -gt 0 ]]; then
+                for ((i=start_idx; i<COMP_CWORD; i++)); do
+                    [[ ${COMP_WORDS[i]} != -* ]] && ((pos_count++))
+                done
+                if [[ $pos_count -lt $max_pos ]]; then
+                    local branches
+                    branches=$(gw _path --list-branches $gflag 2>/dev/null)
+                    COMPREPLY=($(compgen -W "$branches" -- "$cur"))
+                    return
+                fi
+            fi
+        fi
+
         _gw "$@"
     }
     complete -F _gw_with_config -o bashdefault -o default gw
@@ -140,15 +197,64 @@ if [ -n "$ZSH_VERSION" ]; then
     # Register clap completion for gw/cw CLI inline
     eval "$(gw --generate-completion zsh 2>/dev/null)"
 
-    # Wrap _gw to add config key completion
+    # Wrap _gw to add dynamic completion (config keys + branch names)
     _gw_with_config() {
-        # If completing "config get <key>" or "config set <key>", offer config keys
-        if [[ ${words[2]} == "config" && ( ${words[3]} == "get" || ${words[3]} == "set" ) && $CURRENT -eq 4 ]]; then
+        local subcmd="${words[2]}"
+
+        # Config key completion: "config get <key>" or "config set <key>"
+        if [[ $subcmd == "config" && ( ${words[3]} == "get" || ${words[3]} == "set" ) && $CURRENT -eq 4 ]]; then
             local -a keys
             keys=(${(f)"$(gw _config-keys 2>/dev/null)"})
             _describe 'config key' keys
             return
         fi
+
+        # Branch completion for subcommands with positional branch args
+        if [[ "${words[CURRENT]}" != -* ]]; then
+            # Check for global mode
+            local gflag=""
+            local w
+            for w in "${words[@]}"; do
+                case "$w" in -g|--global) gflag="-g" ;; esac
+            done
+
+            # Count non-flag positional args after subcommand
+            local -i pos_count=0
+            local -i start_idx=3
+            local -i max_pos=0
+
+            case "$subcmd" in
+                pr|merge|resume|shell|delete|sync)
+                    max_pos=1
+                    ;;
+                diff|change-base)
+                    max_pos=2
+                    ;;
+                backup)
+                    case "${words[3]}" in create|list|restore)
+                        start_idx=4; max_pos=1 ;; esac
+                    ;;
+                stash)
+                    if [[ ${words[3]} == "apply" ]]; then
+                        start_idx=4; max_pos=1
+                    fi
+                    ;;
+            esac
+
+            if [[ $max_pos -gt 0 ]]; then
+                local -i i
+                for ((i=start_idx; i<CURRENT; i++)); do
+                    [[ ${words[i]} != -* ]] && ((pos_count++))
+                done
+                if [[ $pos_count -lt $max_pos ]]; then
+                    local -a branches
+                    branches=(${(f)"$(gw _path --list-branches $gflag 2>/dev/null)"})
+                    compadd -a branches
+                    return
+                fi
+            fi
+        fi
+
         _gw "$@"
     }
     compdef _gw_with_config gw
@@ -283,6 +389,18 @@ gw --generate-completion fish 2>/dev/null | source
 # Config key completion for gw config get/set
 complete -c gw -f -n '__fish_seen_subcommand_from config; and __fish_seen_subcommand_from get set' -a '(gw _config-keys 2>/dev/null)'
 complete -c cw -f -n '__fish_seen_subcommand_from config; and __fish_seen_subcommand_from get set' -a '(gw _config-keys 2>/dev/null)'
+
+# Branch completion for subcommands with positional branch args
+for cmd in pr merge resume shell delete sync diff change-base
+    complete -c gw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _path --list-branches 2>/dev/null)'
+    complete -c cw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _path --list-branches 2>/dev/null)'
+end
+
+# Branch completion for nested subcommands: backup create/list/restore, stash apply
+complete -c gw -f -n '__fish_seen_subcommand_from backup; and __fish_seen_subcommand_from create list restore' -a '(gw _path --list-branches 2>/dev/null)'
+complete -c cw -f -n '__fish_seen_subcommand_from backup; and __fish_seen_subcommand_from create list restore' -a '(gw _path --list-branches 2>/dev/null)'
+complete -c gw -f -n '__fish_seen_subcommand_from stash; and __fish_seen_subcommand_from apply' -a '(gw _path --list-branches 2>/dev/null)'
+complete -c cw -f -n '__fish_seen_subcommand_from stash; and __fish_seen_subcommand_from apply' -a '(gw _path --list-branches 2>/dev/null)'
 "#;
 
 const POWERSHELL_FUNCTION: &str = r#"# git-worktree-manager shell functions for PowerShell
