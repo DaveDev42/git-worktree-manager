@@ -56,6 +56,12 @@ cargo fmt --check                  # Format check
 cargo build --release              # Release: target/release/gw (~1.9MB)
 ```
 
+## Claude Code Integration
+
+Run `gw setup-claude` to install the Claude Code skill for this project.
+Once installed, use the `/gw-delegate` slash command or natural language to delegate coding tasks to isolated worktrees.
+Each delegated task runs in its own branch with a separate Claude Code instance.
+
 ## Config Compatibility
 
 Reads existing `~/.config/claude-worktree/config.json` from the Python version.
