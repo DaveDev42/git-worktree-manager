@@ -276,10 +276,7 @@ fn check_merge_conflicts(worktrees: &[WtInfo], issues: &mut u32) -> Vec<(String,
 
 /// Check Claude Code installation and skill integration.
 fn check_claude_integration() {
-    println!(
-        "{}",
-        style("6. Checking Claude Code integration...").bold()
-    );
+    println!("{}", style("6. Checking Claude Code integration...").bold());
 
     let has_claude = Command::new("which")
         .arg("claude")
@@ -293,10 +290,7 @@ fn check_claude_integration() {
             style("-").dim()
         );
     } else if setup_claude::is_skill_installed() {
-        println!(
-            "   {} Claude Code skill installed",
-            style("*").green()
-        );
+        println!("   {} Claude Code skill installed", style("*").green());
     } else {
         println!(
             "   {} Claude Code detected but delegation skill not installed",

@@ -195,8 +195,7 @@ pub fn create_worktree(
 
     // Launch AI tool in the new worktree
     if !no_ai {
-        let _ =
-            super::ai_tools::launch_ai_tool(&worktree_path, _term, false, None, initial_prompt);
+        let _ = super::ai_tools::launch_ai_tool(&worktree_path, _term, false, None, initial_prompt);
     }
 
     Ok(worktree_path)

@@ -35,8 +35,10 @@ pub fn is_skill_installed() -> bool {
 
 /// Write a file if its content differs from the new content.
 /// Returns true if the file was written (created or updated).
-fn write_if_changed(path: &PathBuf, new_content: &str) -> std::result::Result<bool, std::io::Error>
-{
+fn write_if_changed(
+    path: &PathBuf,
+    new_content: &str,
+) -> std::result::Result<bool, std::io::Error> {
     if path.exists() {
         let existing = std::fs::read_to_string(path).unwrap_or_default();
         if existing == new_content {
