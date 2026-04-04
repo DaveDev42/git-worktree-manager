@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.20](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.19...v0.0.20) (2026-04-04)
+
+
+### Bug Fixes
+
+* companion binary overwritten with old version during upgrade ([c6d4334](https://github.com/DaveDev42/git-worktree-manager/commit/c6d43341c1e1ae16f7bec10783c56d81578601d2))
+* companion binary overwritten with old version during upgrade ([505f4d9](https://github.com/DaveDev42/git-worktree-manager/commit/505f4d9dc3c38662ea3df2b038ee09fc4aebebfd))
+
 ## [0.0.19](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.18...v0.0.19) (2026-04-04)
 
 
