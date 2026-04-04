@@ -539,7 +539,10 @@ pub fn upgrade() {
     }
 }
 
-/// Update the `cw` companion binary alongside `gw`.
+/// Update the companion binary (`cw` or `gw`) alongside the one that was just upgraded.
+///
+/// After `self_replace`, the current exe is the new version. Copy it to the companion
+/// so both binaries stay in sync. If invoked as `cw`, update `gw`; if as `gw`, update `cw`.
 fn update_companion_binary() {
     let current_exe = match std::env::current_exe() {
         Ok(p) => p,
@@ -551,11 +554,17 @@ fn update_companion_binary() {
     };
 
     let bin_ext = if cfg!(windows) { ".exe" } else { "" };
-    let gw_path = bin_dir.join(format!("gw{}", bin_ext));
-    let cw_path = bin_dir.join(format!("cw{}", bin_ext));
+    let exe_name = current_exe
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or("gw");
 
-    if cw_path.exists() {
-        let _ = std::fs::copy(&gw_path, &cw_path);
+    // Determine companion: gw↔cw
+    let companion_name = if exe_name == "cw" { "gw" } else { "cw" };
+    let companion_path = bin_dir.join(format!("{}{}", companion_name, bin_ext));
+
+    if companion_path.exists() {
+        let _ = std::fs::copy(&current_exe, &companion_path);
     }
 }
 
