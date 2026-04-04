@@ -155,6 +155,62 @@ pub fn launch_method_aliases() -> HashMap<&'static str, &'static str> {
     ])
 }
 
+/// Valid hook events for lifecycle hooks.
+pub const HOOK_EVENTS: &[&str] = &[
+    "worktree.pre_create",
+    "worktree.post_create",
+    "worktree.pre_delete",
+    "worktree.post_delete",
+    "merge.pre",
+    "merge.post",
+    "pr.pre",
+    "pr.post",
+    "resume.pre",
+    "resume.post",
+    "sync.pre",
+    "sync.post",
+];
+
+/// Available AI tool preset names.
+pub const PRESET_NAMES: &[&str] = &[
+    "claude",
+    "claude-remote",
+    "claude-yolo",
+    "claude-yolo-remote",
+    "codex",
+    "codex-yolo",
+    "no-op",
+];
+
+/// Return all valid `--term` values: canonical launch methods + aliases.
+pub fn all_term_values() -> Vec<&'static str> {
+    let mut values: Vec<&str> = vec![
+        "foreground",
+        "detach",
+        "iterm-window",
+        "iterm-tab",
+        "iterm-pane-h",
+        "iterm-pane-v",
+        "tmux",
+        "tmux-window",
+        "tmux-pane-h",
+        "tmux-pane-v",
+        "zellij",
+        "zellij-tab",
+        "zellij-pane-h",
+        "zellij-pane-v",
+        "wezterm-window",
+        "wezterm-tab",
+        "wezterm-pane-h",
+        "wezterm-pane-v",
+    ];
+    for alias in launch_method_aliases().keys() {
+        values.push(alias);
+    }
+    values.sort();
+    values
+}
+
 /// Seconds in one day (24 * 60 * 60).
 pub const SECS_PER_DAY: u64 = 86400;
 
@@ -331,6 +387,40 @@ mod tests {
         if let Some(age) = path_age_days(&tmp) {
             assert!(age >= 0.0);
         }
+    }
+
+    #[test]
+    fn test_all_term_values_contains_canonical_and_aliases() {
+        let values = all_term_values();
+        // 18 canonical + aliases
+        assert!(
+            values.len() >= 36,
+            "expected ≥36 term values, got {}",
+            values.len()
+        );
+        // Check a few canonical values
+        assert!(values.contains(&"foreground"));
+        assert!(values.contains(&"tmux"));
+        assert!(values.contains(&"wezterm-tab"));
+        // Check a few aliases
+        assert!(values.contains(&"fg"));
+        assert!(values.contains(&"t"));
+        assert!(values.contains(&"w-t"));
+    }
+
+    #[test]
+    fn test_hook_events_not_empty() {
+        assert!(!HOOK_EVENTS.is_empty());
+        assert!(HOOK_EVENTS.contains(&"worktree.post_create"));
+        assert!(HOOK_EVENTS.contains(&"merge.pre"));
+    }
+
+    #[test]
+    fn test_preset_names_not_empty() {
+        assert!(!PRESET_NAMES.is_empty());
+        assert!(PRESET_NAMES.contains(&"claude"));
+        assert!(PRESET_NAMES.contains(&"codex"));
+        assert!(PRESET_NAMES.contains(&"no-op"));
     }
 
     #[test]

@@ -210,7 +210,7 @@ Create new worktree for feature branch.
 - `-p, --path <PATH>` — Custom worktree path (default: `../<repo>-<branch>`)
 - `-b, --base <BASE>` — Base branch to create from (default: from config or auto-detect)
 - `--no-term` — Skip AI tool launch
-- `-T, --term <TERM>` — Terminal launch method (e.g., `w-t`, `i-t`, `t`, `d`)
+- `-T, --term <METHOD>` — Terminal launch method. Accepts canonical name (e.g., `tmux`, `wezterm-tab`) or alias (e.g., `t`, `w-t`). Supports `method:session-name` for tmux/zellij (e.g., `tmux:mywork`). See Terminal Launch Methods section below.
 - `--bg` — Launch AI tool in background
 - `--prompt <PROMPT>` — Initial prompt to pass to AI tool (interactive session)
 
@@ -230,7 +230,7 @@ Show detailed info about the current worktree.
 
 ### `gw resume [branch] [OPTIONS]`
 Resume AI work in a worktree. Auto-detects existing Claude sessions and uses `--continue`.
-- `-T, --term <TERM>` — Terminal launch method
+- `-T, --term <METHOD>` — Terminal launch method (same format as `gw new`)
 - `--bg` — Launch AI tool in background
 - `-w, --worktree` — Resolve as worktree name
 - `-b, --by-branch` — Resolve as branch name
@@ -328,13 +328,16 @@ Show current configuration.
 List all configuration keys with descriptions.
 
 ### `gw config get <KEY>`
-Get a config value. Keys use dot notation: `ai_tool.command`, `launch.method`, `launch.tmux_session_prefix`.
+Get a config value. Keys use dot notation (see Key Config Keys section below).
 
 ### `gw config set <KEY> <VALUE>`
-Set a config value.
+Set a config value. Key-specific valid values:
+- `ai_tool.command` — Preset name (`claude`, `claude-yolo`, `claude-remote`, `claude-yolo-remote`, `codex`, `codex-yolo`, `no-op`) or any command name
+- `launch.method` — Any terminal launch method name or alias (see Terminal Launch Methods)
+- `update.auto_check` — `true` or `false`
 
 ### `gw config use-preset <NAME>`
-Use a predefined AI tool preset: `claude`, `claude-yolo`, `codex`, `codex-yolo`, `no-op`.
+Use a predefined AI tool preset: `claude`, `claude-yolo`, `claude-remote`, `claude-yolo-remote`, `codex`, `codex-yolo`, `no-op`.
 
 ### `gw config list-presets`
 List available presets.
@@ -396,7 +399,7 @@ Shell function to navigate to worktree by branch name. Supports:
 
 ## Terminal Launch Methods
 
-Used with `-T` flag on `gw new` and `gw resume`:
+Used with `-T` flag on `gw new` and `gw resume`. Supports `method:session-name` for tmux/zellij (e.g., `tmux:mywork`, `z:task1`).
 
 | Method | Alias | Description |
 |--------|-------|-------------|
@@ -429,5 +432,14 @@ Used with `-T` flag on `gw new` and `gw resume`:
 | `launch.tmux_session_prefix` | tmux session prefix | `gw` |
 | `launch.wezterm_ready_timeout` | WezTerm ready timeout (secs) | `5.0` |
 | `update.auto_check` | Auto-check for updates | `true` |
+
+## Helper Commands (for scripting and completion)
+
+These hidden commands output newline-separated values, useful for scripting:
+- `gw _config-keys` — List all config key names
+- `gw _term-values` — List all valid `--term` values (canonical + aliases)
+- `gw _preset-names` — List all AI tool preset names
+- `gw _hook-events` — List all valid hook event names
+- `gw _path --list-branches [-g]` — List worktree branch names
 "#
 }
