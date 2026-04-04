@@ -504,6 +504,11 @@ pub fn upgrade() {
 
     match download_and_extract(&latest_version) {
         Ok(new_binary) => {
+            // Update companion (cw↔gw) BEFORE self_replace, using the downloaded
+            // binary directly. This ensures both binaries get the new version even
+            // when upgrading from old versions that had a broken companion update.
+            update_companion_from(&new_binary);
+
             // Replace the running binary
             if let Err(e) = self_replace::self_replace(&new_binary) {
                 println!(
@@ -521,7 +526,6 @@ pub fn upgrade() {
             // Clean up temp file
             let _ = std::fs::remove_file(&new_binary);
 
-            update_companion_binary();
             println!(
                 "{}",
                 style(format!("Upgraded to v{}!", latest_version))
@@ -539,11 +543,12 @@ pub fn upgrade() {
     }
 }
 
-/// Update the companion binary (`cw` or `gw`) alongside the one that was just upgraded.
+/// Update the companion binary (`cw` or `gw`) from the downloaded new binary.
 ///
-/// After `self_replace`, the current exe is the new version. Copy it to the companion
-/// so both binaries stay in sync. If invoked as `cw`, update `gw`; if as `gw`, update `cw`.
-fn update_companion_binary() {
+/// Copies `new_binary` directly to the companion path, so both `gw` and `cw`
+/// get the new version regardless of which one is currently running.
+/// Called BEFORE `self_replace` to avoid depending on already-replaced binary state.
+fn update_companion_from(new_binary: &std::path::Path) {
     let current_exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(_) => return,
@@ -564,7 +569,7 @@ fn update_companion_binary() {
     let companion_path = bin_dir.join(format!("{}{}", companion_name, bin_ext));
 
     if companion_path.exists() {
-        let _ = std::fs::copy(&current_exe, &companion_path);
+        let _ = std::fs::copy(new_binary, &companion_path);
     }
 }
 
