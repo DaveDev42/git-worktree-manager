@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.18](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.17...v0.0.18) (2026-04-04)
+
+
+### Features
+
+* improve tab completion for all option values ([c5bb0d0](https://github.com/DaveDev42/git-worktree-manager/commit/c5bb0d08ed1e66b0d54d1086ed9731cf286c2194))
+* improve tab completion for all option values ([08dc42a](https://github.com/DaveDev42/git-worktree-manager/commit/08dc42a8dafdc1e527a2fb466067f6f59785c527))
+
 ## [0.0.17](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.16...v0.0.17) (2026-04-02)
 
 
