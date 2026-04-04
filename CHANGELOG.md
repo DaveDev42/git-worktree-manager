@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.21](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.20...v0.0.21) (2026-04-04)
+
+
+### Bug Fixes
+
+* upgrade companion binary from downloaded file, not installed one ([620d8f0](https://github.com/DaveDev42/git-worktree-manager/commit/620d8f0223f3869f90c16597ff4c0bc7bf8578a4))
+* upgrade companion binary from downloaded file, not installed one ([7f28260](https://github.com/DaveDev42/git-worktree-manager/commit/7f28260d5273896c83d977ed83ef5639402e7cf7))
+
 ## [0.0.20](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.19...v0.0.20) (2026-04-04)
 
 
