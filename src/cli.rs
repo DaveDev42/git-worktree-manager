@@ -55,7 +55,7 @@ pub struct Cli {
     pub global: bool,
 
     /// Generate shell completions for the given shell
-    #[arg(long, value_name = "SHELL")]
+    #[arg(long, value_name = "SHELL", value_parser = clap::builder::PossibleValuesParser::new(["bash", "zsh", "fish", "powershell", "elvish"]))]
     pub generate_completion: Option<String>,
 
     #[command(subcommand)]
@@ -401,6 +401,18 @@ pub enum Commands {
     /// Refresh update cache (background process)
     #[command(name = "_update-cache", hide = true)]
     UpdateCache,
+
+    /// List terminal launch method values (for tab completion)
+    #[command(name = "_term-values", hide = true)]
+    TermValues,
+
+    /// List preset names (for tab completion)
+    #[command(name = "_preset-names", hide = true)]
+    PresetNames,
+
+    /// List hook event names (for tab completion)
+    #[command(name = "_hook-events", hide = true)]
+    HookEvents,
 }
 
 #[derive(Subcommand, Debug)]
@@ -427,6 +439,7 @@ pub enum ConfigAction {
     /// Use a predefined AI tool preset
     UsePreset {
         /// Preset name (e.g., claude, codex, no-op)
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::constants::PRESET_NAMES))]
         name: String,
     },
     /// List available presets
@@ -499,6 +512,7 @@ pub enum HookAction {
     /// Add a new hook for an event
     Add {
         /// Hook event (e.g., worktree.post_create, merge.pre)
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::constants::HOOK_EVENTS))]
         event: String,
         /// Shell command to execute
         command: String,
@@ -512,6 +526,7 @@ pub enum HookAction {
     /// Remove a hook
     Remove {
         /// Hook event
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::constants::HOOK_EVENTS))]
         event: String,
         /// Hook identifier to remove
         hook_id: String,
@@ -519,11 +534,13 @@ pub enum HookAction {
     /// List all hooks
     List {
         /// Filter by event
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::constants::HOOK_EVENTS))]
         event: Option<String>,
     },
     /// Enable a disabled hook
     Enable {
         /// Hook event
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::constants::HOOK_EVENTS))]
         event: String,
         /// Hook identifier
         hook_id: String,
@@ -531,6 +548,7 @@ pub enum HookAction {
     /// Disable a hook without removing it
     Disable {
         /// Hook event
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::constants::HOOK_EVENTS))]
         event: String,
         /// Hook identifier
         hook_id: String,
@@ -538,6 +556,7 @@ pub enum HookAction {
     /// Manually run all hooks for an event
     Run {
         /// Hook event to run
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::constants::HOOK_EVENTS))]
         event: String,
         /// Show what would be executed without running
         #[arg(long)]

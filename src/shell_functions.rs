@@ -125,12 +125,33 @@ if [ -n "$BASH_VERSION" ]; then
         local cur="${COMP_WORDS[COMP_CWORD]}"
         local subcmd="${COMP_WORDS[1]}"
 
+        # --term/-T value completion for new/resume commands
+        if [[ ($subcmd == "new" || $subcmd == "resume") && (${COMP_WORDS[COMP_CWORD-1]} == "--term" || ${COMP_WORDS[COMP_CWORD-1]} == "-T") ]]; then
+            local methods
+            methods=$(gw _term-values 2>/dev/null)
+            COMPREPLY=($(compgen -W "$methods" -- "$cur"))
+            return
+        fi
+
         # Config key completion: "config get <key>" or "config set <key>"
         if [[ $subcmd == "config" && ( ${COMP_WORDS[2]} == "get" || ${COMP_WORDS[2]} == "set" ) && $COMP_CWORD -eq 3 ]]; then
             local keys
             keys=$(gw _config-keys 2>/dev/null)
             COMPREPLY=($(compgen -W "$keys" -- "$cur"))
             return
+        fi
+
+        # Config set value completion: "config set <key> <value>"
+        if [[ $subcmd == "config" && ${COMP_WORDS[2]} == "set" && $COMP_CWORD -eq 4 ]]; then
+            local key="${COMP_WORDS[3]}"
+            case "$key" in
+                launch.method)
+                    COMPREPLY=($(compgen -W "$(gw _term-values 2>/dev/null)" -- "$cur"))
+                    return ;;
+                ai_tool.command)
+                    COMPREPLY=($(compgen -W "$(gw _preset-names 2>/dev/null)" -- "$cur"))
+                    return ;;
+            esac
         fi
 
         # Branch completion for subcommands with positional branch args
@@ -201,12 +222,37 @@ if [ -n "$ZSH_VERSION" ]; then
     _gw_with_config() {
         local subcmd="${words[2]}"
 
+        # --term/-T value completion for new/resume commands
+        if [[ ($subcmd == "new" || $subcmd == "resume") && (${words[CURRENT-1]} == "--term" || ${words[CURRENT-1]} == "-T") ]]; then
+            local -a methods
+            methods=(${(f)"$(gw _term-values 2>/dev/null)"})
+            compadd -a methods
+            return
+        fi
+
         # Config key completion: "config get <key>" or "config set <key>"
         if [[ $subcmd == "config" && ( ${words[3]} == "get" || ${words[3]} == "set" ) && $CURRENT -eq 4 ]]; then
             local -a keys
             keys=(${(f)"$(gw _config-keys 2>/dev/null)"})
             _describe 'config key' keys
             return
+        fi
+
+        # Config set value completion: "config set <key> <value>"
+        if [[ $subcmd == "config" && ${words[3]} == "set" && $CURRENT -eq 5 ]]; then
+            local key="${words[4]}"
+            case "$key" in
+                launch.method)
+                    local -a methods
+                    methods=(${(f)"$(gw _term-values 2>/dev/null)"})
+                    compadd -a methods
+                    return ;;
+                ai_tool.command)
+                    local -a presets
+                    presets=(${(f)"$(gw _preset-names 2>/dev/null)"})
+                    compadd -a presets
+                    return ;;
+            esac
         fi
 
         # Branch completion for subcommands with positional branch args
@@ -401,6 +447,29 @@ complete -c gw -f -n '__fish_seen_subcommand_from backup; and __fish_seen_subcom
 complete -c cw -f -n '__fish_seen_subcommand_from backup; and __fish_seen_subcommand_from create list restore' -a '(gw _path --list-branches 2>/dev/null)'
 complete -c gw -f -n '__fish_seen_subcommand_from stash; and __fish_seen_subcommand_from apply' -a '(gw _path --list-branches 2>/dev/null)'
 complete -c cw -f -n '__fish_seen_subcommand_from stash; and __fish_seen_subcommand_from apply' -a '(gw _path --list-branches 2>/dev/null)'
+
+# --term/-T value completion for new/resume commands
+function __gw_prev_arg_is_term
+    set -l tokens (commandline -opc)
+    set -l prev $tokens[-1]
+    test "$prev" = "--term" -o "$prev" = "-T"
+end
+complete -c gw -f -n '__fish_seen_subcommand_from new resume; and __gw_prev_arg_is_term' -a '(gw _term-values 2>/dev/null)'
+complete -c cw -f -n '__fish_seen_subcommand_from new resume; and __gw_prev_arg_is_term' -a '(gw _term-values 2>/dev/null)'
+
+# Config set value completion: "config set launch.method <value>" / "config set ai_tool.command <value>"
+function __gw_config_set_value_launch
+    set -l tokens (commandline -opc)
+    test (count $tokens) -ge 4; and test "$tokens[2]" = "config"; and test "$tokens[3]" = "set"; and test "$tokens[4]" = "launch.method"
+end
+function __gw_config_set_value_ai_tool
+    set -l tokens (commandline -opc)
+    test (count $tokens) -ge 4; and test "$tokens[2]" = "config"; and test "$tokens[3]" = "set"; and test "$tokens[4]" = "ai_tool.command"
+end
+complete -c gw -f -n '__gw_config_set_value_launch' -a '(gw _term-values 2>/dev/null)'
+complete -c cw -f -n '__gw_config_set_value_launch' -a '(gw _term-values 2>/dev/null)'
+complete -c gw -f -n '__gw_config_set_value_ai_tool' -a '(gw _preset-names 2>/dev/null)'
+complete -c cw -f -n '__gw_config_set_value_ai_tool' -a '(gw _preset-names 2>/dev/null)'
 "#;
 
 const POWERSHELL_FUNCTION: &str = r#"# git-worktree-manager shell functions for PowerShell

@@ -11,23 +11,8 @@ use serde_json::Value;
 
 use console::style;
 
+pub use crate::constants::HOOK_EVENTS;
 use crate::error::{CwError, Result};
-
-/// Valid hook events.
-pub const HOOK_EVENTS: &[&str] = &[
-    "worktree.pre_create",
-    "worktree.post_create",
-    "worktree.pre_delete",
-    "worktree.post_delete",
-    "merge.pre",
-    "merge.post",
-    "pr.pre",
-    "pr.post",
-    "resume.pre",
-    "resume.post",
-    "sync.pre",
-    "sync.post",
-];
 
 /// Local config file name (stored in repository root).
 const LOCAL_CONFIG_FILE: &str = ".cwconfig.json";

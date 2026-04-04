@@ -4,6 +4,7 @@ use git_worktree_manager::cli::{
 };
 use git_worktree_manager::config;
 use git_worktree_manager::console as cwconsole;
+use git_worktree_manager::constants;
 use git_worktree_manager::cwshare_setup;
 use git_worktree_manager::hooks;
 use git_worktree_manager::operations::{
@@ -25,7 +26,13 @@ fn main() {
     // Skip startup checks for internal commands (avoid recursion / unnecessary I/O)
     let is_internal = matches!(
         &cli.command,
-        Some(Commands::UpdateCache | Commands::ConfigKeys)
+        Some(
+            Commands::UpdateCache
+                | Commands::ConfigKeys
+                | Commands::TermValues
+                | Commands::PresetNames
+                | Commands::HookEvents
+        )
     );
 
     // Auto-update check (instant from cache, background refresh)
@@ -345,6 +352,27 @@ fn main() {
         Some(Commands::ConfigKeys) => {
             for (key, _desc) in config::CONFIG_KEYS {
                 println!("{}", key);
+            }
+            Ok(())
+        }
+
+        Some(Commands::TermValues) => {
+            for v in constants::all_term_values() {
+                println!("{}", v);
+            }
+            Ok(())
+        }
+
+        Some(Commands::PresetNames) => {
+            for name in constants::PRESET_NAMES {
+                println!("{}", name);
+            }
+            Ok(())
+        }
+
+        Some(Commands::HookEvents) => {
+            for evt in constants::HOOK_EVENTS {
+                println!("{}", evt);
             }
             Ok(())
         }
