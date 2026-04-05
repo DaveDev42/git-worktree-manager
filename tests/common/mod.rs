@@ -7,6 +7,8 @@ use tempfile::TempDir;
 /// A temporary git repository for testing.
 pub struct TestRepo {
     pub dir: TempDir,
+    _remote_dir: Option<TempDir>,
+    _custom_dirs: Vec<TempDir>,
 }
 
 impl TestRepo {
@@ -25,7 +27,11 @@ impl TestRepo {
         git(path, &["add", "."]);
         git(path, &["commit", "-m", "Initial commit"]);
 
-        Self { dir }
+        Self {
+            dir,
+            _remote_dir: None,
+            _custom_dirs: Vec::new(),
+        }
     }
 
     pub fn path(&self) -> &Path {
@@ -171,9 +177,20 @@ impl TestRepo {
         git(path, &["commit", "-m", msg]);
     }
 
+    /// Return a unique custom path inside a sibling temp directory.
+    /// The returned path does NOT exist yet — caller creates it via worktree commands.
+    pub fn custom_path(&mut self, name: &str) -> PathBuf {
+        let custom_dir = TempDir::new().expect("Failed to create custom temp dir");
+        let path = custom_dir.path().join(name);
+        self._custom_dirs.push(custom_dir);
+        path
+    }
+
     /// Set up a bare remote and add it as "origin".
-    pub fn setup_remote(&self) -> PathBuf {
-        let remote_path = self.path().parent().unwrap().join("remote_repo.git");
+    /// Uses a dedicated TempDir so the remote path never collides across test runs.
+    pub fn setup_remote(&mut self) -> PathBuf {
+        let remote_dir = TempDir::new().expect("Failed to create remote temp dir");
+        let remote_path = remote_dir.path().join("remote_repo.git");
         let output = Command::new("git")
             .args([
                 "clone",
@@ -183,11 +200,16 @@ impl TestRepo {
             ])
             .output()
             .expect("Failed to clone bare repo");
-        assert!(output.status.success(), "Failed to create bare remote");
+        assert!(
+            output.status.success(),
+            "Failed to create bare remote: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         git(
             self.path(),
             &["remote", "add", "origin", remote_path.to_str().unwrap()],
         );
+        self._remote_dir = Some(remote_dir);
         remote_path
     }
 }
