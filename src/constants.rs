@@ -39,6 +39,7 @@ pub enum LaunchMethod {
     WeztermTab,
     WeztermPaneH,
     WeztermPaneV,
+    WeztermTabBg,
 }
 
 impl LaunchMethod {
@@ -63,6 +64,7 @@ impl LaunchMethod {
             Self::WeztermTab => "wezterm-tab",
             Self::WeztermPaneH => "wezterm-pane-h",
             Self::WeztermPaneV => "wezterm-pane-v",
+            Self::WeztermTabBg => "wezterm-tab-bg",
         }
     }
 
@@ -87,6 +89,7 @@ impl LaunchMethod {
             "wezterm-tab" => Some(Self::WeztermTab),
             "wezterm-pane-h" => Some(Self::WeztermPaneH),
             "wezterm-pane-v" => Some(Self::WeztermPaneV),
+            "wezterm-tab-bg" => Some(Self::WeztermTabBg),
             _ => None,
         }
     }
@@ -114,6 +117,7 @@ impl LaunchMethod {
             Self::WeztermTab => "WezTerm — New Tab",
             Self::WeztermPaneH => "WezTerm — Horizontal Pane",
             Self::WeztermPaneV => "WezTerm — Vertical Pane",
+            Self::WeztermTabBg => "WezTerm — New Tab (Background)",
         }
     }
 }
@@ -152,6 +156,7 @@ pub fn launch_method_aliases() -> HashMap<&'static str, &'static str> {
         ("w-t", "wezterm-tab"),
         ("w-p-h", "wezterm-pane-h"),
         ("w-p-v", "wezterm-pane-v"),
+        ("w-t-b", "wezterm-tab-bg"),
     ])
 }
 
@@ -201,6 +206,7 @@ pub fn all_term_values() -> Vec<&'static str> {
         "zellij-pane-v",
         "wezterm-window",
         "wezterm-tab",
+        "wezterm-tab-bg",
         "wezterm-pane-h",
         "wezterm-pane-v",
     ];
@@ -392,7 +398,7 @@ mod tests {
     #[test]
     fn test_all_term_values_contains_canonical_and_aliases() {
         let values = all_term_values();
-        // 18 canonical + aliases
+        // 19 canonical + aliases
         assert!(
             values.len() >= 36,
             "expected ≥36 term values, got {}",
