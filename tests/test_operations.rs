@@ -1420,7 +1420,7 @@ fn test_sync_worktree_with_conflicts() {
 // ===========================================================================
 
 #[test]
-#[ignore] // Windows cannot delete cwd
+#[cfg_attr(windows, ignore)] // Windows cannot delete cwd
 fn test_delete_worktree_current_directory() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("delete-current");
