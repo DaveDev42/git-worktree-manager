@@ -60,7 +60,7 @@ pub fn clean_worktrees(
         if let Some(days) = older_than {
             if let Some(age) = path_age_days(&path) {
                 let age_days = age as u64;
-                if age_days > days {
+                if age_days >= days {
                     should_delete = true;
                     reasons.push(format!("older than {} days ({} days)", days, age_days));
                 }

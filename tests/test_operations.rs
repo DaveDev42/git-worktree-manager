@@ -870,7 +870,6 @@ fn test_clean_merged() {
 // ===========================================================================
 
 #[test]
-#[ignore] // requires remote repo or path fix
 fn test_clean_older_than_dry_run() {
     let repo = TestRepo::new();
     repo.create_worktree("old-wt");
@@ -878,7 +877,7 @@ fn test_clean_older_than_dry_run() {
     let output = repo.cw(&["clean", "--older-than", "0", "--dry-run"]);
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // Should mention the worktree since 0 days means "all"
+    // --older-than 0 means "age >= 0 days" = all worktrees
     assert!(
         stdout.contains("old-wt")
             || stdout.contains("Would")
