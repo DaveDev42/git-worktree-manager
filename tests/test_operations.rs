@@ -49,10 +49,9 @@ fn test_create_worktree_basic() {
 // ===========================================================================
 
 #[test]
-#[ignore] // requires remote repo or path fix
 fn test_create_worktree_custom_path() {
-    let repo = TestRepo::new();
-    let custom = repo.path().parent().unwrap().join("my_custom_path");
+    let mut repo = TestRepo::new();
+    let custom = repo.custom_path("my_custom_path");
     let output = repo.cw(&[
         "new",
         "custom-branch",
@@ -60,7 +59,12 @@ fn test_create_worktree_custom_path() {
         "--path",
         custom.to_str().unwrap(),
     ]);
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "cw new --path failed: {}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
     assert!(custom.exists());
 }
 

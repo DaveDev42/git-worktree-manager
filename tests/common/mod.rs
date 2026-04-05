@@ -8,6 +8,7 @@ use tempfile::TempDir;
 pub struct TestRepo {
     pub dir: TempDir,
     _remote_dir: Option<TempDir>,
+    _custom_dirs: Vec<TempDir>,
 }
 
 impl TestRepo {
@@ -29,6 +30,7 @@ impl TestRepo {
         Self {
             dir,
             _remote_dir: None,
+            _custom_dirs: Vec::new(),
         }
     }
 
@@ -173,6 +175,15 @@ impl TestRepo {
         std::fs::write(path.join(name), content).unwrap();
         git(path, &["add", name]);
         git(path, &["commit", "-m", msg]);
+    }
+
+    /// Return a unique custom path inside a sibling temp directory.
+    /// The returned path does NOT exist yet — caller creates it via worktree commands.
+    pub fn custom_path(&mut self, name: &str) -> PathBuf {
+        let custom_dir = TempDir::new().expect("Failed to create custom temp dir");
+        let path = custom_dir.path().join(name);
+        self._custom_dirs.push(custom_dir);
+        path
     }
 
     /// Set up a bare remote and add it as "origin".
