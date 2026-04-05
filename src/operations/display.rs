@@ -799,4 +799,12 @@ mod tests {
         // Less than 1 hour (1/24 day ≈ 0.0417)
         assert_eq!(format_age(0.04), "just now"); // 0.04 * 24 = 0.96h → 0 as i64
     }
+
+    #[test]
+    fn test_get_worktree_status_stale() {
+        use std::path::PathBuf;
+        let non_existent = PathBuf::from("/tmp/gw-test-nonexistent-12345");
+        let repo = PathBuf::from("/tmp");
+        assert_eq!(get_worktree_status(&non_existent, &repo, None), "stale");
+    }
 }
