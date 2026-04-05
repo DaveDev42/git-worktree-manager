@@ -552,6 +552,69 @@ pub fn remove_worktree_safe(worktree_path: &Path, repo: &Path, force: bool) -> R
     )))
 }
 
+/// Check if a branch has been merged into the base branch.
+///
+/// Uses `git branch --merged <base>` and checks if the feature branch is in the list.
+pub fn is_branch_merged(feature_branch: &str, base_branch: &str, repo: Option<&Path>) -> bool {
+    // First try against remote base
+    let remote_base = format!("origin/{}", base_branch);
+    if let Ok(r) = git_command(&["branch", "--merged", &remote_base], repo, false, true) {
+        if r.returncode == 0 {
+            for line in r.stdout.lines() {
+                let name = line.trim().trim_start_matches("* ");
+                if name == feature_branch {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Fallback: check against local base
+    if let Ok(r) = git_command(&["branch", "--merged", base_branch], repo, false, true) {
+        if r.returncode == 0 {
+            for line in r.stdout.lines() {
+                let name = line.trim().trim_start_matches("* ");
+                if name == feature_branch {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
+/// Query GitHub PR state for a branch using `gh` CLI.
+///
+/// Returns the PR state string (e.g., "OPEN", "MERGED", "CLOSED") or None
+/// if `gh` is unavailable, no PR exists, or the query fails.
+pub fn get_pr_state(feature_branch: &str, repo: Option<&Path>) -> Option<String> {
+    if !has_command("gh") {
+        return None;
+    }
+
+    let result = run_command(
+        &[
+            "gh", "pr", "view", feature_branch,
+            "--json", "state",
+            "--jq", ".state",
+        ],
+        repo,
+        false,
+        true,
+    )
+    .ok()?;
+
+    if result.returncode == 0 {
+        let state = result.stdout.trim().to_string();
+        if !state.is_empty() {
+            return Some(state);
+        }
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
