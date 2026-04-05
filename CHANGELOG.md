@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.23](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.22...v0.0.23) (2026-04-05)
+
+
+### Bug Fixes
+
+* create draft releases until binaries are uploaded ([319829c](https://github.com/DaveDev42/git-worktree-manager/commit/319829cdcd51f9a73b4e6718e850bcaab385c537))
+* create GitHub releases as draft until binaries are uploaded ([4b5cb45](https://github.com/DaveDev42/git-worktree-manager/commit/4b5cb4589c8f72e990fdc55d46ecdd5cc970c800))
+
 ## [0.0.22](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.21...v0.0.22) (2026-04-05)
 
 
