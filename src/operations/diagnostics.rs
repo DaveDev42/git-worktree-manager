@@ -107,7 +107,7 @@ fn check_worktree_accessibility(
     let mut worktrees: Vec<WtInfo> = Vec::new();
 
     for (branch_name, path) in &feature_worktrees {
-        let status = get_worktree_status(path, repo);
+        let status = get_worktree_status(path, repo, Some(branch_name.as_str()));
         if status == "stale" {
             stale_count += 1;
             println!(

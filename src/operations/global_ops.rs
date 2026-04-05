@@ -93,7 +93,7 @@ pub fn global_list_worktrees() -> Result<()> {
 
         let mut has_feature = false;
         for (branch_name, path) in &feature_wts {
-            let status = get_worktree_status(path, repo_path);
+            let status = get_worktree_status(path, repo_path, Some(branch_name.as_str()));
 
             // Check intended branch for mismatch detection
             let intended_key = format_config_key(CONFIG_KEY_INTENDED_BRANCH, branch_name);
