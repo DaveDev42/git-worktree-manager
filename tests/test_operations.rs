@@ -193,7 +193,6 @@ fn test_create_worktree_existing_branch() {
 // ===========================================================================
 
 #[test]
-#[ignore] // requires remote repo or path fix
 fn test_create_worktree_from_remote_only_branch() {
     let mut repo = TestRepo::new();
     let _remote = repo.setup_remote();
@@ -225,7 +224,6 @@ fn test_create_worktree_from_remote_only_branch() {
 // ===========================================================================
 
 #[test]
-#[ignore] // requires remote repo or path fix
 fn test_create_worktree_from_remote_with_custom_path() {
     let mut repo = TestRepo::new();
     let _remote = repo.setup_remote();
@@ -234,11 +232,7 @@ fn test_create_worktree_from_remote_with_custom_path() {
     repo.git(&["push", "origin", "remote-custom-path"]);
     repo.git(&["branch", "-D", "remote-custom-path"]);
 
-    let custom = repo
-        .path()
-        .parent()
-        .unwrap()
-        .join("my-custom-remote-worktree");
+    let custom = repo.custom_path("my-custom-remote-worktree");
     let output = repo.cw(&[
         "new",
         "remote-custom-path",
@@ -256,7 +250,6 @@ fn test_create_worktree_from_remote_with_custom_path() {
 // ===========================================================================
 
 #[test]
-#[ignore] // requires remote repo or path fix
 fn test_create_worktree_remote_has_different_content() {
     let mut repo = TestRepo::new();
     let _remote = repo.setup_remote();
@@ -290,7 +283,6 @@ fn test_create_worktree_remote_has_different_content() {
 // ===========================================================================
 
 #[test]
-#[ignore] // requires remote repo or path fix
 fn test_create_worktree_from_remote_with_explicit_base() {
     let mut repo = TestRepo::new();
     let _remote = repo.setup_remote();
@@ -312,7 +304,6 @@ fn test_create_worktree_from_remote_with_explicit_base() {
 // ===========================================================================
 
 #[test]
-#[ignore] // requires remote repo or path fix
 fn test_create_worktree_from_remote_with_invalid_base() {
     let mut repo = TestRepo::new();
     let _remote = repo.setup_remote();
@@ -336,7 +327,6 @@ fn test_create_worktree_from_remote_with_invalid_base() {
 // ===========================================================================
 
 #[test]
-#[ignore] // requires remote repo or path fix
 fn test_create_worktree_local_branch_takes_precedence_over_remote() {
     let mut repo = TestRepo::new();
     let _remote = repo.setup_remote();
@@ -346,7 +336,7 @@ fn test_create_worktree_local_branch_takes_precedence_over_remote() {
     repo.git(&["fetch", "origin"]);
 
     // Branch exists both locally and remotely — should use local
-    let output = repo.cw(&["new", "both-local-remote", "--no-term", "--force"]);
+    let output = repo.cw(&["new", "both-local-remote", "--no-term"]);
     assert!(output.status.success());
     let wt = worktree_path(&repo, "both-local-remote");
     assert!(wt.exists());
@@ -615,7 +605,6 @@ fn test_delete_main_repo_protection() {
 // ===========================================================================
 
 #[test]
-#[ignore] // requires remote repo or path fix
 fn test_delete_worktree_created_from_remote() {
     let mut repo = TestRepo::new();
     let _remote = repo.setup_remote();
@@ -1470,7 +1459,6 @@ fn test_delete_worktree_same_branch_and_worktree_name() {
 // ===========================================================================
 
 #[test]
-#[ignore] // requires remote repo or path fix
 fn test_create_worktree_from_remote_stores_metadata() {
     let mut repo = TestRepo::new();
     let _remote = repo.setup_remote();
