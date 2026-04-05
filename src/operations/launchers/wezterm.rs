@@ -111,6 +111,77 @@ pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str) -> Result<()> 
     Ok(())
 }
 
+/// Launch in new WezTerm tab without stealing focus.
+///
+/// Spawns a new tab, immediately restores focus to the original tab,
+/// then sends the command to the new pane in the background.
+pub fn launch_tab_bg(path: &Path, command: &str, ai_tool_name: &str) -> Result<()> {
+    if !git::has_command("wezterm") {
+        return Err(CwError::Git(
+            "wezterm not installed. Install from https://wezterm.org/".to_string(),
+        ));
+    }
+
+    // Get current pane ID to restore focus later
+    let current_pane = std::env::var("WEZTERM_PANE").unwrap_or_default();
+
+    // Find the tab_id for the current pane
+    let original_tab_id = if !current_pane.is_empty() {
+        get_tab_id_for_pane(&current_pane)
+    } else {
+        None
+    };
+
+    let path_str = path.to_string_lossy().to_string();
+    let output = Command::new("wezterm")
+        .args(["cli", "spawn", "--cwd", &path_str])
+        .output()
+        .map_err(|e| CwError::Git(format!("wezterm spawn failed: {}", e)))?;
+
+    let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    // Immediately restore focus to original tab before send_text polling
+    if let Some(tab_id) = original_tab_id {
+        let _ = Command::new("wezterm")
+            .args(["cli", "activate-tab", "--tab-id", &tab_id])
+            .status();
+    } else {
+        eprintln!(
+            "{} WEZTERM_PANE not set; cannot restore focus to original tab",
+            style("!").yellow()
+        );
+    }
+
+    send_text(&pane_id, command)?;
+
+    println!(
+        "{} {} running in new WezTerm tab (background)\n",
+        style("*").green().bold(),
+        ai_tool_name
+    );
+    Ok(())
+}
+
+/// Get the tab_id for a given pane_id from WezTerm's pane list.
+fn get_tab_id_for_pane(pane_id: &str) -> Option<String> {
+    let output = Command::new("wezterm")
+        .args(["cli", "list", "--format", "json"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let panes: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).ok()?;
+    let target: u64 = pane_id.parse().ok()?;
+    panes
+        .iter()
+        .find(|p| p["pane_id"].as_u64() == Some(target))
+        .and_then(|p| p["tab_id"].as_u64())
+        .map(|t| t.to_string())
+}
+
 /// Launch in WezTerm split pane.
 pub fn launch_pane(path: &Path, command: &str, ai_tool_name: &str, horizontal: bool) -> Result<()> {
     if !git::has_command("wezterm") {

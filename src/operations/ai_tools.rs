@@ -110,6 +110,7 @@ pub fn launch_ai_tool(
         // WezTerm
         LaunchMethod::WeztermWindow => launchers::wezterm::launch_window(path, &cmd, ai_tool_name)?,
         LaunchMethod::WeztermTab => launchers::wezterm::launch_tab(path, &cmd, ai_tool_name)?,
+        LaunchMethod::WeztermTabBg => launchers::wezterm::launch_tab_bg(path, &cmd, ai_tool_name)?,
         LaunchMethod::WeztermPaneH => {
             launchers::wezterm::launch_pane(path, &cmd, ai_tool_name, true)?
         }

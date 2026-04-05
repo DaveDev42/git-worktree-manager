@@ -55,8 +55,8 @@ pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str) -> Result<()> 
 tell application "iTerm"
   activate
   tell current window
-    create tab with default profile
-    tell current session
+    set newTab to (create tab with default profile)
+    tell current session of newTab
       write text "cd {} && {}"
     end tell
   end tell

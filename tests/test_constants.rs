@@ -140,7 +140,7 @@ fn test_default_worktree_path_special_chars() {
 }
 
 #[test]
-fn test_launch_method_all_18_variants_roundtrip() {
+fn test_launch_method_all_variants_roundtrip() {
     let all = [
         LaunchMethod::Foreground,
         LaunchMethod::Detach,
@@ -160,8 +160,9 @@ fn test_launch_method_all_18_variants_roundtrip() {
         LaunchMethod::WeztermTab,
         LaunchMethod::WeztermPaneH,
         LaunchMethod::WeztermPaneV,
+        LaunchMethod::WeztermTabBg,
     ];
-    assert_eq!(all.len(), 18);
+    assert_eq!(all.len(), 19);
     for m in &all {
         assert_eq!(LaunchMethod::from_str_opt(m.as_str()), Some(*m));
     }
@@ -170,7 +171,7 @@ fn test_launch_method_all_18_variants_roundtrip() {
 #[test]
 fn test_launch_method_aliases_complete() {
     let aliases = launch_method_aliases();
-    assert_eq!(aliases.len(), 18);
+    assert_eq!(aliases.len(), 19);
     assert_eq!(aliases["fg"], "foreground");
     assert_eq!(aliases["d"], "detach");
     assert_eq!(aliases["t"], "tmux");

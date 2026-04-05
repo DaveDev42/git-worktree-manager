@@ -146,9 +146,9 @@ gw new <branch-name> -T <terminal-method> --prompt "<task description>"
   - "Refactor the database connection pool" → `refactor-db-connection-pool`
 
 ### Terminal method selection
-- Use the method matching the user's terminal. If unsure, ask on first use.
-- Common methods: `w-t` (WezTerm tab), `i-t` (iTerm2 tab), `t` (tmux session), `d` (detached/background)
-- Once known, remember the user's preferred terminal for subsequent calls.
+- **Default: omit the `-T` flag** to use the system default (`gw config get launch.method`). Only add `-T` if the user explicitly requests a specific terminal method.
+- If the user explicitly asks for a specific method, use it. Common methods: `w-t` (WezTerm tab), `w-t-b` (WezTerm tab, background — no focus steal), `i-t` (iTerm2 tab), `t` (tmux session), `d` (detached/background)
+- Once the user specifies a method, remember it for subsequent calls in the same session.
 
 ## Quick Reference
 
@@ -190,6 +190,7 @@ This will:
 
 ### Terminal methods (use with -T flag)
 - `w-t` — WezTerm new tab
+- `w-t-b` — WezTerm new tab (background, no focus steal)
 - `w-w` — WezTerm new window
 - `i-t` — iTerm2 new tab
 - `i-w` — iTerm2 new window
@@ -462,6 +463,7 @@ Used with `-T` flag on `gw new` and `gw resume`. Supports `method:session-name` 
 | `zellij-pane-v` | `z-p-v` | Zellij vertical pane |
 | `wezterm-window` | `w-w` | WezTerm new window |
 | `wezterm-tab` | `w-t` | WezTerm new tab |
+| `wezterm-tab-bg` | `w-t-b` | WezTerm new tab (background, no focus steal) |
 | `wezterm-pane-h` | `w-p-h` | WezTerm horizontal pane |
 | `wezterm-pane-v` | `w-p-v` | WezTerm vertical pane |
 
