@@ -12,6 +12,7 @@ const COMMON_SHARED_FILES: &[&str] = &[
     ".env.local",
     ".env.development",
     ".env.test",
+    ".claude/settings.local.json",
     "config/local.json",
     "config/local.yaml",
     "config/local.yml",
