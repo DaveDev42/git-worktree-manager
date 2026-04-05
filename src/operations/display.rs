@@ -540,7 +540,7 @@ pub fn show_stats() -> Result<()> {
     print!("{}", style("█".repeat(bar_clean + bar_remainder)).green());
     print!("{}", style("█".repeat(bar_modified)).yellow());
     print!("{}", style("█".repeat(bar_active)).green().bold());
-    print!("{}", style("█".repeat(bar_pr_open)).blue());
+    print!("{}", style("█".repeat(bar_pr_open)).cyan());
     print!("{}", style("█".repeat(bar_merged)).magenta());
     print!("{}", style("█".repeat(bar_stale)).red());
     println!();
@@ -564,7 +564,7 @@ pub fn show_stats() -> Result<()> {
     if pr_open > 0 {
         parts.push(format!(
             "{}",
-            style(format!("⬆ {} pr-open", pr_open)).blue()
+            style(format!("⬆ {} pr-open", pr_open)).cyan()
         ));
     }
     if merged > 0 {
