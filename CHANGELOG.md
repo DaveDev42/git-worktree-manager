@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.0.24](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.23...v0.0.24) (2026-04-05)
+
+
+### Features
+
+* add get_pr_state helper to query GitHub PR status via gh CLI ([d217d5f](https://github.com/DaveDev42/git-worktree-manager/commit/d217d5febbf0b5357b7adb8d9ddfe728838c3fd3))
+* add icon and color mappings for merged and pr-open worktree statuses ([c917728](https://github.com/DaveDev42/git-worktree-manager/commit/c91772897ed5ac324e51a6e8287a8c97b018035a))
+* add merged and pr-open worktree statuses ([3096081](https://github.com/DaveDev42/git-worktree-manager/commit/3096081667e46d52e3a39029d00fa05aaee911c2))
+* add WezTerm background tab (w-t-b) + fix iTerm AppleScript ([dd69f47](https://github.com/DaveDev42/git-worktree-manager/commit/dd69f47fac6db0ba768c64a7992244a415aa3f4a))
+* add WezTerm background tab launch method (w-t-b) ([cac993c](https://github.com/DaveDev42/git-worktree-manager/commit/cac993ce8af789d1825995782b4de4896223b0d8))
+* integrate merged and pr-open statuses into worktree display ([ccd518e](https://github.com/DaveDev42/git-worktree-manager/commit/ccd518e15cb24d7b75fc8c3b999956de112ffff9))
+
+
+### Bug Fixes
+
+* **tests:** isolate custom_path test in dedicated TempDir ([99d329f](https://github.com/DaveDev42/git-worktree-manager/commit/99d329f0cdda74b227317570f2c28efb9e03ca7b))
+* **tests:** isolate setup_remote in dedicated TempDir to prevent path collisions ([7c1e088](https://github.com/DaveDev42/git-worktree-manager/commit/7c1e088f615d3d8b4f89dcb7db025a8433a4dce8))
+* **tests:** isolate test helpers and re-enable ignored tests ([183c828](https://github.com/DaveDev42/git-worktree-manager/commit/183c828c097a2e4de0666462e53c9da1114d4a88))
+* **tests:** only ignore delete-cwd test on Windows via cfg_attr ([87a7f4c](https://github.com/DaveDev42/git-worktree-manager/commit/87a7f4c6fcc0d36c69a51f6ed384936c1f6ec5f9))
+* **tests:** un-ignore all remote worktree tests ([6f71c54](https://github.com/DaveDev42/git-worktree-manager/commit/6f71c547baefb791fce26f460269ce324d8b8517))
+* use &gt;= in clean --older-than so 0 matches all worktrees ([a8cd381](https://github.com/DaveDev42/git-worktree-manager/commit/a8cd381a03b078771876c947ee1a09698a1b33a8))
+* use &gt;= in clean --older-than so 0 matches all worktrees ([d9417d3](https://github.com/DaveDev42/git-worktree-manager/commit/d9417d3ea0d60fd378000d32def9d76bc623a2b4))
+* use cyan instead of blue for pr-open status in stats bar ([d11b81d](https://github.com/DaveDev42/git-worktree-manager/commit/d11b81dfc11ae23b485085c894bbc79cd0d13d7b))
+
 ## [0.0.23](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.22...v0.0.23) (2026-04-05)
 
 
