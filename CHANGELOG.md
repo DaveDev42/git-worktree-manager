@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.0.22](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.21...v0.0.22) (2026-04-05)
+
+
+### Features
+
+* rename gw-delegate skill to gw with natural language support ([30f2012](https://github.com/DaveDev42/git-worktree-manager/commit/30f20122c226c6fd7264fc4e7a86efb2eb46346c))
+* rename gw-delegate skill to gw with natural language support ([dfe1fcb](https://github.com/DaveDev42/git-worktree-manager/commit/dfe1fcb0ba43cfa01726813a466040104c585595))
+* suggest .claude/settings.local.json in .cwshare setup ([1e742ba](https://github.com/DaveDev42/git-worktree-manager/commit/1e742ba5cf643daf4e8f634c3f27b71b720dff9f))
+* suggest .claude/settings.local.json in .cwshare setup ([4594ef6](https://github.com/DaveDev42/git-worktree-manager/commit/4594ef6ccaeaf0bf819686d3d53f24d24482cea7))
+
 ## [0.0.21](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.20...v0.0.21) (2026-04-04)
 
 
