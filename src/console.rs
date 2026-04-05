@@ -35,6 +35,8 @@ pub fn status_style(status: &str) -> Style {
         "active" => Style::new().green().bold(),
         "clean" => Style::new().green(),
         "modified" => Style::new().yellow(),
+        "merged" => Style::new().magenta(),
+        "pr-open" => Style::new().cyan(),
         "stale" => Style::new().red(),
         _ => Style::new(),
     }
@@ -46,6 +48,8 @@ pub fn status_icon(status: &str) -> &'static str {
         "active" => "●",
         "clean" => "○",
         "modified" => "◉",
+        "merged" => "✓",
+        "pr-open" => "⬆",
         "stale" => "x",
         _ => "○",
     }
@@ -83,5 +87,22 @@ mod tests {
         let _ = status_style("modified");
         let _ = status_style("stale");
         let _ = status_style("unknown");
+    }
+
+    #[test]
+    fn test_status_icon_merged() {
+        assert_eq!(status_icon("merged"), "✓");
+    }
+
+    #[test]
+    fn test_status_icon_pr_open() {
+        assert_eq!(status_icon("pr-open"), "⬆");
+    }
+
+    #[test]
+    fn test_status_style_new_statuses() {
+        // Ensure no panic
+        let _ = status_style("merged");
+        let _ = status_style("pr-open");
     }
 }
