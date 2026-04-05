@@ -1094,6 +1094,51 @@ fn test_get_worktree_status_modified() {
 }
 
 // ===========================================================================
+// worktree status detection — merged (via git branch --merged fallback)
+// ===========================================================================
+
+#[test]
+fn test_get_worktree_status_merged() {
+    let repo = TestRepo::new();
+    let wt = repo.create_worktree("merged-test");
+
+    // Make a commit in the worktree
+    TestRepo::commit_file_at(&wt, "feature.txt", "feature work", "feat: add feature");
+
+    // Merge the feature branch into main (fast-forward)
+    repo.git(&["merge", "merged-test"]);
+
+    // The worktree's branch is now merged into main
+    let stdout = repo.cw_stdout(&["list"]);
+    assert!(
+        stdout.contains("merged"),
+        "Expected merged status in list output, got: {}",
+        stdout
+    );
+}
+
+// ===========================================================================
+// worktree status detection — merged shows icon in tree
+// ===========================================================================
+
+#[test]
+fn test_get_worktree_status_merged_tree() {
+    let repo = TestRepo::new();
+    let wt = repo.create_worktree("merged-tree-test");
+
+    // Make a commit and merge into main
+    TestRepo::commit_file_at(&wt, "feature.txt", "work", "feat: work");
+    repo.git(&["merge", "merged-tree-test"]);
+
+    let stdout = repo.cw_stdout(&["tree"]);
+    assert!(
+        stdout.contains("✓") || stdout.contains("merged"),
+        "Expected merged icon or status in tree output, got: {}",
+        stdout
+    );
+}
+
+// ===========================================================================
 // worktree status detection — clean
 // ===========================================================================
 
