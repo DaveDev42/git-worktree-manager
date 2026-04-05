@@ -6,7 +6,8 @@ use console::style;
 use crate::constants::home_dir_or_fallback;
 use crate::error::Result;
 
-const SKILL_DIR: &str = "gw-delegate";
+const SKILL_DIR: &str = "gw";
+const LEGACY_SKILL_DIR: &str = "gw-delegate";
 const SKILL_FILE: &str = "SKILL.md";
 const REFERENCE_FILE: &str = "gw-commands.md";
 
@@ -52,8 +53,21 @@ fn write_if_changed(
     Ok(true)
 }
 
+/// Remove the legacy gw-delegate skill directory if it exists.
+fn remove_legacy_skill() {
+    let legacy_dir = home_dir_or_fallback()
+        .join(".claude")
+        .join("skills")
+        .join(LEGACY_SKILL_DIR);
+    if legacy_dir.exists() {
+        let _ = std::fs::remove_dir_all(&legacy_dir);
+    }
+}
+
 /// Install or update the Claude Code skill for worktree task delegation.
 pub fn setup_claude() -> Result<()> {
+    remove_legacy_skill();
+
     let skill = skill_path();
     let reference = reference_path();
 
@@ -86,7 +100,7 @@ pub fn setup_claude() -> Result<()> {
     println!("  Location: {}", style(skill_dir().display()).dim());
     println!(
         "  Use {} in Claude Code to delegate tasks to worktrees.",
-        style("/gw-delegate").cyan()
+        style("/gw").cyan()
     );
     println!(
         "  Or just ask Claude about {} — it will use gw automatically.\n",
@@ -98,14 +112,43 @@ pub fn setup_claude() -> Result<()> {
 
 fn skill_content() -> &'static str {
     r#"---
-name: gw-delegate
-description: Manage git worktrees and delegate coding tasks using gw (git-worktree-manager). Use when the user wants to parallelize work, manage worktrees, create PRs, merge branches, or split work across Claude Code instances.
+name: gw
+description: "Delegate coding tasks to isolated git worktrees. Invoke with: /gw <natural language task description>. Also handles worktree management: list, sync, clean, PR, merge, etc."
 allowed-tools: Bash
 ---
 
 # git-worktree-manager (gw)
 
 CLI tool integrating git worktree with AI coding assistants. Single binary, ~3ms startup.
+
+## Natural Language Task Delegation
+
+When the user invokes `/gw <task description>` (e.g., `/gw fix the auth token expiration bug`), follow these steps:
+
+### Step 1: Parse the user's intent
+From the natural language input, determine:
+- **Task description** — what to pass as `--prompt`
+- **Branch name** — generate a short, descriptive branch name from the task (e.g., `fix-auth-token-expiration`). Use conventional prefixes: `fix-`, `feat-`, `refactor-`, `docs-`, `test-`, `chore-`.
+- **Base branch** — use the default unless the user specifies otherwise
+
+### Step 2: Confirm and execute
+Show the user what you're about to run, then execute:
+```bash
+gw new <branch-name> -T <terminal-method> --prompt "<task description>"
+```
+
+### Branch name rules
+- Lowercase, hyphen-separated, max ~50 chars
+- Strip filler words (the, a, an, for, in, on, etc.)
+- Examples:
+  - "Fix the JWT token expiration check in auth" → `fix-jwt-token-expiration`
+  - "Add user avatar upload feature" → `feat-avatar-upload`
+  - "Refactor the database connection pool" → `refactor-db-connection-pool`
+
+### Terminal method selection
+- Use the method matching the user's terminal. If unsure, ask on first use.
+- Common methods: `w-t` (WezTerm tab), `i-t` (iTerm2 tab), `t` (tmux session), `d` (detached/background)
+- Once known, remember the user's preferred terminal for subsequent calls.
 
 ## Quick Reference
 
