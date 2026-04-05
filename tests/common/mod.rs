@@ -87,6 +87,7 @@ impl TestRepo {
         Command::new(Self::cw_bin())
             .args(args)
             .current_dir(path)
+            .env("CW_LAUNCH_METHOD", "foreground")
             .output()
             .expect("Failed to run cw")
     }
@@ -107,6 +108,7 @@ impl TestRepo {
         Command::new(Self::cw_bin())
             .args(args)
             .current_dir(self.path())
+            .env("CW_LAUNCH_METHOD", "foreground")
             .output()
             .expect("Failed to run cw")
     }
