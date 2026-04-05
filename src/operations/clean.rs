@@ -81,7 +81,7 @@ pub fn clean_worktrees(
         println!("{}\n", style("Available worktrees:").cyan().bold());
         let mut all_wt = Vec::new();
         for (branch_name, path) in git::get_feature_worktrees(Some(&repo))? {
-            let status = get_worktree_status(&path, &repo);
+            let status = get_worktree_status(&path, &repo, Some(branch_name.as_str()));
             println!("  [{:8}] {:<30} {}", status, branch_name, path.display());
             all_wt.push((branch_name, path.to_string_lossy().to_string()));
         }

@@ -16,7 +16,16 @@ use crate::git;
 const MIN_TABLE_WIDTH: usize = 100;
 
 /// Determine the status of a worktree.
-pub fn get_worktree_status(path: &Path, _repo: &Path) -> String {
+///
+/// Status priority: stale > active > merged > pr-open > modified > clean
+///
+/// Merge detection strategy:
+/// 1. `gh pr view` (primary) — works with all merge strategies (merge commit,
+///    squash merge, rebase merge) because GitHub tracks PR state independently
+///    of commit SHAs.
+/// 2. `git branch --merged` (fallback) — only works when commit SHAs are
+///    preserved (merge commit strategy). Used when `gh` is not available.
+pub fn get_worktree_status(path: &Path, repo: &Path, branch: Option<&str>) -> String {
     if !path.exists() {
         return "stale".to_string();
     }
@@ -27,6 +36,31 @@ pub fn get_worktree_status(path: &Path, _repo: &Path) -> String {
         let path_str = path.to_string_lossy().to_string();
         if cwd_str.starts_with(&path_str) {
             return "active".to_string();
+        }
+    }
+
+    // Check merge/PR status if branch name is available
+    if let Some(branch_name) = branch {
+        let base_branch = {
+            let key = format_config_key(CONFIG_KEY_BASE_BRANCH, branch_name);
+            git::get_config(&key, Some(repo))
+                .unwrap_or_else(|| git::detect_default_branch(Some(repo)))
+        };
+
+        // Primary: GitHub PR status via `gh` CLI
+        // Handles all merge strategies (merge commit, squash, rebase)
+        if let Some(pr_state) = git::get_pr_state(branch_name, Some(repo)) {
+            match pr_state.as_str() {
+                "MERGED" => return "merged".to_string(),
+                "OPEN" => return "pr-open".to_string(),
+                _ => {} // CLOSED or other — fall through
+            }
+        }
+
+        // Fallback: git branch --merged (only works for merge-commit strategy)
+        // Used when `gh` is not installed or no PR was created
+        if git::is_branch_merged(branch_name, &base_branch, Some(repo)) {
+            return "merged".to_string();
         }
     }
 
@@ -92,7 +126,7 @@ pub fn list_worktrees() -> Result<()> {
 
     for (branch, path) in &worktrees {
         let current_branch = git::normalize_branch_name(branch).to_string();
-        let status = get_worktree_status(path, &repo);
+        let status = get_worktree_status(path, &repo, Some(&current_branch));
         let rel_path = pathdiff::diff_paths(path, &repo)
             .map(|p: std::path::PathBuf| p.to_string_lossy().to_string())
             .unwrap_or_else(|| path.to_string_lossy().to_string());
@@ -127,7 +161,7 @@ pub fn list_worktrees() -> Result<()> {
         }
 
         let mut summary_parts = Vec::new();
-        for &status_name in &["clean", "modified", "active", "stale"] {
+        for &status_name in &["clean", "modified", "active", "pr-open", "merged", "stale"] {
             if let Some(&count) = counts.get(status_name) {
                 if count > 0 {
                     let styled = cwconsole::status_style(status_name)
@@ -351,7 +385,7 @@ pub fn show_tree() -> Result<()> {
         let is_last = i == sorted.len() - 1;
         let prefix = if is_last { "└── " } else { "├── " };
 
-        let status = get_worktree_status(path, &repo);
+        let status = get_worktree_status(path, &repo, Some(branch_name.as_str()));
         let is_current = cwd
             .to_string_lossy()
             .starts_with(&path.to_string_lossy().to_string());
@@ -404,6 +438,14 @@ pub fn show_tree() -> Result<()> {
         "  {} modified",
         cwconsole::status_style("modified").apply_to("◉")
     );
+    println!(
+        "  {} pr-open",
+        cwconsole::status_style("pr-open").apply_to("⬆")
+    );
+    println!(
+        "  {} merged",
+        cwconsole::status_style("merged").apply_to("✓")
+    );
     println!("  {} stale", cwconsole::status_style("stale").apply_to("x"));
     println!(
         "  {} currently active worktree\n",
@@ -438,7 +480,7 @@ pub fn show_stats() -> Result<()> {
     let mut data: Vec<WtData> = Vec::new();
 
     for (branch_name, path) in &feature_worktrees {
-        let status = get_worktree_status(path, &repo);
+        let status = get_worktree_status(path, &repo, Some(branch_name.as_str()));
         let age_days = path_age_days(path).unwrap_or(0.0);
 
         let commit_count = git::git_command(
@@ -480,19 +522,26 @@ pub fn show_stats() -> Result<()> {
     let clean = *status_counts.get("clean").unwrap_or(&0);
     let modified = *status_counts.get("modified").unwrap_or(&0);
     let active = *status_counts.get("active").unwrap_or(&0);
+    let pr_open = *status_counts.get("pr-open").unwrap_or(&0);
+    let merged = *status_counts.get("merged").unwrap_or(&0);
     let stale = *status_counts.get("stale").unwrap_or(&0);
 
     let bar_clean = (clean * bar_width) / total.max(1);
     let bar_modified = (modified * bar_width) / total.max(1);
     let bar_active = (active * bar_width) / total.max(1);
+    let bar_pr_open = (pr_open * bar_width) / total.max(1);
+    let bar_merged = (merged * bar_width) / total.max(1);
     let bar_stale = (stale * bar_width) / total.max(1);
     // Fill remaining with clean if rounding left gaps
-    let bar_remainder = bar_width - bar_clean - bar_modified - bar_active - bar_stale;
+    let bar_remainder =
+        bar_width - bar_clean - bar_modified - bar_active - bar_pr_open - bar_merged - bar_stale;
 
     print!("  ");
     print!("{}", style("█".repeat(bar_clean + bar_remainder)).green());
     print!("{}", style("█".repeat(bar_modified)).yellow());
     print!("{}", style("█".repeat(bar_active)).green().bold());
+    print!("{}", style("█".repeat(bar_pr_open)).cyan());
+    print!("{}", style("█".repeat(bar_merged)).magenta());
     print!("{}", style("█".repeat(bar_stale)).red());
     println!();
 
@@ -510,6 +559,18 @@ pub fn show_stats() -> Result<()> {
         parts.push(format!(
             "{}",
             style(format!("● {} active", active)).green().bold()
+        ));
+    }
+    if pr_open > 0 {
+        parts.push(format!(
+            "{}",
+            style(format!("⬆ {} pr-open", pr_open)).cyan()
+        ));
+    }
+    if merged > 0 {
+        parts.push(format!(
+            "{}",
+            style(format!("✓ {} merged", merged)).magenta()
         ));
     }
     if stale > 0 {
@@ -737,5 +798,13 @@ mod tests {
     fn test_format_age_boundary_below_one_hour() {
         // Less than 1 hour (1/24 day ≈ 0.0417)
         assert_eq!(format_age(0.04), "just now"); // 0.04 * 24 = 0.96h → 0 as i64
+    }
+
+    #[test]
+    fn test_get_worktree_status_stale() {
+        use std::path::PathBuf;
+        let non_existent = PathBuf::from("/tmp/gw-test-nonexistent-12345");
+        let repo = PathBuf::from("/tmp");
+        assert_eq!(get_worktree_status(&non_existent, &repo, None), "stale");
     }
 }
