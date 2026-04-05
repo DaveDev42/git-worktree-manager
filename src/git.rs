@@ -595,9 +595,14 @@ pub fn get_pr_state(feature_branch: &str, repo: Option<&Path>) -> Option<String>
 
     let result = run_command(
         &[
-            "gh", "pr", "view", feature_branch,
-            "--json", "state",
-            "--jq", ".state",
+            "gh",
+            "pr",
+            "view",
+            feature_branch,
+            "--json",
+            "state",
+            "--jq",
+            ".state",
         ],
         repo,
         false,
