@@ -265,6 +265,13 @@ mod tests {
         let panes: Vec<serde_json::Value> = vec![];
         assert_eq!(find_active_tab_in_window(&panes, "100"), None);
     }
+
+    #[test]
+    fn returns_own_tab_when_caller_is_active() {
+        // Caller's pane is the active one — harmless no-op restore
+        let panes = vec![make_pane(1, 10, 100, true)];
+        assert_eq!(find_active_tab_in_window(&panes, "100"), Some("10".into()));
+    }
 }
 
 /// Launch in WezTerm split pane.
