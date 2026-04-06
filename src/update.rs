@@ -194,6 +194,8 @@ fn fetch_latest_version() -> Option<String> {
         "--max-time".to_string(),
         "10".to_string(),
         "-H".to_string(),
+        format!("User-Agent: gw/{}", CURRENT_VERSION),
+        "-H".to_string(),
         "Accept: application/vnd.github+json".to_string(),
     ];
 
@@ -454,10 +456,12 @@ pub fn upgrade() {
     let latest_version = match fetch_latest_version() {
         Some(v) => v,
         None => {
-            println!(
-                "{}",
-                style("Could not check for updates. Check your internet connection.").red()
-            );
+            let msg = if which_exists("curl") {
+                "Could not check for updates. Check your internet connection."
+            } else {
+                "Could not check for updates. curl is required but was not found in PATH."
+            };
+            println!("{}", style(msg).red());
             return;
         }
     };
