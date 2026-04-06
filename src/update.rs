@@ -1,6 +1,6 @@
 /// Auto-update check and self-upgrade via GitHub Releases.
 ///
-use std::io::{IsTerminal, Read};
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -279,65 +279,54 @@ fn download_and_extract(version: &str) -> Result<PathBuf, String> {
         REPO_OWNER, REPO_NAME, version, asset_name
     );
 
-    // Build HTTP client (uses system CA store via rustls-native-roots)
-    let client = reqwest::blocking::Client::builder()
-        .user_agent(format!("gw/{}", CURRENT_VERSION))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    // Download archive using curl (uses system TLS, works with MDM/proxy certs)
+    let tmp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
+    let archive_path = tmp_dir.path().join(&asset_name);
 
-    let response = client
-        .get(&url)
-        .send()
-        .map_err(|e| format!("Download failed: {}", e))?;
+    let user_agent = format!("User-Agent: gw/{}", CURRENT_VERSION);
+    let archive_path_str = archive_path.to_string_lossy().to_string();
+    let token = gh_auth_token();
+    let auth_header = token
+        .as_ref()
+        .map(|t| format!("Authorization: Bearer {}", t));
 
-    if !response.status().is_success() {
+    let mut args = vec![
+        "-L",     // follow redirects (GitHub → CDN)
+        "--fail", // exit non-zero on HTTP errors
+        "--progress-bar",
+        "--max-time",
+        "300",
+        "-H",
+        &user_agent,
+        "-o",
+        &archive_path_str,
+    ];
+
+    if let Some(ref h) = auth_header {
+        args.push("-H");
+        args.push(h);
+    }
+
+    args.push(&url);
+
+    let status = Command::new("curl")
+        .args(&args)
+        .stdin(std::process::Stdio::null())
+        .status()
+        .map_err(|e| format!("Failed to run curl: {}", e))?;
+
+    if !status.success() {
         return Err(format!(
-            "Download failed: HTTP {} for {}",
-            response.status(),
+            "Download failed: curl exited with {} for {}",
+            status
+                .code()
+                .map_or("signal".to_string(), |c| c.to_string()),
             asset_name
         ));
     }
 
-    let total_size = response.content_length().unwrap_or(0);
-
-    // Set up progress bar
-    let pb = if total_size > 0 {
-        let pb = indicatif::ProgressBar::new(total_size);
-        pb.set_style(
-            indicatif::ProgressStyle::default_bar()
-                .template("{bar:40.cyan/blue} {bytes}/{total_bytes} ({eta})")
-                .unwrap_or_else(|_| indicatif::ProgressStyle::default_bar())
-                .progress_chars("█▓░"),
-        );
-        pb
-    } else {
-        let pb = indicatif::ProgressBar::new_spinner();
-        pb.set_style(
-            indicatif::ProgressStyle::default_spinner()
-                .template("{spinner} {bytes} downloaded")
-                .unwrap_or_else(|_| indicatif::ProgressStyle::default_spinner()),
-        );
-        pb
-    };
-
-    // Download to memory with progress
-    let mut downloaded: Vec<u8> = Vec::with_capacity(total_size as usize);
-    let mut reader = response;
-    let mut buf = [0u8; 8192];
-    loop {
-        let n = reader
-            .read(&mut buf)
-            .map_err(|e| format!("Read error: {}", e))?;
-        if n == 0 {
-            break;
-        }
-        downloaded.extend_from_slice(&buf[..n]);
-        pb.set_position(downloaded.len() as u64);
-    }
-    pb.finish_and_clear();
-
-    // Extract binary
-    let tmp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
+    let downloaded = std::fs::read(&archive_path)
+        .map_err(|e| format!("Failed to read downloaded archive: {}", e))?;
     let bin_name = if cfg!(windows) { "gw.exe" } else { "gw" };
 
     if cfg!(windows) {

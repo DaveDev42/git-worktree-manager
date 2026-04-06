@@ -31,9 +31,7 @@ dirs = "6"
 walkdir = "2"
 regex = "1"
 pathdiff = "0.2"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls-native-roots"] }
 self-replace = "1.5"
-indicatif = "0.18"
 tar = "0.4"
 flate2 = "1"
 zip = { version = "8", default-features = false, features = ["deflate"] }
