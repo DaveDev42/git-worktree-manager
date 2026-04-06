@@ -187,6 +187,7 @@ fn fetch_latest_version() -> Option<String> {
 
     let mut args = vec![
         "-s".to_string(),
+        "--fail".to_string(),
         "--max-time".to_string(),
         "10".to_string(),
         "-H".to_string(),
@@ -272,6 +273,9 @@ fn archive_ext() -> &'static str {
 /// Download the release asset and extract the binary to a temp file.
 /// Returns the path to the extracted binary.
 fn download_and_extract(version: &str) -> Result<PathBuf, String> {
+    if !which_exists("curl") {
+        return Err("curl is required for gw upgrade but was not found in PATH".to_string());
+    }
     let target = current_target();
     let asset_name = format!("gw-{}.{}", target, archive_ext());
     let url = format!(
