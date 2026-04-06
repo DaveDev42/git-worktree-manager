@@ -290,10 +290,16 @@ fn download_and_extract(version: &str) -> Result<PathBuf, String> {
         .as_ref()
         .map(|t| format!("Authorization: Bearer {}", t));
 
+    let progress_flag = if std::io::stderr().is_terminal() {
+        "--progress-bar"
+    } else {
+        "-sS" // silent + show errors (no noisy escape sequences in CI/pipes)
+    };
+
     let mut args = vec![
         "-L",     // follow redirects (GitHub → CDN)
         "--fail", // exit non-zero on HTTP errors
-        "--progress-bar",
+        progress_flag,
         "--max-time",
         "300",
         "-H",
