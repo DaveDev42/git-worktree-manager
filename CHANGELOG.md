@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.0.25](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.24...v0.0.25) (2026-04-06)
+
+
+### Bug Fixes
+
+* extract testable pure function and add unit tests for tab lookup ([a9f9335](https://github.com/DaveDev42/git-worktree-manager/commit/a9f93358a03aa70f34576038dc7278e798b38b70))
+* restore focus to active tab instead of calling tab in w-t-b launcher ([3354dc1](https://github.com/DaveDev42/git-worktree-manager/commit/3354dc1dc291e154996a7986b9ec6aa935d2daea))
+* restore focus to active tab instead of calling tab in w-t-b launcher ([f785abd](https://github.com/DaveDev42/git-worktree-manager/commit/f785abd5c7b87e477058f70def166288878cccb6))
+
 ## [0.0.24](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.23...v0.0.24) (2026-04-05)
 
 
