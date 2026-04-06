@@ -235,6 +235,10 @@ gw -g scan --dir ~/projects        # discover repositories
 - One focused task per worktree
 - The delegated Claude Code instance works independently in its own worktree directory
 - You can delegate multiple tasks in parallel to different worktrees
+- **Fire-and-forget**: Once a worktree task is spawned, you CANNOT stop it, send follow-up messages, or interact with it. The `--prompt` is the ONLY instruction the delegated instance receives. Therefore:
+  - Make the `--prompt` comprehensive — include all requirements, constraints, and acceptance criteria upfront
+  - If the user's request is vague or ambiguous, ask clarifying questions BEFORE spawning
+  - Do NOT spawn a task assuming you can "correct course later" — you cannot
 
 ## Full command reference
 
