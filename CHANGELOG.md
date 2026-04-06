@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.0.26](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.25...v0.0.26) (2026-04-06)
+
+
+### Bug Fixes
+
+* add --fail to version check curl and validate curl in PATH ([b062de8](https://github.com/DaveDev42/git-worktree-manager/commit/b062de8ff4a95e77c88263349df9b8e300a51da5))
+* add curl PATH check to fetch_latest_version for consistency ([88c50a6](https://github.com/DaveDev42/git-worktree-manager/commit/88c50a6672057c4b61627bef3d7fcb6a7837ccd4))
+* improve curl error message and add User-Agent to version check ([6b1bd42](https://github.com/DaveDev42/git-worktree-manager/commit/6b1bd425366fdf0f506188220440f1538147ff1a))
+* suppress curl progress bar in non-terminal environments ([be49d15](https://github.com/DaveDev42/git-worktree-manager/commit/be49d152b0f94e56ba8aa48c4f959b5f7ff4466f))
+
 ## [0.0.25](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.24...v0.0.25) (2026-04-06)
 
 
