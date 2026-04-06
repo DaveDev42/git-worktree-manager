@@ -122,12 +122,13 @@ pub fn launch_tab_bg(path: &Path, command: &str, ai_tool_name: &str) -> Result<(
         ));
     }
 
-    // Get current pane ID to restore focus later
+    // Find the currently active tab in the same window so we can restore focus.
+    // We use WEZTERM_PANE to identify which window we belong to, then look for
+    // the active tab in that window (which may differ from the calling tab if
+    // the user has switched tabs since opening this shell).
     let current_pane = std::env::var("WEZTERM_PANE").unwrap_or_default();
-
-    // Find the tab_id for the current pane
     let original_tab_id = if !current_pane.is_empty() {
-        get_tab_id_for_pane(&current_pane)
+        get_active_tab_in_same_window(&current_pane)
     } else {
         None
     };
@@ -162,8 +163,12 @@ pub fn launch_tab_bg(path: &Path, command: &str, ai_tool_name: &str) -> Result<(
     Ok(())
 }
 
-/// Get the tab_id for a given pane_id from WezTerm's pane list.
-fn get_tab_id_for_pane(pane_id: &str) -> Option<String> {
+/// Get the tab_id of the currently active tab in the same window as `pane_id`.
+///
+/// This finds the window that `pane_id` belongs to, then returns the tab_id
+/// of whichever tab is currently active in that window. This correctly handles
+/// the case where the user has switched to a different tab after launching gw.
+fn get_active_tab_in_same_window(pane_id: &str) -> Option<String> {
     let output = Command::new("wezterm")
         .args(["cli", "list", "--format", "json"])
         .output()
@@ -175,9 +180,17 @@ fn get_tab_id_for_pane(pane_id: &str) -> Option<String> {
 
     let panes: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).ok()?;
     let target: u64 = pane_id.parse().ok()?;
-    panes
+
+    // Find which window the calling pane belongs to
+    let window_id = panes
         .iter()
         .find(|p| p["pane_id"].as_u64() == Some(target))
+        .and_then(|p| p["window_id"].as_u64())?;
+
+    // Find the active tab in that window
+    panes
+        .iter()
+        .find(|p| p["window_id"].as_u64() == Some(window_id) && p["is_active"].as_bool() == Some(true))
         .and_then(|p| p["tab_id"].as_u64())
         .map(|t| t.to_string())
 }
