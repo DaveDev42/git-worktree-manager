@@ -190,7 +190,9 @@ fn get_active_tab_in_same_window(pane_id: &str) -> Option<String> {
     // Find the active tab in that window
     panes
         .iter()
-        .find(|p| p["window_id"].as_u64() == Some(window_id) && p["is_active"].as_bool() == Some(true))
+        .find(|p| {
+            p["window_id"].as_u64() == Some(window_id) && p["is_active"].as_bool() == Some(true)
+        })
         .and_then(|p| p["tab_id"].as_u64())
         .map(|t| t.to_string())
 }
