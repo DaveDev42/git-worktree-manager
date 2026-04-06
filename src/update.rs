@@ -180,6 +180,9 @@ fn which_exists(cmd: &str) -> bool {
 /// Fetch latest version string from GitHub Releases API.
 /// Uses gh auth token if available to avoid unauthenticated rate limits (60/hr).
 fn fetch_latest_version() -> Option<String> {
+    if !which_exists("curl") {
+        return None;
+    }
     let url = format!(
         "https://api.github.com/repos/{}/{}/releases/latest",
         REPO_OWNER, REPO_NAME
