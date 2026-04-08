@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.27](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.26...v0.0.27) (2026-04-08)
+
+
+### Bug Fixes
+
+* auto-update Homebrew formula on release ([517eefa](https://github.com/DaveDev42/git-worktree-manager/commit/517eefac6081e57780767a8c0add520e66dc79db))
+* auto-update Homebrew formula on release ([b40b091](https://github.com/DaveDev42/git-worktree-manager/commit/b40b09117bf4d6fdde8938951b8dd83a1bfceaa5))
+
 ## [0.0.26](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.25...v0.0.26) (2026-04-06)
 
 
