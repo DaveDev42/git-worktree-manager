@@ -186,6 +186,9 @@ pub fn clean_worktrees(
     let mut deleted = 0u32;
     for (branch, _, _) in &to_delete {
         println!("{}", style(format!("Deleting {}...", branch)).yellow());
+        // clean already filtered out busy worktrees above (unless --force),
+        // so at this point we pass allow_busy=true to skip the redundant
+        // gate inside delete_worktree.
         match super::worktree::delete_worktree(Some(branch), false, false, true, true, None) {
             Ok(()) => {
                 println!("{} Deleted {}", style("*").green().bold(), branch);

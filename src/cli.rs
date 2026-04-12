@@ -198,7 +198,8 @@ pub enum Commands {
         #[arg(short = 'r', long)]
         delete_remote: bool,
 
-        /// Force remove even if worktree has changes (default)
+        /// Force remove: also bypasses the busy-detection gate (skips the
+        /// "worktree is in use" check and deletes anyway)
         #[arg(short, long, conflicts_with = "no_force")]
         force: bool,
 
@@ -237,7 +238,8 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
 
-        /// Delete busy worktrees too (default: skip)
+        /// Bypass the busy-detection gate: delete busy worktrees too
+        /// (default: skip worktrees another session is using)
         #[arg(short, long)]
         force: bool,
     },

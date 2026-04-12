@@ -74,15 +74,17 @@ fn open_shell(path: &std::path::Path, branch: Option<&str>) -> Result<()> {
 
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
 
+    // `_session_lock` binding is intentional: holds the RAII guard for the
+    // full shell session; dropped on return to release the lockfile.
     let _session_lock = match crate::operations::lockfile::acquire(path, "shell") {
         Ok(lock) => Some(lock),
-        Err(crate::operations::lockfile::AcquireError::ForeignLock(entry)) => {
+        Err(err @ crate::operations::lockfile::AcquireError::ForeignLock(_)) => {
             return Err(crate::error::CwError::Other(format!(
-                "worktree is already in use by PID {} ({}); exit that session first",
-                entry.pid, entry.cmd
+                "{}; exit that session first",
+                err
             )));
         }
-        Err(crate::operations::lockfile::AcquireError::Io(e)) => {
+        Err(e) => {
             eprintln!(
                 "{} could not write session lock: {}",
                 console::style("warning:").yellow(),

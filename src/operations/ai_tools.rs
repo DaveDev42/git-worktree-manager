@@ -76,15 +76,17 @@ pub fn launch_ai_tool(
                 "{}\n",
                 style(messages::starting_ai_tool_foreground(ai_tool_name)).cyan()
             );
+            // `_session_lock` binding is intentional: RAII guard lives for
+            // the foreground AI process lifetime; dropped on return.
             let _session_lock = match crate::operations::lockfile::acquire(path, ai_tool_name) {
                 Ok(lock) => Some(lock),
-                Err(crate::operations::lockfile::AcquireError::ForeignLock(entry)) => {
+                Err(err @ crate::operations::lockfile::AcquireError::ForeignLock(_)) => {
                     return Err(crate::error::CwError::Other(format!(
-                        "worktree is already in use by PID {} ({}); exit that session first",
-                        entry.pid, entry.cmd
+                        "{}; exit that session first",
+                        err
                     )));
                 }
-                Err(crate::operations::lockfile::AcquireError::Io(e)) => {
+                Err(e) => {
                     eprintln!(
                         "{} could not write session lock: {}",
                         style("warning:").yellow(),

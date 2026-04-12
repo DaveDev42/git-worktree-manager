@@ -202,6 +202,19 @@ pub fn create_worktree(
 }
 
 /// Delete a worktree by branch name, worktree directory name, or path.
+///
+/// # Parameters
+///
+/// * `force` — historical `git worktree remove --force` semantic. Forwarded
+///   to `git::remove_worktree_safe`; controls whether git itself will remove
+///   a worktree with uncommitted changes. Defaults to `true` at the CLI.
+/// * `allow_busy` — bypass the gw-level busy-detection gate (lockfile +
+///   process cwd scan). Wired to the explicit `--force` CLI flag on the
+///   delete subcommand so users can override "worktree is in use" refusals.
+///
+/// These two flags are intentionally separate: the CLI `--force` is an
+/// affirmative user choice to bypass the busy check, whereas the git-force
+/// behaviour is a long-standing default that users rarely flip off.
 pub fn delete_worktree(
     target: Option<&str>,
     keep_branch: bool,

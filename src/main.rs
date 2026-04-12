@@ -188,6 +188,9 @@ fn main() {
             } else {
                 None
             };
+            // Arg mapping for delete_worktree:
+            //   force (git-force)       <- !no_force   (default true)
+            //   allow_busy (busy gate)  <- force       (CLI --force flag)
             worktree::delete_worktree(
                 target.as_deref(),
                 keep_branch,
