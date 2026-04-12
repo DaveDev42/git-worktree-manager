@@ -112,6 +112,7 @@ fn parent_of(_pid: u32) -> Option<u32> {
     None
 }
 
+#[allow(dead_code)]
 fn warn_scan_failed(what: &str) {
     if SCAN_WARNING.set(()).is_ok() {
         eprintln!(

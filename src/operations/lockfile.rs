@@ -314,6 +314,10 @@ mod tests {
         assert_eq!(entry.cmd, "shell");
     }
 
+    // unix-only: relies on pid_alive returning false for a fake PID. The
+    // non-unix implementation falls back to mtime, so a freshly written
+    // lockfile is never considered stale in that path.
+    #[cfg(unix)]
     #[test]
     fn read_removes_stale_lockfile() {
         let wt = make_worktree();
@@ -435,6 +439,8 @@ mod tests {
         );
     }
 
+    // unix-only: relies on pid_alive returning false for a fake PID.
+    #[cfg(unix)]
     #[test]
     fn cleanup_stale_tmp_files_removes_dead_pids() {
         let wt = make_worktree();
