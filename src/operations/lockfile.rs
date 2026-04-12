@@ -371,6 +371,7 @@ mod tests {
         assert_eq!(entry.pid, std::process::id());
     }
 
+    #[cfg(unix)]
     #[test]
     fn drop_does_not_remove_lockfile_owned_by_another_process() {
         let wt = make_worktree();
