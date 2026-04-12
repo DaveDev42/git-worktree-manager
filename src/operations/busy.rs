@@ -12,6 +12,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::Command;
+use std::sync::OnceLock;
 
 use super::lockfile;
 
@@ -27,36 +28,50 @@ pub enum BusySource {
 pub struct BusyInfo {
     pub pid: u32,
     pub cmd: String,
+    /// For lockfile sources, this is the worktree path (the process's
+    /// actual cwd is unknown). For process-scan sources, this is the
+    /// process's canonicalized cwd.
     pub cwd: PathBuf,
     pub source: BusySource,
 }
 
-/// Returns the current process + all ancestor PIDs (via getppid chain).
-#[cfg(unix)]
-pub fn self_process_tree() -> HashSet<u32> {
+/// Cached self-process-tree for the lifetime of this `gw` invocation.
+static SELF_TREE: OnceLock<HashSet<u32>> = OnceLock::new();
+
+/// Cached raw cwd scan. On unix this is populated once per `gw` invocation
+/// (lsof / /proc walk is expensive). Each entry: (pid, cmd, canon_cwd).
+static CWD_SCAN_CACHE: OnceLock<Vec<(u32, String, PathBuf)>> = OnceLock::new();
+
+/// Once-per-invocation marker for printing a "could not scan" warning.
+static SCAN_WARNING: OnceLock<()> = OnceLock::new();
+
+fn compute_self_tree() -> HashSet<u32> {
     let mut tree = HashSet::new();
     tree.insert(std::process::id());
 
-    let mut pid = unsafe { libc::getppid() } as u32;
-    for _ in 0..64 {
-        if pid == 0 || pid == 1 {
+    #[cfg(unix)]
+    {
+        let mut pid = unsafe { libc::getppid() } as u32;
+        for _ in 0..64 {
+            if pid == 0 || pid == 1 {
+                tree.insert(pid);
+                break;
+            }
             tree.insert(pid);
-            break;
-        }
-        tree.insert(pid);
-        match parent_of(pid) {
-            Some(ppid) if ppid != pid => pid = ppid,
-            _ => break,
+            match parent_of(pid) {
+                Some(ppid) if ppid != pid => pid = ppid,
+                _ => break,
+            }
         }
     }
     tree
 }
 
-#[cfg(not(unix))]
-pub fn self_process_tree() -> HashSet<u32> {
-    let mut tree = HashSet::new();
-    tree.insert(std::process::id());
-    tree
+/// Returns the current process + all ancestor PIDs (via getppid chain).
+/// Memoized for the lifetime of the process — the ancestry does not change
+/// during a single `gw` invocation.
+pub fn self_process_tree() -> &'static HashSet<u32> {
+    SELF_TREE.get_or_init(compute_self_tree)
 }
 
 #[cfg(target_os = "linux")]
@@ -83,8 +98,103 @@ fn parent_of(pid: u32) -> Option<u32> {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[allow(dead_code)]
 fn parent_of(_pid: u32) -> Option<u32> {
     None
+}
+
+fn warn_scan_failed(what: &str) {
+    if SCAN_WARNING.set(()).is_ok() {
+        eprintln!(
+            "{} could not scan processes: {}",
+            console::style("warning:").yellow(),
+            what
+        );
+    }
+}
+
+/// Populate and return the cached cwd scan (all processes, not filtered).
+fn cwd_scan() -> &'static [(u32, String, PathBuf)] {
+    CWD_SCAN_CACHE.get_or_init(raw_cwd_scan).as_slice()
+}
+
+#[cfg(target_os = "linux")]
+fn raw_cwd_scan() -> Vec<(u32, String, PathBuf)> {
+    let mut out = Vec::new();
+    let proc_dir = match std::fs::read_dir("/proc") {
+        Ok(d) => d,
+        Err(e) => {
+            warn_scan_failed(&format!("/proc unreadable: {}", e));
+            return out;
+        }
+    };
+    for entry in proc_dir.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let pid: u32 = match name.parse() {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        let cwd_link = entry.path().join("cwd");
+        let cwd = match std::fs::read_link(&cwd_link) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        // canonicalize so symlinked / bind-mounted cwds match the target.
+        // On Linux, readlink on /proc/<pid>/cwd returns " (deleted)" if the
+        // process's cwd was unlinked; canonicalize fails and we fall back.
+        let cwd_canon = cwd.canonicalize().unwrap_or(cwd.clone());
+        let cmd = std::fs::read_to_string(entry.path().join("comm"))
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        out.push((pid, cmd, cwd_canon));
+    }
+    out
+}
+
+#[cfg(target_os = "macos")]
+fn raw_cwd_scan() -> Vec<(u32, String, PathBuf)> {
+    let mut out = Vec::new();
+    // `lsof -a -d cwd -F pcn` prints records of the form:
+    //   p<pid>\nc<cmd>\nn<path>\n
+    let output = match Command::new("lsof")
+        .args(["-a", "-d", "cwd", "-F", "pcn"])
+        .output()
+    {
+        Ok(o) => o,
+        Err(e) => {
+            warn_scan_failed(&format!("lsof unavailable: {}", e));
+            return out;
+        }
+    };
+    if !output.status.success() && output.stdout.is_empty() {
+        warn_scan_failed("lsof returned no output");
+        return out;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let mut cur_pid: Option<u32> = None;
+    let mut cur_cmd = String::new();
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix('p') {
+            cur_pid = rest.parse().ok();
+            cur_cmd.clear();
+        } else if let Some(rest) = line.strip_prefix('c') {
+            cur_cmd = rest.to_string();
+        } else if let Some(rest) = line.strip_prefix('n') {
+            if let Some(pid) = cur_pid {
+                let cwd = PathBuf::from(rest);
+                let cwd_canon = cwd.canonicalize().unwrap_or_else(|_| cwd.clone());
+                out.push((pid, cur_cmd.clone(), cwd_canon));
+            }
+        }
+    }
+    out
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn raw_cwd_scan() -> Vec<(u32, String, PathBuf)> {
+    Vec::new()
 }
 
 /// Detect busy processes for a given worktree path.
@@ -96,7 +206,10 @@ pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
     let exclude = self_process_tree();
     let mut out = Vec::new();
 
-    if let Some(entry) = lockfile::read(worktree) {
+    // Invariant: lockfile source is pushed FIRST so that when the cwd-scan
+    // finds the same PID and we dedup below, the lockfile's richer `cmd`
+    // (e.g. "claude") is preserved over the generic process name.
+    if let Some(entry) = lockfile::read_and_clean_stale(worktree) {
         if !exclude.contains(&entry.pid) {
             out.push(BusyInfo {
                 pid: entry.pid,
@@ -120,101 +233,25 @@ pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
     out
 }
 
-#[cfg(target_os = "linux")]
 fn scan_cwd(worktree: &Path) -> Vec<BusyInfo> {
-    let mut out = Vec::new();
     let canon_target = match worktree.canonicalize() {
         Ok(p) => p,
-        Err(_) => return out,
+        Err(_) => return Vec::new(),
     };
-    let proc_dir = match std::fs::read_dir("/proc") {
-        Ok(d) => d,
-        Err(_) => return out,
-    };
-    for entry in proc_dir.flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        let pid: u32 = match name.parse() {
-            Ok(n) => n,
-            Err(_) => continue,
-        };
-        let cwd_link = entry.path().join("cwd");
-        let cwd = match std::fs::read_link(&cwd_link) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        let cwd_canon = cwd.canonicalize().unwrap_or(cwd.clone());
-        if cwd_canon.starts_with(&canon_target) {
-            let cmd = std::fs::read_to_string(entry.path().join("comm"))
-                .map(|s| s.trim().to_string())
-                .unwrap_or_default();
+    let mut out = Vec::new();
+    for (pid, cmd, cwd) in cwd_scan() {
+        // Defense-in-depth: canonicalize both sides catches most macOS
+        // `/var` vs `/private/var` skew, but re-check here too.
+        if cwd.starts_with(&canon_target) {
             out.push(BusyInfo {
-                pid,
-                cmd,
-                cwd: cwd_canon,
+                pid: *pid,
+                cmd: cmd.clone(),
+                cwd: cwd.clone(),
                 source: BusySource::ProcessScan,
             });
         }
     }
     out
-}
-
-#[cfg(target_os = "macos")]
-fn scan_cwd(worktree: &Path) -> Vec<BusyInfo> {
-    let mut out = Vec::new();
-    let canon_target = match worktree.canonicalize() {
-        Ok(p) => p,
-        Err(_) => return out,
-    };
-    // `lsof -a -d cwd -F pcn +D <path>` prints records of the form:
-    //   p<pid>\nc<cmd>\nn<path>\n
-    let output = match Command::new("lsof")
-        .args([
-            "-a",
-            "-d",
-            "cwd",
-            "-F",
-            "pcn",
-            "+D",
-            &canon_target.to_string_lossy(),
-        ])
-        .output()
-    {
-        Ok(o) => o,
-        Err(_) => return out,
-    };
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    let mut cur_pid: Option<u32> = None;
-    let mut cur_cmd = String::new();
-    for line in stdout.lines() {
-        if let Some(rest) = line.strip_prefix('p') {
-            cur_pid = rest.parse().ok();
-            cur_cmd.clear();
-        } else if let Some(rest) = line.strip_prefix('c') {
-            cur_cmd = rest.to_string();
-        } else if let Some(rest) = line.strip_prefix('n') {
-            if let Some(pid) = cur_pid {
-                let cwd = PathBuf::from(rest);
-                let cwd_canon = cwd.canonicalize().unwrap_or_else(|_| cwd.clone());
-                if !cwd_canon.starts_with(&canon_target) {
-                    continue;
-                }
-                out.push(BusyInfo {
-                    pid,
-                    cmd: cur_cmd.clone(),
-                    cwd: cwd_canon,
-                    source: BusySource::ProcessScan,
-                });
-            }
-        }
-    }
-    out
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn scan_cwd(_worktree: &Path) -> Vec<BusyInfo> {
-    Vec::new()
 }
 
 #[cfg(test)]
@@ -236,6 +273,57 @@ mod tests {
             tree.contains(&ppid),
             "expected tree to contain ppid {}",
             ppid
+        );
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn scan_cwd_finds_child_with_cwd_in_tempdir() {
+        use std::process::Stdio;
+        use std::thread::sleep;
+        use std::time::{Duration, Instant};
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .current_dir(dir.path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn sleep");
+
+        // Note: cwd scan cache is module-static, so we can't rely on it
+        // being populated here fresh. Bypass by calling raw_cwd_scan()
+        // directly via scan_cwd() which uses the cache — poll to let the
+        // child register.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut found = false;
+        while Instant::now() < deadline {
+            // We need a non-cached scan because the cache may already
+            // have been populated before the child existed.
+            let raw = raw_cwd_scan();
+            let canon = dir
+                .path()
+                .canonicalize()
+                .unwrap_or(dir.path().to_path_buf());
+            if raw
+                .iter()
+                .any(|(p, _, cwd)| *p == child.id() && cwd.starts_with(&canon))
+            {
+                found = true;
+                break;
+            }
+            sleep(Duration::from_millis(50));
+        }
+
+        let _ = child.kill();
+        let _ = child.wait();
+
+        assert!(
+            found,
+            "expected to find child pid={} with cwd in {:?}",
+            child.id(),
+            dir.path()
         );
     }
 }
