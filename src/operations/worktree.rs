@@ -248,10 +248,7 @@ pub fn delete_worktree(
             branch_display
         );
         for b in &busy {
-            eprintln!(
-                "    PID {:>6}  {}  (source: {:?})",
-                b.pid, b.cmd, b.source
-            );
+            eprintln!("    PID {:>6}  {}  (source: {:?})", b.pid, b.cmd, b.source);
         }
 
         use std::io::IsTerminal;

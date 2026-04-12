@@ -181,11 +181,7 @@ mod tests {
             .iter()
             .filter(|n| n.starts_with("gw-session.lock.tmp."))
             .collect();
-        assert!(
-            tmp_files.is_empty(),
-            "tmp files leaked: {:?}",
-            tmp_files
-        );
+        assert!(tmp_files.is_empty(), "tmp files leaked: {:?}", tmp_files);
         assert!(entries.iter().any(|n| n == "gw-session.lock"));
     }
 

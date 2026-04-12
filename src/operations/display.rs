@@ -168,7 +168,9 @@ pub fn list_worktrees() -> Result<()> {
         }
 
         let mut summary_parts = Vec::new();
-        for &status_name in &["clean", "modified", "busy", "active", "pr-open", "merged", "stale"] {
+        for &status_name in &[
+            "clean", "modified", "busy", "active", "pr-open", "merged", "stale",
+        ] {
             if let Some(&count) = counts.get(status_name) {
                 if count > 0 {
                     let styled = cwconsole::status_style(status_name)

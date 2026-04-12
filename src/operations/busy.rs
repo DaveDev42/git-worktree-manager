@@ -232,6 +232,10 @@ mod tests {
     fn self_tree_contains_parent_pid() {
         let tree = self_process_tree();
         let ppid = unsafe { libc::getppid() } as u32;
-        assert!(tree.contains(&ppid), "expected tree to contain ppid {}", ppid);
+        assert!(
+            tree.contains(&ppid),
+            "expected tree to contain ppid {}",
+            ppid
+        );
     }
 }
