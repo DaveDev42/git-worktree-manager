@@ -74,6 +74,16 @@ fn open_shell(path: &std::path::Path, branch: Option<&str>) -> Result<()> {
 
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
 
+    let _session_lock = crate::operations::lockfile::acquire(path, "shell")
+        .map_err(|e| {
+            eprintln!(
+                "{} could not acquire session lock: {}",
+                console::style("warning:").yellow(),
+                e
+            );
+        })
+        .ok();
+
     let _ = std::process::Command::new(&shell)
         .current_dir(path)
         .status();
