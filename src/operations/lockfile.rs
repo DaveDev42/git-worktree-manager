@@ -33,6 +33,12 @@ pub struct LockEntry {
 /// RAII guard that removes the lockfile when dropped, provided the lockfile
 /// still belongs to this process. A `Drop` that blindly removed the file
 /// would delete another session's lock if two processes raced the acquire.
+///
+/// Note: the RAII guard only guarantees correct cleanup on drop. It does
+/// **not** guarantee ongoing exclusive access — if another process bypasses
+/// `acquire` and clobbers the file mid-session, this guard will not notice,
+/// though Drop will correctly refuse to remove a file whose PID no longer
+/// matches.
 pub struct SessionLock {
     path: PathBuf,
     owner_pid: u32,
@@ -125,10 +131,10 @@ pub enum AcquireError {
     #[error("worktree already in use by PID {} ({})", .0.pid, .0.cmd)]
     ForeignLock(LockEntry),
     /// Lockfile could not be written/read.
-    #[error("{0}")]
+    #[error("lockfile I/O error: {0}")]
     Io(#[from] std::io::Error),
     /// Serializing/deserializing the lockfile failed.
-    #[error("{0}")]
+    #[error("lockfile serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 }
 
@@ -221,49 +227,51 @@ pub fn acquire(worktree: &Path, cmd: &str) -> std::result::Result<SessionLock, A
     })
 }
 
-/// Read the current lock entry. Returns None (and removes the file) if the
-/// recorded PID is dead or the file is malformed. If the file has a foreign
-/// schema version, it is returned as-is but NOT cleaned — future gw versions
-/// may own it.
+/// Read the current lock entry, cleaning up if the owner is gone.
 ///
-/// Side effect: removes stale lockfiles with a matching schema version whose
-/// PID is no longer alive.
+/// Behavior by schema version:
+/// - Foreign-version entries (e.g. written by a future `gw`) are returned
+///   unmodified and never cleaned — we do not own them.
+/// - Same-version entries are cleaned when the owner is known-dead:
+///   on unix, `pid_alive(pid)` is the authority; on non-unix (where we
+///   cannot cheaply verify PID liveness), the lockfile's mtime is the
+///   fallback and a file older than 7 days is treated as stale.
 pub fn read_and_clean_stale(worktree: &Path) -> Option<LockEntry> {
     let path = lock_path(worktree);
     let raw = fs::read_to_string(&path).ok()?;
     let entry: LockEntry = serde_json::from_str(&raw).ok()?;
 
-    // Foreign schema version: treat as foreign-owned and leave alone.
+    // Version gate: unknown versions are treated as foreign locks — do not
+    // touch them beyond returning whatever we can parse. A future gw version
+    // bumping LOCK_VERSION must still interoperate safely here.
     if entry.version != LOCK_VERSION {
-        // Windows fallback: with no pid_alive signal, also honour mtime
-        // as a stale-lock indicator. Applied to any version we see.
-        #[cfg(not(unix))]
-        {
-            if let Ok(meta) = fs::metadata(&path) {
-                if let Ok(mtime) = meta.modified() {
-                    if let Ok(age) = mtime.elapsed() {
-                        if age.as_secs() > 7 * 24 * 60 * 60 {
-                            let _ = fs::remove_file(&path);
-                            return None;
-                        }
-                    }
-                }
-            }
-        }
         return Some(entry);
     }
 
-    if pid_alive(entry.pid) {
+    // Prefer OS-level liveness when we have it.
+    #[cfg(unix)]
+    let alive = pid_alive(entry.pid);
+    // On non-unix we cannot cheaply verify PID liveness, so fall back to
+    // mtime: if the lockfile has not been touched in STALE_TTL, assume the
+    // owner crashed and clean it up.
+    #[cfg(not(unix))]
+    let alive = {
+        let stale_ttl = std::time::Duration::from_secs(7 * 24 * 60 * 60);
+        match fs::metadata(&path).and_then(|m| m.modified()) {
+            Ok(mtime) => std::time::SystemTime::now()
+                .duration_since(mtime)
+                .map(|age| age < stale_ttl)
+                .unwrap_or(true),
+            Err(_) => true, // be conservative: treat as alive
+        }
+    };
+
+    if alive {
         Some(entry)
     } else {
         let _ = fs::remove_file(&path);
         None
     }
-}
-
-/// Back-compat alias: prefer `read_and_clean_stale`.
-pub fn read(worktree: &Path) -> Option<LockEntry> {
-    read_and_clean_stale(worktree)
 }
 
 #[cfg(test)]

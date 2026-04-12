@@ -42,7 +42,9 @@ static SELF_TREE: OnceLock<HashSet<u32>> = OnceLock::new();
 /// (lsof / /proc walk is expensive). Each entry: (pid, cmd, canon_cwd).
 static CWD_SCAN_CACHE: OnceLock<Vec<(u32, String, PathBuf)>> = OnceLock::new();
 
-/// Once-per-invocation marker for printing a "could not scan" warning.
+/// Emits the "could not scan processes" warning at most once per process.
+/// `gw` is short-lived so this is appropriate; a long-running daemon using
+/// this module would need to rework this (currently not a use case).
 static SCAN_WARNING: OnceLock<()> = OnceLock::new();
 
 fn compute_self_tree() -> HashSet<u32> {
@@ -53,7 +55,13 @@ fn compute_self_tree() -> HashSet<u32> {
     {
         let mut pid = unsafe { libc::getppid() } as u32;
         for _ in 0..64 {
-            if pid == 0 || pid == 1 {
+            // Stop at init (PID 1) or orphan marker (PID 0). Insert PID 1 so that an
+            // orphaned gw whose parent was reparented to init still excludes init
+            // itself; skip PID 0 entirely — it is not a real userland process.
+            if pid == 0 {
+                break;
+            }
+            if pid == 1 {
                 tree.insert(pid);
                 break;
             }
@@ -202,13 +210,20 @@ fn raw_cwd_scan() -> Vec<(u32, String, PathBuf)> {
 /// Combines the lockfile signal and a process cwd scan. Filters out the
 /// current process tree so `gw delete` invoked from within the worktree
 /// does not self-report as busy.
+///
+/// Note: `detect_busy` calls `lockfile::read_and_clean_stale`, which removes
+/// lockfiles belonging to dead owners as a self-healing side effect. This
+/// means even read-only operations like `gw list` may mutate
+/// `<worktree>/.git/gw-session.lock` when a stale file is encountered.
 pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
     let exclude = self_process_tree();
     let mut out = Vec::new();
 
-    // Invariant: lockfile source is pushed FIRST so that when the cwd-scan
-    // finds the same PID and we dedup below, the lockfile's richer `cmd`
-    // (e.g. "claude") is preserved over the generic process name.
+    // Lockfile entries come first so that when the same PID appears in both
+    // signals, we keep the lockfile's richer `cmd` (e.g. "claude"). If the
+    // lockfile PID is excluded via self_tree, we do not preserve its cmd for
+    // other PIDs in the cwd scan — those are reported with whatever
+    // `/proc/*/comm` or `lsof` gave us.
     if let Some(entry) = lockfile::read_and_clean_stale(worktree) {
         if !exclude.contains(&entry.pid) {
             out.push(BusyInfo {

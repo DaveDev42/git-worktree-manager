@@ -261,7 +261,7 @@ pub fn delete_worktree(
         });
         eprintln!(
             "{} worktree '{}' is in use by:",
-            console::style("error:").red().bold(),
+            style("error:").red().bold(),
             branch_display
         );
         for b in &busy {
@@ -281,7 +281,7 @@ pub fn delete_worktree(
                 return Ok(());
             }
         } else {
-            return Err(crate::error::CwError::Other(format!(
+            return Err(CwError::Other(format!(
                 "worktree '{}' is in use by {} process(es); re-run with --force to override",
                 branch_display,
                 busy.len()
