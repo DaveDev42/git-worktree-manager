@@ -13,6 +13,7 @@ const LOCK_FILENAME: &str = "gw-session.lock";
 
 /// Non-unix stale-lock TTL: a lockfile whose mtime is older than this is
 /// treated as belonging to a crashed process and removed on next read.
+#[cfg(not(unix))]
 const STALE_TTL: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 60 * 60);
 
 /// Current on-disk lockfile schema version. A mismatching version makes
