@@ -37,11 +37,12 @@ pub fn get_worktree_status(path: &Path, repo: &Path, branch: Option<&str>) -> St
         return "busy".to_string();
     }
 
-    // Check if cwd is inside this worktree
+    // Check if cwd is inside this worktree. Canonicalize both sides so that
+    // symlink skew (e.g. macOS /var vs /private/var) does not miss a match.
     if let Ok(cwd) = std::env::current_dir() {
-        let cwd_str = cwd.to_string_lossy().to_string();
-        let path_str = path.to_string_lossy().to_string();
-        if cwd_str.starts_with(&path_str) {
+        let cwd_canon = cwd.canonicalize().unwrap_or(cwd);
+        let path_canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if cwd_canon.starts_with(&path_canon) {
             return "active".to_string();
         }
     }

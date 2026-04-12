@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{CwError, Result};
+use crate::error::CwError;
 
 const LOCK_FILENAME: &str = "gw-session.lock";
 
@@ -21,13 +21,23 @@ pub struct LockEntry {
     pub cmd: String,
 }
 
-/// RAII guard that removes the lockfile when dropped.
+/// RAII guard that removes the lockfile when dropped, provided the lockfile
+/// still belongs to this process. A `Drop` that blindly removed the file
+/// would delete another session's lock if two processes raced the acquire.
 pub struct SessionLock {
     path: PathBuf,
+    owner_pid: u32,
 }
 
 impl Drop for SessionLock {
     fn drop(&mut self) {
+        if let Ok(raw) = fs::read_to_string(&self.path) {
+            if let Ok(entry) = serde_json::from_str::<LockEntry>(&raw) {
+                if entry.pid != self.owner_pid {
+                    return;
+                }
+            }
+        }
         let _ = fs::remove_file(&self.path);
     }
 }
@@ -55,8 +65,34 @@ pub fn pid_alive(_pid: u32) -> bool {
     true
 }
 
+/// Resolve the directory that should hold the lockfile.
+///
+/// In a git worktree created by `git worktree add`, `<worktree>/.git` is a
+/// *file* containing `gitdir: <absolute-path>` pointing to the per-worktree
+/// directory under `<main>/.git/worktrees/<name>`. Writing a lockfile inside
+/// a regular file would fail silently, so we dereference the `gitdir:`
+/// indicator. In the main worktree, `.git` is a directory and is used as-is.
+fn lock_dir(worktree: &Path) -> PathBuf {
+    let dot_git = worktree.join(".git");
+    if let Ok(meta) = fs::metadata(&dot_git) {
+        if meta.is_file() {
+            if let Ok(raw) = fs::read_to_string(&dot_git) {
+                for line in raw.lines() {
+                    if let Some(rest) = line.strip_prefix("gitdir:") {
+                        let trimmed = rest.trim();
+                        if !trimmed.is_empty() {
+                            return PathBuf::from(trimmed);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    dot_git
+}
+
 fn lock_path(worktree: &Path) -> PathBuf {
-    worktree.join(".git").join(LOCK_FILENAME)
+    lock_dir(worktree).join(LOCK_FILENAME)
 }
 
 fn now_epoch_seconds() -> i64 {
@@ -66,16 +102,41 @@ fn now_epoch_seconds() -> i64 {
         .unwrap_or(0)
 }
 
-/// Acquire an exclusive session lock for the given worktree. Cleans up stale locks; fails if a live foreign PID holds the lock.
-pub fn acquire(worktree: &Path, cmd: &str) -> Result<SessionLock> {
+/// Outcome of an `acquire` call. Callers may want to distinguish "an active
+/// session already owns this worktree" (should block entry) from "we could
+/// not write the lockfile at all" (degrade to a warning and proceed).
+#[derive(Debug)]
+pub enum AcquireError {
+    /// Another live session holds the lock.
+    ForeignLock(LockEntry),
+    /// Lockfile could not be written/read (I/O, permissions, serde, ...).
+    Io(CwError),
+}
+
+impl std::fmt::Display for AcquireError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AcquireError::ForeignLock(entry) => {
+                write!(
+                    f,
+                    "worktree already in use by PID {} ({})",
+                    entry.pid, entry.cmd
+                )
+            }
+            AcquireError::Io(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+/// Acquire an exclusive session lock for the given worktree. Cleans up stale
+/// locks; returns `AcquireError::ForeignLock` if a live foreign PID holds the
+/// lock, or `AcquireError::Io` for filesystem/serialization failures.
+pub fn acquire(worktree: &Path, cmd: &str) -> std::result::Result<SessionLock, AcquireError> {
     let path = lock_path(worktree);
 
     if let Some(existing) = read(worktree) {
         if existing.pid != std::process::id() {
-            return Err(CwError::Other(format!(
-                "worktree already locked by PID {} ({})",
-                existing.pid, existing.cmd
-            )));
+            return Err(AcquireError::ForeignLock(existing));
         }
     }
 
@@ -85,10 +146,10 @@ pub fn acquire(worktree: &Path, cmd: &str) -> Result<SessionLock> {
         cmd: cmd.to_string(),
     };
     let json = serde_json::to_string(&entry)
-        .map_err(|e| CwError::Other(format!("serialize lock: {}", e)))?;
+        .map_err(|e| AcquireError::Io(CwError::Other(format!("serialize lock: {}", e))))?;
 
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).map_err(|e| AcquireError::Io(e.into()))?;
     }
 
     // Atomic write: write to tmp, then rename. The tmp name includes our
@@ -100,13 +161,18 @@ pub fn acquire(worktree: &Path, cmd: &str) -> Result<SessionLock> {
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&tmp)?;
-        f.write_all(json.as_bytes())?;
+            .open(&tmp)
+            .map_err(|e| AcquireError::Io(e.into()))?;
+        f.write_all(json.as_bytes())
+            .map_err(|e| AcquireError::Io(e.into()))?;
         f.sync_all().ok();
     }
-    fs::rename(&tmp, &path)?;
+    fs::rename(&tmp, &path).map_err(|e| AcquireError::Io(e.into()))?;
 
-    Ok(SessionLock { path })
+    Ok(SessionLock {
+        path,
+        owner_pid: std::process::id(),
+    })
 }
 
 /// Read the current lock entry. Returns None (and removes the file) if the recorded PID is dead or the file is malformed.
@@ -185,6 +251,52 @@ mod tests {
         assert!(entries.iter().any(|n| n == "gw-session.lock"));
     }
 
+    #[test]
+    fn lock_dir_follows_gitdir_indicator_when_dot_git_is_file() {
+        // Simulate a git worktree: <worktree>/.git is a file containing
+        // `gitdir: <path>` pointing to the real per-worktree directory.
+        let root = TempDir::new().unwrap();
+        let real_gitdir = root.path().join("main.git/worktrees/feature");
+        fs::create_dir_all(&real_gitdir).unwrap();
+        let wt = root.path().join("feature");
+        fs::create_dir_all(&wt).unwrap();
+        fs::write(
+            wt.join(".git"),
+            format!("gitdir: {}\n", real_gitdir.display()),
+        )
+        .unwrap();
+
+        let dir = lock_dir(&wt);
+        assert_eq!(dir, real_gitdir);
+
+        let _lock = acquire(&wt, "shell").unwrap();
+        assert!(real_gitdir.join(LOCK_FILENAME).exists());
+        let entry = read(&wt).unwrap();
+        assert_eq!(entry.pid, std::process::id());
+    }
+
+    #[test]
+    fn drop_does_not_remove_lockfile_owned_by_another_process() {
+        let wt = make_worktree();
+        let lock = acquire(wt.path(), "shell").unwrap();
+        // Overwrite the file as if another process had taken over.
+        let entry = LockEntry {
+            pid: unsafe { libc::getppid() } as u32,
+            started_at: 0,
+            cmd: "other".to_string(),
+        };
+        let path = wt.path().join(".git").join(LOCK_FILENAME);
+        fs::write(&path, serde_json::to_string(&entry).unwrap()).unwrap();
+
+        drop(lock);
+        assert!(
+            path.exists(),
+            "foreign-owned lockfile was incorrectly removed"
+        );
+        // Cleanup for the TempDir drop
+        let _ = fs::remove_file(&path);
+    }
+
     #[cfg(unix)]
     #[test]
     fn acquire_fails_when_live_lock_from_other_pid() {
@@ -197,6 +309,10 @@ mod tests {
             cmd: "other".to_string(),
         };
         fs::write(&path, serde_json::to_string(&entry).unwrap()).unwrap();
-        assert!(acquire(wt.path(), "shell").is_err());
+        match acquire(wt.path(), "shell") {
+            Err(AcquireError::ForeignLock(e)) => assert_eq!(e.pid, other_pid),
+            Err(AcquireError::Io(e)) => panic!("expected ForeignLock, got Io({})", e),
+            Ok(_) => panic!("expected ForeignLock, got Ok"),
+        }
     }
 }

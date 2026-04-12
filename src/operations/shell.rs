@@ -74,15 +74,23 @@ fn open_shell(path: &std::path::Path, branch: Option<&str>) -> Result<()> {
 
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
 
-    let _session_lock = crate::operations::lockfile::acquire(path, "shell")
-        .map_err(|e| {
+    let _session_lock = match crate::operations::lockfile::acquire(path, "shell") {
+        Ok(lock) => Some(lock),
+        Err(crate::operations::lockfile::AcquireError::ForeignLock(entry)) => {
+            return Err(crate::error::CwError::Other(format!(
+                "worktree is already in use by PID {} ({}); exit that session first",
+                entry.pid, entry.cmd
+            )));
+        }
+        Err(crate::operations::lockfile::AcquireError::Io(e)) => {
             eprintln!(
-                "{} could not acquire session lock: {}",
+                "{} could not write session lock: {}",
                 console::style("warning:").yellow(),
                 e
             );
-        })
-        .ok();
+            None
+        }
+    };
 
     let _ = std::process::Command::new(&shell)
         .current_dir(path)

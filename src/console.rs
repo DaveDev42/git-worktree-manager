@@ -37,6 +37,7 @@ pub fn status_style(status: &str) -> Style {
         "modified" => Style::new().yellow(),
         "merged" => Style::new().magenta(),
         "pr-open" => Style::new().cyan(),
+        "busy" => Style::new().red().bold(),
         "stale" => Style::new().red(),
         _ => Style::new(),
     }
@@ -50,6 +51,7 @@ pub fn status_icon(status: &str) -> &'static str {
         "modified" => "◉",
         "merged" => "✓",
         "pr-open" => "⬆",
+        "busy" => "🔒",
         "stale" => "x",
         _ => "○",
     }

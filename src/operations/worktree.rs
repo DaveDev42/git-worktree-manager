@@ -220,11 +220,15 @@ pub fn delete_worktree(
         return Err(CwError::Git(messages::cannot_delete_main_worktree()));
     }
 
-    // If cwd is inside worktree, change to main repo
+    // If cwd is inside worktree, change to main repo. Canonicalize both
+    // sides so /var vs /private/var (macOS) and other symlink skew do not
+    // hide the match.
     if let Ok(cwd) = std::env::current_dir() {
-        let cwd_str = cwd.to_string_lossy().to_string();
-        let wt_str = worktree_path.to_string_lossy().to_string();
-        if cwd_str.starts_with(&wt_str) {
+        let cwd_canon = cwd.canonicalize().unwrap_or(cwd);
+        let wt_canon = worktree_path
+            .canonicalize()
+            .unwrap_or_else(|_| worktree_path.clone());
+        if cwd_canon.starts_with(&wt_canon) {
             let _ = std::env::set_current_dir(&main_repo);
         }
     }

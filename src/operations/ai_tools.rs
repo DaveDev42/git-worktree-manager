@@ -76,15 +76,23 @@ pub fn launch_ai_tool(
                 "{}\n",
                 style(messages::starting_ai_tool_foreground(ai_tool_name)).cyan()
             );
-            let _session_lock = crate::operations::lockfile::acquire(path, ai_tool_name)
-                .map_err(|e| {
+            let _session_lock = match crate::operations::lockfile::acquire(path, ai_tool_name) {
+                Ok(lock) => Some(lock),
+                Err(crate::operations::lockfile::AcquireError::ForeignLock(entry)) => {
+                    return Err(crate::error::CwError::Other(format!(
+                        "worktree is already in use by PID {} ({}); exit that session first",
+                        entry.pid, entry.cmd
+                    )));
+                }
+                Err(crate::operations::lockfile::AcquireError::Io(e)) => {
                     eprintln!(
-                        "{} could not acquire session lock: {}",
+                        "{} could not write session lock: {}",
                         style("warning:").yellow(),
                         e
                     );
-                })
-                .ok();
+                    None
+                }
+            };
             launchers::foreground::run(path, &cmd);
         }
         LaunchMethod::Detach => {
