@@ -176,7 +176,7 @@ fn main() {
             target,
             keep_branch,
             delete_remote,
-            force: _,
+            force,
             no_force,
             worktree: is_worktree,
             branch: is_branch,
@@ -193,6 +193,7 @@ fn main() {
                 keep_branch,
                 delete_remote,
                 !no_force,
+                force,
                 lookup_mode,
             )
         }

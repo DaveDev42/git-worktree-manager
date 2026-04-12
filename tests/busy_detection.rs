@@ -114,7 +114,7 @@ mod unix_only {
 
         let output = Command::cargo_bin("gw")
             .unwrap()
-            .args(["delete", "--no-force", "busy-branch-xyz"])
+            .args(["delete", "busy-branch-xyz"])
             .current_dir(repo.path())
             .write_stdin("")
             .output()

@@ -207,6 +207,7 @@ pub fn delete_worktree(
     keep_branch: bool,
     delete_remote: bool,
     force: bool,
+    allow_busy: bool,
     lookup_mode: Option<&str>,
 ) -> Result<()> {
     let main_repo = git::get_main_repo_root(None)?;
@@ -228,9 +229,13 @@ pub fn delete_worktree(
         }
     }
 
-    // Busy-detection gate: block deletion if worktree is in use, unless --force.
+    // Busy-detection gate: block deletion if worktree is in use, unless the
+    // caller explicitly opted in via `allow_busy` (wired to the explicit
+    // `--force` CLI flag — note that the `force` parameter here carries the
+    // historical git-force semantic and defaults to true, so we use a
+    // dedicated flag for the busy override).
     let busy = crate::operations::busy::detect_busy(&worktree_path);
-    if !busy.is_empty() && !force {
+    if !busy.is_empty() && !allow_busy {
         let branch_display = branch_name.clone().unwrap_or_else(|| {
             worktree_path
                 .file_name()
