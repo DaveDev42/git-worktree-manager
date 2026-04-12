@@ -65,28 +65,26 @@ pub fn launch_ai_tool(
     // Build shell command string
     let cmd = shell_quote_join(&ai_cmd_parts);
 
-    // Acquire a session lockfile for the worktree so concurrent `gw` commands
-    // can detect an active AI session. The lock is released when this function
-    // returns. For blocking launchers (Foreground) this spans the entire AI
-    // session; for launchers that dispatch to a separate terminal/multiplexer
-    // and return immediately, the lock is short-lived.
-    let _session_lock = crate::operations::lockfile::acquire(path, ai_tool_name)
-        .map_err(|e| {
-            eprintln!(
-                "{} could not acquire session lock: {}",
-                style("warning:").yellow(),
-                e
-            );
-        })
-        .ok();
-
-    // Dispatch to launcher
+    // Dispatch to launcher. Foreground blocks on the AI process, so an RAII
+    // lockfile spans the full session. Other launchers detach to a terminal
+    // emulator / multiplexer and return immediately, so a lock acquired here
+    // would be released before the AI session really starts — for those we
+    // rely on process-cwd scanning in `busy::detect_busy` instead.
     match method {
         LaunchMethod::Foreground => {
             println!(
                 "{}\n",
                 style(messages::starting_ai_tool_foreground(ai_tool_name)).cyan()
             );
+            let _session_lock = crate::operations::lockfile::acquire(path, ai_tool_name)
+                .map_err(|e| {
+                    eprintln!(
+                        "{} could not acquire session lock: {}",
+                        style("warning:").yellow(),
+                        e
+                    );
+                })
+                .ok();
             launchers::foreground::run(path, &cmd);
         }
         LaunchMethod::Detach => {
