@@ -41,6 +41,10 @@ pub enum CwError {
     /// JSON serialization/deserialization errors.
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+
+    /// Generic error with message.
+    #[error("{0}")]
+    Other(String),
 }
 
 pub type Result<T> = std::result::Result<T, CwError>;

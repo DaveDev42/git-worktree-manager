@@ -9,6 +9,7 @@ pub mod git_ops;
 pub mod global_ops;
 pub mod helpers;
 pub mod launchers;
+pub mod lockfile;
 pub mod path_cmd;
 pub mod setup_claude;
 pub mod shell;
