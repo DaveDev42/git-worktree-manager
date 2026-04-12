@@ -17,7 +17,7 @@ const MIN_TABLE_WIDTH: usize = 100;
 
 /// Determine the status of a worktree.
 ///
-/// Status priority: stale > active > merged > pr-open > modified > clean
+/// Status priority: stale > busy > active > merged > pr-open > modified > clean
 ///
 /// Merge detection strategy:
 /// 1. `gh pr view` (primary) — works with all merge strategies (merge commit,
@@ -28,6 +28,13 @@ const MIN_TABLE_WIDTH: usize = 100;
 pub fn get_worktree_status(path: &Path, repo: &Path, branch: Option<&str>) -> String {
     if !path.exists() {
         return "stale".to_string();
+    }
+
+    // Busy beats "active": another session (claude, shell, editor) holds this
+    // worktree. The current process and its ancestors are excluded inside
+    // detect_busy so the caller's own shell does not self-report.
+    if !crate::operations::busy::detect_busy(path).is_empty() {
+        return "busy".to_string();
     }
 
     // Check if cwd is inside this worktree
@@ -161,7 +168,7 @@ pub fn list_worktrees() -> Result<()> {
         }
 
         let mut summary_parts = Vec::new();
-        for &status_name in &["clean", "modified", "active", "pr-open", "merged", "stale"] {
+        for &status_name in &["clean", "modified", "busy", "active", "pr-open", "merged", "stale"] {
             if let Some(&count) = counts.get(status_name) {
                 if count > 0 {
                     let styled = cwconsole::status_style(status_name)
@@ -798,6 +805,49 @@ mod tests {
     fn test_format_age_boundary_below_one_hour() {
         // Less than 1 hour (1/24 day ≈ 0.0417)
         assert_eq!(format_age(0.04), "just now"); // 0.04 * 24 = 0.96h → 0 as i64
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_get_worktree_status_busy_from_lockfile() {
+        use crate::operations::lockfile::LockEntry;
+        use std::fs;
+        use std::process::{Command, Stdio};
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = tmp.path();
+        let wt = repo.join("wt1");
+        fs::create_dir_all(wt.join(".git")).unwrap();
+
+        // Spawn a child process: its PID is a descendant (not ancestor) of
+        // the current process, so self_process_tree() will not contain it.
+        // This gives us a live foreign PID to prove the busy signal fires.
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn sleep");
+        let foreign_pid: u32 = child.id();
+
+        let entry = LockEntry {
+            pid: foreign_pid,
+            started_at: 0,
+            cmd: "claude".to_string(),
+        };
+        fs::write(
+            wt.join(".git").join("gw-session.lock"),
+            serde_json::to_string(&entry).unwrap(),
+        )
+        .unwrap();
+
+        let status = get_worktree_status(&wt, repo, Some("wt1"));
+
+        // Clean up child before asserting, so a failed assert still reaps it.
+        let _ = child.kill();
+        let _ = child.wait();
+
+        assert_eq!(status, "busy");
     }
 
     #[test]
