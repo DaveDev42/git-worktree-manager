@@ -13,13 +13,15 @@ use crate::error::{CwError, Result};
 
 const LOCK_FILENAME: &str = "gw-session.lock";
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Serialized lockfile contents describing the session that owns a worktree.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockEntry {
     pub pid: u32,
     pub started_at: i64,
     pub cmd: String,
 }
 
+/// RAII guard that removes the lockfile when dropped.
 pub struct SessionLock {
     path: PathBuf,
 }
@@ -64,6 +66,7 @@ fn now_epoch_seconds() -> i64 {
         .unwrap_or(0)
 }
 
+/// Acquire an exclusive session lock for the given worktree. Cleans up stale locks; fails if a live foreign PID holds the lock.
 pub fn acquire(worktree: &Path, cmd: &str) -> Result<SessionLock> {
     let path = lock_path(worktree);
 
@@ -87,10 +90,26 @@ pub fn acquire(worktree: &Path, cmd: &str) -> Result<SessionLock> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&path, json)?;
+
+    // Atomic write: write to tmp, then rename. The tmp name includes our
+    // PID so racing processes do not clobber each other's tmp files.
+    let tmp = path.with_file_name(format!("{}.tmp.{}", LOCK_FILENAME, std::process::id()));
+    {
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&tmp)?;
+        f.write_all(json.as_bytes())?;
+        f.sync_all().ok();
+    }
+    fs::rename(&tmp, &path)?;
+
     Ok(SessionLock { path })
 }
 
+/// Read the current lock entry. Returns None (and removes the file) if the recorded PID is dead or the file is malformed.
 pub fn read(worktree: &Path) -> Option<LockEntry> {
     let path = lock_path(worktree);
     let raw = fs::read_to_string(&path).ok()?;
@@ -148,6 +167,29 @@ mod tests {
         assert!(!path.exists());
     }
 
+    #[test]
+    fn acquire_does_not_leave_tmp_file_behind() {
+        let wt = make_worktree();
+        let _lock = acquire(wt.path(), "shell").unwrap();
+        let git_dir = wt.path().join(".git");
+        let entries: Vec<_> = fs::read_dir(&git_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        let tmp_files: Vec<_> = entries
+            .iter()
+            .filter(|n| n.starts_with("gw-session.lock.tmp."))
+            .collect();
+        assert!(
+            tmp_files.is_empty(),
+            "tmp files leaked: {:?}",
+            tmp_files
+        );
+        assert!(entries.iter().any(|n| n == "gw-session.lock"));
+    }
+
+    #[cfg(unix)]
     #[test]
     fn acquire_fails_when_live_lock_from_other_pid() {
         let wt = make_worktree();
