@@ -228,6 +228,48 @@ pub fn delete_worktree(
         }
     }
 
+    // Busy-detection gate: block deletion if worktree is in use, unless --force.
+    let busy = crate::operations::busy::detect_busy(&worktree_path);
+    if !busy.is_empty() && !force {
+        let branch_display = branch_name.clone().unwrap_or_else(|| {
+            worktree_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| worktree_path.to_string_lossy().to_string())
+        });
+        eprintln!(
+            "{} worktree '{}' is in use by:",
+            console::style("error:").red().bold(),
+            branch_display
+        );
+        for b in &busy {
+            eprintln!(
+                "    PID {:>6}  {}  (source: {:?})",
+                b.pid, b.cmd, b.source
+            );
+        }
+
+        use std::io::IsTerminal;
+        if std::io::stdin().is_terminal() && std::io::stderr().is_terminal() {
+            use std::io::Write;
+            eprint!("Delete anyway? (y/N): ");
+            let _ = std::io::stderr().flush();
+            let mut buf = String::new();
+            std::io::stdin().read_line(&mut buf)?;
+            let ans = buf.trim().to_lowercase();
+            if ans != "y" && ans != "yes" {
+                eprintln!("Aborted.");
+                return Ok(());
+            }
+        } else {
+            return Err(crate::error::CwError::Other(format!(
+                "worktree '{}' is in use by {} process(es); re-run with --force to override",
+                branch_display,
+                busy.len()
+            )));
+        }
+    }
+
     // Pre-delete hooks
     let base_branch = branch_name
         .as_deref()
