@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 
 const LOCK_FILENAME: &str = "gw-session.lock";
 
+/// Non-unix stale-lock TTL: a lockfile whose mtime is older than this is
+/// treated as belonging to a crashed process and removed on next read.
+const STALE_TTL: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 60 * 60);
+
 /// Current on-disk lockfile schema version. A mismatching version makes
 /// the lockfile "foreign" — readers do not clean it and writers refuse
 /// to overwrite it.
@@ -253,17 +257,16 @@ pub fn read_and_clean_stale(worktree: &Path) -> Option<LockEntry> {
     let alive = pid_alive(entry.pid);
     // On non-unix we cannot cheaply verify PID liveness, so fall back to
     // mtime: if the lockfile has not been touched in STALE_TTL, assume the
-    // owner crashed and clean it up.
+    // owner crashed and clean it up. Metadata read failures bias toward
+    // keeping the lockfile (report as alive) to avoid accidentally nuking a
+    // real session over a transient filesystem glitch.
     #[cfg(not(unix))]
-    let alive = {
-        let stale_ttl = std::time::Duration::from_secs(7 * 24 * 60 * 60);
-        match fs::metadata(&path).and_then(|m| m.modified()) {
-            Ok(mtime) => std::time::SystemTime::now()
-                .duration_since(mtime)
-                .map(|age| age < stale_ttl)
-                .unwrap_or(true),
-            Err(_) => true, // be conservative: treat as alive
-        }
+    let alive = match fs::metadata(&path).and_then(|m| m.modified()) {
+        Ok(mtime) => std::time::SystemTime::now()
+            .duration_since(mtime)
+            .map(|age| age < STALE_TTL)
+            .unwrap_or(true),
+        Err(_) => true,
     };
 
     if alive {

@@ -55,12 +55,12 @@ fn compute_self_tree() -> HashSet<u32> {
     {
         let mut pid = unsafe { libc::getppid() } as u32;
         for _ in 0..64 {
-            // Stop at init (PID 1) or orphan marker (PID 0). Insert PID 1 so that an
-            // orphaned gw whose parent was reparented to init still excludes init
-            // itself; skip PID 0 entirely — it is not a real userland process.
+            // PID 0 is a kernel/orphan marker, not a userland process — skip.
             if pid == 0 {
                 break;
             }
+            // PID 1 (init/launchd) IS our ancestor when gw was reparented, so
+            // exclude it from busy detection just like any other ancestor.
             if pid == 1 {
                 tree.insert(pid);
                 break;
@@ -219,11 +219,11 @@ pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
     let exclude = self_process_tree();
     let mut out = Vec::new();
 
-    // Lockfile entries come first so that when the same PID appears in both
-    // signals, we keep the lockfile's richer `cmd` (e.g. "claude"). If the
-    // lockfile PID is excluded via self_tree, we do not preserve its cmd for
-    // other PIDs in the cwd scan — those are reported with whatever
-    // `/proc/*/comm` or `lsof` gave us.
+    // Invariant: lockfile entries are pushed before the cwd scan so the
+    // dedup check below keeps the lockfile's richer `cmd` (e.g. "claude").
+    // Edge case: if the lockfile PID is in self_tree it is skipped entirely,
+    // and other PIDs found by the cwd scan are reported with whatever name
+    // `/proc/*/comm` or `lsof` provided — not the lockfile's cmd.
     if let Some(entry) = lockfile::read_and_clean_stale(worktree) {
         if !exclude.contains(&entry.pid) {
             out.push(BusyInfo {
