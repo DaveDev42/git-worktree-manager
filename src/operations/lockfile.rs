@@ -17,8 +17,10 @@ const LOCK_FILENAME: &str = "gw-session.lock";
 const STALE_TTL: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 60 * 60);
 
 /// Current on-disk lockfile schema version. A mismatching version makes
-/// the lockfile "foreign" — readers do not clean it and writers refuse
-/// to overwrite it.
+/// the lockfile "foreign" for the reader — `read_and_clean_stale` returns
+/// it as-is without removing the file. Writers still check PID ownership,
+/// so a foreign-version entry held by another PID is treated as a live
+/// foreign lock by `acquire` and refused.
 pub const LOCK_VERSION: u32 = 1;
 
 fn default_version() -> u32 {
@@ -56,14 +58,17 @@ impl Drop for SessionLock {
         // In practice, a foreigner would have had to pass acquire's
         // ownership check — which it could not while our (still-present)
         // lockfile named this PID. So this is best-effort and safe.
+        // If the file is unreadable or malformed we cannot prove ownership —
+        // leave it alone and let a subsequent `read_and_clean_stale` or
+        // `acquire` handle it.
         if let Ok(raw) = fs::read_to_string(&self.path) {
             if let Ok(entry) = serde_json::from_str::<LockEntry>(&raw) {
                 if entry.pid != self.owner_pid {
                     return;
                 }
+                let _ = fs::remove_file(&self.path);
             }
         }
-        let _ = fs::remove_file(&self.path);
     }
 }
 

@@ -61,6 +61,7 @@ fn compute_self_tree() -> HashSet<u32> {
             }
             // PID 1 (init/launchd) IS our ancestor when gw was reparented, so
             // exclude it from busy detection just like any other ancestor.
+            // Stop walking: init has no meaningful parent for our purposes.
             if pid == 1 {
                 tree.insert(pid);
                 break;
@@ -255,8 +256,8 @@ fn scan_cwd(worktree: &Path) -> Vec<BusyInfo> {
     };
     let mut out = Vec::new();
     for (pid, cmd, cwd) in cwd_scan() {
-        // Defense-in-depth: canonicalize both sides catches most macOS
-        // `/var` vs `/private/var` skew, but re-check here too.
+        // Both sides were canonicalized upstream (handles macOS /var vs
+        // /private/var skew). This starts_with is the containment check.
         if cwd.starts_with(&canon_target) {
             out.push(BusyInfo {
                 pid: *pid,
@@ -307,28 +308,29 @@ mod tests {
             .spawn()
             .expect("spawn sleep");
 
-        // Note: cwd scan cache is module-static, so we can't rely on it
-        // being populated here fresh. Bypass by calling raw_cwd_scan()
-        // directly via scan_cwd() which uses the cache — poll to let the
-        // child register.
-        let deadline = Instant::now() + Duration::from_secs(2);
-        let mut found = false;
-        while Instant::now() < deadline {
-            // We need a non-cached scan because the cache may already
-            // have been populated before the child existed.
-            let raw = raw_cwd_scan();
-            let canon = dir
-                .path()
-                .canonicalize()
-                .unwrap_or(dir.path().to_path_buf());
-            if raw
-                .iter()
+        // Give the OS a beat to register the child's cwd so the first scan
+        // usually succeeds; then fall back to polling for slow CI hosts.
+        // raw_cwd_scan() bypasses the module-static cache (which may have
+        // been populated before the child existed).
+        sleep(Duration::from_millis(50));
+        let canon = dir
+            .path()
+            .canonicalize()
+            .unwrap_or(dir.path().to_path_buf());
+        let matches = |raw: &[(u32, String, std::path::PathBuf)]| -> bool {
+            raw.iter()
                 .any(|(p, _, cwd)| *p == child.id() && cwd.starts_with(&canon))
-            {
-                found = true;
-                break;
+        };
+        let mut found = matches(&raw_cwd_scan());
+        if !found {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while Instant::now() < deadline {
+                if matches(&raw_cwd_scan()) {
+                    found = true;
+                    break;
+                }
+                sleep(Duration::from_millis(50));
             }
-            sleep(Duration::from_millis(50));
         }
 
         let _ = child.kill();
