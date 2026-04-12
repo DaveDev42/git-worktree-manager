@@ -10,7 +10,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 use std::process::Command;
 use std::sync::OnceLock;
 
