@@ -236,6 +236,10 @@ pub enum Commands {
         /// Show what would be deleted without deleting
         #[arg(long)]
         dry_run: bool,
+
+        /// Delete busy worktrees too (default: skip)
+        #[arg(short, long)]
+        force: bool,
     },
 
     /// Display worktree hierarchy as a tree

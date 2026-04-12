@@ -203,7 +203,8 @@ fn main() {
             older_than,
             interactive,
             dry_run,
-        }) => clean::clean_worktrees(merged, older_than, interactive, dry_run),
+            force,
+        }) => clean::clean_worktrees(merged, older_than, interactive, dry_run, force),
 
         Some(Commands::Sync {
             branch,
