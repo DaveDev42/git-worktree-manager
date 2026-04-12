@@ -196,10 +196,14 @@ fn scan_cwd(worktree: &Path) -> Vec<BusyInfo> {
         } else if let Some(rest) = line.strip_prefix('n') {
             if let Some(pid) = cur_pid {
                 let cwd = PathBuf::from(rest);
+                let cwd_canon = cwd.canonicalize().unwrap_or_else(|_| cwd.clone());
+                if !cwd_canon.starts_with(&canon_target) {
+                    continue;
+                }
                 out.push(BusyInfo {
                     pid,
                     cmd: cur_cmd.clone(),
-                    cwd,
+                    cwd: cwd_canon,
                     source: BusySource::ProcessScan,
                 });
             }
