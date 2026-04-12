@@ -9,13 +9,22 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::CwError;
-
 const LOCK_FILENAME: &str = "gw-session.lock";
+
+/// Current on-disk lockfile schema version. A mismatching version makes
+/// the lockfile "foreign" — readers do not clean it and writers refuse
+/// to overwrite it.
+pub const LOCK_VERSION: u32 = 1;
+
+fn default_version() -> u32 {
+    0
+}
 
 /// Serialized lockfile contents describing the session that owns a worktree.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockEntry {
+    #[serde(default = "default_version")]
+    pub version: u32,
     pub pid: u32,
     pub started_at: i64,
     pub cmd: String,
@@ -31,6 +40,11 @@ pub struct SessionLock {
 
 impl Drop for SessionLock {
     fn drop(&mut self) {
+        // There is a microsecond-scale race here: between reading and
+        // removing, another process could in theory write its own lockfile.
+        // In practice, a foreigner would have had to pass acquire's
+        // ownership check — which it could not while our (still-present)
+        // lockfile named this PID. So this is best-effort and safe.
         if let Ok(raw) = fs::read_to_string(&self.path) {
             if let Ok(entry) = serde_json::from_str::<LockEntry>(&raw) {
                 if entry.pid != self.owner_pid {
@@ -105,51 +119,72 @@ fn now_epoch_seconds() -> i64 {
 /// Outcome of an `acquire` call. Callers may want to distinguish "an active
 /// session already owns this worktree" (should block entry) from "we could
 /// not write the lockfile at all" (degrade to a warning and proceed).
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum AcquireError {
     /// Another live session holds the lock.
+    #[error("worktree already in use by PID {} ({})", .0.pid, .0.cmd)]
     ForeignLock(LockEntry),
-    /// Lockfile could not be written/read (I/O, permissions, serde, ...).
-    Io(CwError),
+    /// Lockfile could not be written/read.
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+    /// Serializing/deserializing the lockfile failed.
+    #[error("{0}")]
+    Serde(#[from] serde_json::Error),
 }
 
-impl std::fmt::Display for AcquireError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AcquireError::ForeignLock(entry) => {
-                write!(
-                    f,
-                    "worktree already in use by PID {} ({})",
-                    entry.pid, entry.cmd
-                )
-            }
-            AcquireError::Io(e) => write!(f, "{}", e),
+/// Sweep the lock directory for stale tmp files left by dead processes.
+/// Filenames have the form `gw-session.lock.tmp.<pid>`. Removal errors are
+/// ignored — this is best-effort housekeeping.
+fn cleanup_stale_tmp_files(dir: &Path) {
+    let entries = match fs::read_dir(dir) {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+    let prefix = format!("{}.tmp.", LOCK_FILENAME);
+    let me = std::process::id();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_s = name.to_string_lossy();
+        let Some(pid_str) = name_s.strip_prefix(&prefix) else {
+            continue;
+        };
+        let Ok(pid) = pid_str.parse::<u32>() else {
+            continue;
+        };
+        if pid == me {
+            continue;
+        }
+        if !pid_alive(pid) {
+            let _ = fs::remove_file(entry.path());
         }
     }
 }
 
 /// Acquire an exclusive session lock for the given worktree. Cleans up stale
 /// locks; returns `AcquireError::ForeignLock` if a live foreign PID holds the
-/// lock, or `AcquireError::Io` for filesystem/serialization failures.
+/// lock, or `AcquireError::Io`/`AcquireError::Serde` for I/O / serialization
+/// failures.
 pub fn acquire(worktree: &Path, cmd: &str) -> std::result::Result<SessionLock, AcquireError> {
     let path = lock_path(worktree);
 
-    if let Some(existing) = read(worktree) {
+    if let Some(existing) = read_and_clean_stale(worktree) {
         if existing.pid != std::process::id() {
             return Err(AcquireError::ForeignLock(existing));
         }
     }
 
     let entry = LockEntry {
+        version: LOCK_VERSION,
         pid: std::process::id(),
         started_at: now_epoch_seconds(),
         cmd: cmd.to_string(),
     };
-    let json = serde_json::to_string(&entry)
-        .map_err(|e| AcquireError::Io(CwError::Other(format!("serialize lock: {}", e))))?;
+    let json = serde_json::to_string(&entry)?;
 
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| AcquireError::Io(e.into()))?;
+        fs::create_dir_all(parent)?;
+        // Remove any stale tmp files from dead PIDs before writing our own.
+        cleanup_stale_tmp_files(parent);
     }
 
     // Atomic write: write to tmp, then rename. The tmp name includes our
@@ -161,13 +196,24 @@ pub fn acquire(worktree: &Path, cmd: &str) -> std::result::Result<SessionLock, A
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&tmp)
-            .map_err(|e| AcquireError::Io(e.into()))?;
-        f.write_all(json.as_bytes())
-            .map_err(|e| AcquireError::Io(e.into()))?;
+            .open(&tmp)?;
+        f.write_all(json.as_bytes())?;
         f.sync_all().ok();
     }
-    fs::rename(&tmp, &path).map_err(|e| AcquireError::Io(e.into()))?;
+    fs::rename(&tmp, &path)?;
+
+    // Post-rename ownership verification: if two processes both passed the
+    // pre-check and raced the rename, only one file survives on disk. Re-read
+    // and confirm it still contains our PID; otherwise the other process won
+    // the race and we must not return a SessionLock (whose Drop would then
+    // remove the foreigner's file).
+    if let Ok(raw) = fs::read_to_string(&path) {
+        if let Ok(final_entry) = serde_json::from_str::<LockEntry>(&raw) {
+            if final_entry.pid != std::process::id() {
+                return Err(AcquireError::ForeignLock(final_entry));
+            }
+        }
+    }
 
     Ok(SessionLock {
         path,
@@ -175,17 +221,49 @@ pub fn acquire(worktree: &Path, cmd: &str) -> std::result::Result<SessionLock, A
     })
 }
 
-/// Read the current lock entry. Returns None (and removes the file) if the recorded PID is dead or the file is malformed.
-pub fn read(worktree: &Path) -> Option<LockEntry> {
+/// Read the current lock entry. Returns None (and removes the file) if the
+/// recorded PID is dead or the file is malformed. If the file has a foreign
+/// schema version, it is returned as-is but NOT cleaned — future gw versions
+/// may own it.
+///
+/// Side effect: removes stale lockfiles with a matching schema version whose
+/// PID is no longer alive.
+pub fn read_and_clean_stale(worktree: &Path) -> Option<LockEntry> {
     let path = lock_path(worktree);
     let raw = fs::read_to_string(&path).ok()?;
     let entry: LockEntry = serde_json::from_str(&raw).ok()?;
+
+    // Foreign schema version: treat as foreign-owned and leave alone.
+    if entry.version != LOCK_VERSION {
+        // Windows fallback: with no pid_alive signal, also honour mtime
+        // as a stale-lock indicator. Applied to any version we see.
+        #[cfg(not(unix))]
+        {
+            if let Ok(meta) = fs::metadata(&path) {
+                if let Ok(mtime) = meta.modified() {
+                    if let Ok(age) = mtime.elapsed() {
+                        if age.as_secs() > 7 * 24 * 60 * 60 {
+                            let _ = fs::remove_file(&path);
+                            return None;
+                        }
+                    }
+                }
+            }
+        }
+        return Some(entry);
+    }
+
     if pid_alive(entry.pid) {
         Some(entry)
     } else {
         let _ = fs::remove_file(&path);
         None
     }
+}
+
+/// Back-compat alias: prefer `read_and_clean_stale`.
+pub fn read(worktree: &Path) -> Option<LockEntry> {
+    read_and_clean_stale(worktree)
 }
 
 #[cfg(test)]
@@ -214,7 +292,7 @@ mod tests {
     fn read_returns_entry_for_live_pid() {
         let wt = make_worktree();
         let _lock = acquire(wt.path(), "shell").unwrap();
-        let entry = read(wt.path()).unwrap();
+        let entry = read_and_clean_stale(wt.path()).unwrap();
         assert_eq!(entry.pid, std::process::id());
         assert_eq!(entry.cmd, "shell");
     }
@@ -224,12 +302,13 @@ mod tests {
         let wt = make_worktree();
         let path = wt.path().join(".git").join(LOCK_FILENAME);
         let entry = LockEntry {
+            version: LOCK_VERSION,
             pid: 999_999_999,
             started_at: 0,
             cmd: "ghost".to_string(),
         };
         fs::write(&path, serde_json::to_string(&entry).unwrap()).unwrap();
-        assert!(read(wt.path()).is_none());
+        assert!(read_and_clean_stale(wt.path()).is_none());
         assert!(!path.exists());
     }
 
@@ -271,7 +350,7 @@ mod tests {
 
         let _lock = acquire(&wt, "shell").unwrap();
         assert!(real_gitdir.join(LOCK_FILENAME).exists());
-        let entry = read(&wt).unwrap();
+        let entry = read_and_clean_stale(&wt).unwrap();
         assert_eq!(entry.pid, std::process::id());
     }
 
@@ -281,6 +360,7 @@ mod tests {
         let lock = acquire(wt.path(), "shell").unwrap();
         // Overwrite the file as if another process had taken over.
         let entry = LockEntry {
+            version: LOCK_VERSION,
             pid: unsafe { libc::getppid() } as u32,
             started_at: 0,
             cmd: "other".to_string(),
@@ -304,6 +384,7 @@ mod tests {
         let path = wt.path().join(".git").join(LOCK_FILENAME);
         let other_pid = unsafe { libc::getppid() } as u32;
         let entry = LockEntry {
+            version: LOCK_VERSION,
             pid: other_pid,
             started_at: 0,
             cmd: "other".to_string(),
@@ -311,8 +392,38 @@ mod tests {
         fs::write(&path, serde_json::to_string(&entry).unwrap()).unwrap();
         match acquire(wt.path(), "shell") {
             Err(AcquireError::ForeignLock(e)) => assert_eq!(e.pid, other_pid),
-            Err(AcquireError::Io(e)) => panic!("expected ForeignLock, got Io({})", e),
+            Err(e) => panic!("expected ForeignLock, got {:?}", e),
             Ok(_) => panic!("expected ForeignLock, got Ok"),
         }
+    }
+
+    #[test]
+    fn foreign_version_lockfile_is_not_cleaned() {
+        let wt = make_worktree();
+        let path = wt.path().join(".git").join(LOCK_FILENAME);
+        // Write raw JSON without a version field → parses as version 0.
+        let raw = serde_json::json!({
+            "pid": 999_999_999u32,
+            "started_at": 0,
+            "cmd": "future-gw"
+        });
+        fs::write(&path, raw.to_string()).unwrap();
+        // read_and_clean_stale should return Some(entry) and NOT remove it.
+        let entry = read_and_clean_stale(wt.path()).expect("foreign-version entry preserved");
+        assert_eq!(entry.version, 0);
+        assert!(
+            path.exists(),
+            "foreign-version lockfile must not be cleaned"
+        );
+    }
+
+    #[test]
+    fn cleanup_stale_tmp_files_removes_dead_pids() {
+        let wt = make_worktree();
+        let git = wt.path().join(".git");
+        let dead = git.join(format!("{}.tmp.{}", LOCK_FILENAME, 999_999_999u32));
+        fs::write(&dead, "stale").unwrap();
+        cleanup_stale_tmp_files(&git);
+        assert!(!dead.exists(), "dead-pid tmp file should be removed");
     }
 }
