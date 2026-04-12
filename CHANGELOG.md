@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.0.28](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.27...v0.0.28) (2026-04-12)
+
+
+### Features
+
+* acquire session lockfile when entering gw shell ([24da17e](https://github.com/DaveDev42/git-worktree-manager/commit/24da17e2fbe15d93e982b3cd1b98f72f3e4466ef))
+* acquire session lockfile when launching AI tools ([a0a2a34](https://github.com/DaveDev42/git-worktree-manager/commit/a0a2a34074f8a5aa9049fb46e21249bda179a5a3))
+* add busy detection with lockfile + process cwd scan ([102435d](https://github.com/DaveDev42/git-worktree-manager/commit/102435dc4334c868f6f38b09ac07026b04bf1abd))
+* add busy status to worktree state with highest non-stale priority ([ae18947](https://github.com/DaveDev42/git-worktree-manager/commit/ae189470d1d74a5cc22ab1e1eeac9da96411dda8))
+* add session lockfile with RAII guard and PID liveness check ([2fc68aa](https://github.com/DaveDev42/git-worktree-manager/commit/2fc68aa83f922afc7beea205e4ead609e2e6b35f))
+* **clean:** skip busy worktrees and report summary, --force to override ([1fc20ee](https://github.com/DaveDev42/git-worktree-manager/commit/1fc20ee3fcabb7aef910ee4831b75e098a3f373e))
+* **delete:** block busy worktree deletion with TTY-aware prompt ([9d33e08](https://github.com/DaveDev42/git-worktree-manager/commit/9d33e08a46a62cbbd918487d2e4dc238c40b51fa))
+* **display,tests:** show busy in tree/stats UI; robust busy integration tests ([a9b69b0](https://github.com/DaveDev42/git-worktree-manager/commit/a9b69b099acef86aee0d064901f34121ce09c1e0))
+* hybrid worktree busy detection for delete/clean ([1abcb24](https://github.com/DaveDev42/git-worktree-manager/commit/1abcb245dc7f3620c42c63d315c09ecc12bc7bb6))
+
+
+### Bug Fixes
+
+* **busy-detection:** address review pass 2 issues ([4e2e9bb](https://github.com/DaveDev42/git-worktree-manager/commit/4e2e9bb7b171db132e66aa67c7384cc6941e14a6))
+* **busy:** local Command import in scan_cwd test so Linux compiles ([feb3472](https://github.com/DaveDev42/git-worktree-manager/commit/feb347278a2bf5cbae0d7cd2cc52c89067f2c217))
+* **busy:** narrow Command import to macos; Linux uses /proc ([4687770](https://github.com/DaveDev42/git-worktree-manager/commit/4687770a43dbea42a5605d2fe2d8306674100d75))
+* **busy:** verify cwd is inside target on macOS lsof parse ([cfe0346](https://github.com/DaveDev42/git-worktree-manager/commit/cfe03464e7cebff5c7d89a63cdbd33cb47483351))
+* critical busy-detection bugs found during smoke testing ([6fe35d8](https://github.com/DaveDev42/git-worktree-manager/commit/6fe35d83703ee981f4383ddec29c6800c7b19c0f))
+* **delete:** use explicit --force as busy override, not default git-force flag ([02a8a4e](https://github.com/DaveDev42/git-worktree-manager/commit/02a8a4ecadc459fc6af70d9c1d31e0d7074232eb))
+* **lockfile:** cfg-gate STALE_TTL so unix build does not warn ([44469dd](https://github.com/DaveDev42/git-worktree-manager/commit/44469ddc74eef095d35f0264c72de194fbbb0fea))
+* **lockfile:** post-rename ownership check, thiserror, tmp cleanup sweep, version field ([41d1ef9](https://github.com/DaveDev42/git-worktree-manager/commit/41d1ef99036bca39aea4dbebded894e049b59002))
+
 ## [0.0.27](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.26...v0.0.27) (2026-04-08)
 
 
