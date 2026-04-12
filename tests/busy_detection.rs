@@ -5,10 +5,30 @@
 mod unix_only {
     use std::process::{Command, Stdio};
     use std::thread::sleep;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use git_worktree_manager::operations::busy::{detect_busy, BusySource};
     use tempfile::TempDir;
+
+    /// Poll `f` up to ~2 seconds, 50ms between attempts. Returns true if
+    /// the predicate ever fires. Avoids flaky magic-sleep timing.
+    fn wait_for<F: FnMut() -> bool>(mut f: F) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            if f() {
+                return true;
+            }
+            sleep(Duration::from_millis(50));
+        }
+        false
+    }
+
+    fn nanos_suffix() -> u128 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    }
 
     #[test]
     fn external_process_with_cwd_in_worktree_is_detected() {
@@ -23,21 +43,25 @@ mod unix_only {
             .spawn()
             .expect("spawn sleep");
 
-        sleep(Duration::from_millis(200));
-
-        let infos = detect_busy(dir.path());
-        let found = infos
-            .iter()
-            .any(|i| i.pid == child.id() && i.source == BusySource::ProcessScan);
+        // Note: detect_busy caches the cwd-scan. Since this is the first
+        // call in this test binary for this worktree, polling is fine —
+        // but in principle the cache could be populated before the child
+        // registered in another test. Each #[test] runs in its own process
+        // (cargo default), so we're safe.
+        let pid = child.id();
+        let found = wait_for(|| {
+            detect_busy(dir.path())
+                .iter()
+                .any(|i| i.pid == pid && i.source == BusySource::ProcessScan)
+        });
 
         let _ = child.kill();
         let _ = child.wait();
 
         assert!(
             found,
-            "expected to detect spawned child pid={} in {:?}",
-            child.id(),
-            infos
+            "expected to detect spawned child pid={} within 2s",
+            pid,
         );
     }
 
@@ -53,8 +77,6 @@ mod unix_only {
     fn gw_delete_rejects_busy_worktree_when_not_tty() {
         use assert_cmd::Command;
         use std::process::{Command as StdCommand, Stdio};
-        use std::thread::sleep;
-        use std::time::Duration;
 
         let repo = tempfile::TempDir::new().unwrap();
         let init = StdCommand::new("git")
@@ -62,10 +84,9 @@ mod unix_only {
             .current_dir(repo.path())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status();
-        if init.map(|s| !s.success()).unwrap_or(true) {
-            return; // skip
-        }
+            .status()
+            .expect("git init: git must be installed for this test");
+        assert!(init.success(), "git init failed");
 
         std::fs::write(repo.path().join("README"), "hi").unwrap();
         let _ = StdCommand::new("git")
@@ -87,21 +108,21 @@ mod unix_only {
             .current_dir(repo.path())
             .status();
 
-        let wt_path = repo.path().parent().unwrap().join("wt-busy-test-xyz");
+        // Random-ish suffix to avoid collisions between parallel test runs.
+        let suffix = format!("{}-{}", std::process::id(), nanos_suffix());
+        let branch = format!("busy-branch-{}", suffix);
+        let wt_path = repo
+            .path()
+            .parent()
+            .unwrap()
+            .join(format!("wt-busy-{}", suffix));
         let _ = std::fs::remove_dir_all(&wt_path);
         let add = StdCommand::new("git")
-            .args([
-                "worktree",
-                "add",
-                "-b",
-                "busy-branch-xyz",
-                wt_path.to_str().unwrap(),
-            ])
+            .args(["worktree", "add", "-b", &branch, wt_path.to_str().unwrap()])
             .current_dir(repo.path())
-            .status();
-        if add.map(|s| !s.success()).unwrap_or(true) {
-            return;
-        }
+            .status()
+            .expect("git worktree add");
+        assert!(add.success(), "git worktree add failed");
 
         let mut child = StdCommand::new("sleep")
             .arg("30")
@@ -110,11 +131,15 @@ mod unix_only {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        sleep(Duration::from_millis(200));
+
+        // Poll until detect_busy sees the child, so the subsequent
+        // `gw delete` has a reliable busy signal to react to.
+        let pid = child.id();
+        let _ = wait_for(|| detect_busy(&wt_path).iter().any(|i| i.pid == pid));
 
         let output = Command::cargo_bin("gw")
             .unwrap()
-            .args(["delete", "busy-branch-xyz"])
+            .args(["delete", &branch])
             .current_dir(repo.path())
             .write_stdin("")
             .output()
@@ -129,7 +154,7 @@ mod unix_only {
             .current_dir(repo.path())
             .status();
         let _ = StdCommand::new("git")
-            .args(["branch", "-D", "busy-branch-xyz"])
+            .args(["branch", "-D", &branch])
             .current_dir(repo.path())
             .status();
 

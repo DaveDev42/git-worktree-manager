@@ -456,6 +456,10 @@ pub fn show_tree() -> Result<()> {
         "  {} merged",
         cwconsole::status_style("merged").apply_to("✓")
     );
+    println!(
+        "  {} busy (other session)",
+        cwconsole::status_style("busy").apply_to("🔒")
+    );
     println!("  {} stale", cwconsole::status_style("stale").apply_to("x"));
     println!(
         "  {} currently active worktree\n",
@@ -534,6 +538,7 @@ pub fn show_stats() -> Result<()> {
     let active = *status_counts.get("active").unwrap_or(&0);
     let pr_open = *status_counts.get("pr-open").unwrap_or(&0);
     let merged = *status_counts.get("merged").unwrap_or(&0);
+    let busy = *status_counts.get("busy").unwrap_or(&0);
     let stale = *status_counts.get("stale").unwrap_or(&0);
 
     let bar_clean = (clean * bar_width) / total.max(1);
@@ -541,10 +546,17 @@ pub fn show_stats() -> Result<()> {
     let bar_active = (active * bar_width) / total.max(1);
     let bar_pr_open = (pr_open * bar_width) / total.max(1);
     let bar_merged = (merged * bar_width) / total.max(1);
+    let bar_busy = (busy * bar_width) / total.max(1);
     let bar_stale = (stale * bar_width) / total.max(1);
     // Fill remaining with clean if rounding left gaps
-    let bar_remainder =
-        bar_width - bar_clean - bar_modified - bar_active - bar_pr_open - bar_merged - bar_stale;
+    let bar_remainder = bar_width
+        - bar_clean
+        - bar_modified
+        - bar_active
+        - bar_pr_open
+        - bar_merged
+        - bar_busy
+        - bar_stale;
 
     print!("  ");
     print!("{}", style("█".repeat(bar_clean + bar_remainder)).green());
@@ -552,6 +564,7 @@ pub fn show_stats() -> Result<()> {
     print!("{}", style("█".repeat(bar_active)).green().bold());
     print!("{}", style("█".repeat(bar_pr_open)).cyan());
     print!("{}", style("█".repeat(bar_merged)).magenta());
+    print!("{}", style("█".repeat(bar_busy)).red().bold());
     print!("{}", style("█".repeat(bar_stale)).red());
     println!();
 
@@ -581,6 +594,12 @@ pub fn show_stats() -> Result<()> {
         parts.push(format!(
             "{}",
             style(format!("✓ {} merged", merged)).magenta()
+        ));
+    }
+    if busy > 0 {
+        parts.push(format!(
+            "{}",
+            style(format!("🔒 {} busy", busy)).red().bold()
         ));
     }
     if stale > 0 {
@@ -810,6 +829,9 @@ mod tests {
         assert_eq!(format_age(0.04), "just now"); // 0.04 * 24 = 0.96h → 0 as i64
     }
 
+    // Note: this test exercises only the busy signal — repo/worktree
+    // wiring (git::parse_worktrees etc.) is not exercised; the path is
+    // used as a bare directory.
     #[test]
     #[cfg(unix)]
     fn test_get_worktree_status_busy_from_lockfile() {
@@ -834,6 +856,7 @@ mod tests {
         let foreign_pid: u32 = child.id();
 
         let entry = LockEntry {
+            version: crate::operations::lockfile::LOCK_VERSION,
             pid: foreign_pid,
             started_at: 0,
             cmd: "claude".to_string(),
