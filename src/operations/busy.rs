@@ -295,7 +295,7 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn scan_cwd_finds_child_with_cwd_in_tempdir() {
-        use std::process::Stdio;
+        use std::process::{Command, Stdio};
         use std::thread::sleep;
         use std::time::{Duration, Instant};
 
