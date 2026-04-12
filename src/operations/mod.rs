@@ -1,6 +1,7 @@
 /// Operations module — business logic for all commands.
 pub mod ai_tools;
 pub mod backup;
+pub mod busy;
 pub mod clean;
 pub mod config_ops;
 pub mod diagnostics;
@@ -9,6 +10,7 @@ pub mod git_ops;
 pub mod global_ops;
 pub mod helpers;
 pub mod launchers;
+pub mod lockfile;
 pub mod path_cmd;
 pub mod setup_claude;
 pub mod shell;

@@ -15,6 +15,7 @@ pub fn clean_worktrees(
     older_than: Option<u64>,
     interactive: bool,
     dry_run: bool,
+    force: bool,
 ) -> Result<()> {
     let repo = git::get_repo_root(None)?;
 
@@ -112,6 +113,43 @@ pub fn clean_worktrees(
         }
     }
 
+    // Skip worktrees that another session is actively using, unless --force.
+    // This prevents `gw clean --merged` from wiping a worktree held open by
+    // a Claude Code / shell / editor session. Users can pass --force to
+    // ignore the busy gate.
+    let mut busy_skipped: Vec<(String, Vec<crate::operations::busy::BusyInfo>)> = Vec::new();
+    if !force {
+        let mut kept: Vec<(String, String, String)> = Vec::with_capacity(to_delete.len());
+        for (branch, path, reason) in to_delete.into_iter() {
+            let busy = crate::operations::busy::detect_busy(std::path::Path::new(&path));
+            if busy.is_empty() {
+                kept.push((branch, path, reason));
+            } else {
+                busy_skipped.push((branch, busy));
+            }
+        }
+        to_delete = kept;
+    }
+
+    if !busy_skipped.is_empty() {
+        println!(
+            "{}",
+            style(format!(
+                "Skipping {} busy worktree(s) (use --force to override):",
+                busy_skipped.len()
+            ))
+            .yellow()
+        );
+        for (branch, infos) in &busy_skipped {
+            let detail = infos
+                .first()
+                .map(|b| format!("PID {} {}", b.pid, b.cmd))
+                .unwrap_or_default();
+            println!("  - {:<30} (busy: {})", branch, detail);
+        }
+        println!();
+    }
+
     if to_delete.is_empty() {
         println!(
             "{} No worktrees match the cleanup criteria\n",
@@ -148,7 +186,10 @@ pub fn clean_worktrees(
     let mut deleted = 0u32;
     for (branch, _, _) in &to_delete {
         println!("{}", style(format!("Deleting {}...", branch)).yellow());
-        match super::worktree::delete_worktree(Some(branch), false, false, true, None) {
+        // clean already filtered out busy worktrees above (unless --force),
+        // so at this point we pass allow_busy=true to skip the redundant
+        // gate inside delete_worktree.
+        match super::worktree::delete_worktree(Some(branch), false, false, true, true, None) {
             Ok(()) => {
                 println!("{} Deleted {}", style("*").green().bold(), branch);
                 deleted += 1;

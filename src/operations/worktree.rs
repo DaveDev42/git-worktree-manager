@@ -202,11 +202,25 @@ pub fn create_worktree(
 }
 
 /// Delete a worktree by branch name, worktree directory name, or path.
+///
+/// # Parameters
+///
+/// * `force` — historical `git worktree remove --force` semantic. Forwarded
+///   to `git::remove_worktree_safe`; controls whether git itself will remove
+///   a worktree with uncommitted changes. Defaults to `true` at the CLI.
+/// * `allow_busy` — bypass the gw-level busy-detection gate (lockfile +
+///   process cwd scan). Wired to the explicit `--force` CLI flag on the
+///   delete subcommand so users can override "worktree is in use" refusals.
+///
+/// These two flags are intentionally separate: the CLI `--force` is an
+/// affirmative user choice to bypass the busy check, whereas the git-force
+/// behaviour is a long-standing default that users rarely flip off.
 pub fn delete_worktree(
     target: Option<&str>,
     keep_branch: bool,
     delete_remote: bool,
     force: bool,
+    allow_busy: bool,
     lookup_mode: Option<&str>,
 ) -> Result<()> {
     let main_repo = git::get_main_repo_root(None)?;
@@ -219,12 +233,59 @@ pub fn delete_worktree(
         return Err(CwError::Git(messages::cannot_delete_main_worktree()));
     }
 
-    // If cwd is inside worktree, change to main repo
+    // If cwd is inside worktree, change to main repo. Canonicalize both
+    // sides so /var vs /private/var (macOS) and other symlink skew do not
+    // hide the match.
     if let Ok(cwd) = std::env::current_dir() {
-        let cwd_str = cwd.to_string_lossy().to_string();
-        let wt_str = worktree_path.to_string_lossy().to_string();
-        if cwd_str.starts_with(&wt_str) {
+        let cwd_canon = cwd.canonicalize().unwrap_or(cwd);
+        let wt_canon = worktree_path
+            .canonicalize()
+            .unwrap_or_else(|_| worktree_path.clone());
+        if cwd_canon.starts_with(&wt_canon) {
             let _ = std::env::set_current_dir(&main_repo);
+        }
+    }
+
+    // Busy-detection gate: block deletion if worktree is in use, unless the
+    // caller explicitly opted in via `allow_busy` (wired to the explicit
+    // `--force` CLI flag — note that the `force` parameter here carries the
+    // historical git-force semantic and defaults to true, so we use a
+    // dedicated flag for the busy override).
+    let busy = crate::operations::busy::detect_busy(&worktree_path);
+    if !busy.is_empty() && !allow_busy {
+        let branch_display = branch_name.clone().unwrap_or_else(|| {
+            worktree_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| worktree_path.to_string_lossy().to_string())
+        });
+        eprintln!(
+            "{} worktree '{}' is in use by:",
+            style("error:").red().bold(),
+            branch_display
+        );
+        for b in &busy {
+            eprintln!("    PID {:>6}  {}  (source: {:?})", b.pid, b.cmd, b.source);
+        }
+
+        use std::io::IsTerminal;
+        if std::io::stdin().is_terminal() && std::io::stderr().is_terminal() {
+            use std::io::Write;
+            eprint!("Delete anyway? (y/N): ");
+            let _ = std::io::stderr().flush();
+            let mut buf = String::new();
+            std::io::stdin().read_line(&mut buf)?;
+            let ans = buf.trim().to_lowercase();
+            if ans != "y" && ans != "yes" {
+                eprintln!("Aborted.");
+                return Ok(());
+            }
+        } else {
+            return Err(CwError::Other(format!(
+                "worktree '{}' is in use by {} process(es); re-run with --force to override",
+                branch_display,
+                busy.len()
+            )));
         }
     }
 

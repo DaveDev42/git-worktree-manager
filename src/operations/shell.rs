@@ -74,6 +74,26 @@ fn open_shell(path: &std::path::Path, branch: Option<&str>) -> Result<()> {
 
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
 
+    // `_session_lock` binding is intentional: holds the RAII guard for the
+    // full shell session; dropped on return to release the lockfile.
+    let _session_lock = match crate::operations::lockfile::acquire(path, "shell") {
+        Ok(lock) => Some(lock),
+        Err(err @ crate::operations::lockfile::AcquireError::ForeignLock(_)) => {
+            return Err(crate::error::CwError::Other(format!(
+                "{}; exit that session first",
+                err
+            )));
+        }
+        Err(e) => {
+            eprintln!(
+                "{} could not write session lock: {}",
+                console::style("warning:").yellow(),
+                e
+            );
+            None
+        }
+    };
+
     let _ = std::process::Command::new(&shell)
         .current_dir(path)
         .status();

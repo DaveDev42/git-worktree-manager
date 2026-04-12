@@ -17,7 +17,7 @@ const MIN_TABLE_WIDTH: usize = 100;
 
 /// Determine the status of a worktree.
 ///
-/// Status priority: stale > active > merged > pr-open > modified > clean
+/// Status priority: stale > busy > active > merged > pr-open > modified > clean
 ///
 /// Merge detection strategy:
 /// 1. `gh pr view` (primary) — works with all merge strategies (merge commit,
@@ -30,11 +30,19 @@ pub fn get_worktree_status(path: &Path, repo: &Path, branch: Option<&str>) -> St
         return "stale".to_string();
     }
 
-    // Check if cwd is inside this worktree
+    // Busy beats "active": another session (claude, shell, editor) holds this
+    // worktree. The current process and its ancestors are excluded inside
+    // detect_busy so the caller's own shell does not self-report.
+    if !crate::operations::busy::detect_busy(path).is_empty() {
+        return "busy".to_string();
+    }
+
+    // Check if cwd is inside this worktree. Canonicalize both sides so that
+    // symlink skew (e.g. macOS /var vs /private/var) does not miss a match.
     if let Ok(cwd) = std::env::current_dir() {
-        let cwd_str = cwd.to_string_lossy().to_string();
-        let path_str = path.to_string_lossy().to_string();
-        if cwd_str.starts_with(&path_str) {
+        let cwd_canon = cwd.canonicalize().unwrap_or(cwd);
+        let path_canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if cwd_canon.starts_with(&path_canon) {
             return "active".to_string();
         }
     }
@@ -161,7 +169,9 @@ pub fn list_worktrees() -> Result<()> {
         }
 
         let mut summary_parts = Vec::new();
-        for &status_name in &["clean", "modified", "active", "pr-open", "merged", "stale"] {
+        for &status_name in &[
+            "clean", "modified", "busy", "active", "pr-open", "merged", "stale",
+        ] {
             if let Some(&count) = counts.get(status_name) {
                 if count > 0 {
                     let styled = cwconsole::status_style(status_name)
@@ -446,6 +456,10 @@ pub fn show_tree() -> Result<()> {
         "  {} merged",
         cwconsole::status_style("merged").apply_to("✓")
     );
+    println!(
+        "  {} busy (other session)",
+        cwconsole::status_style("busy").apply_to("🔒")
+    );
     println!("  {} stale", cwconsole::status_style("stale").apply_to("x"));
     println!(
         "  {} currently active worktree\n",
@@ -524,6 +538,7 @@ pub fn show_stats() -> Result<()> {
     let active = *status_counts.get("active").unwrap_or(&0);
     let pr_open = *status_counts.get("pr-open").unwrap_or(&0);
     let merged = *status_counts.get("merged").unwrap_or(&0);
+    let busy = *status_counts.get("busy").unwrap_or(&0);
     let stale = *status_counts.get("stale").unwrap_or(&0);
 
     let bar_clean = (clean * bar_width) / total.max(1);
@@ -531,10 +546,17 @@ pub fn show_stats() -> Result<()> {
     let bar_active = (active * bar_width) / total.max(1);
     let bar_pr_open = (pr_open * bar_width) / total.max(1);
     let bar_merged = (merged * bar_width) / total.max(1);
+    let bar_busy = (busy * bar_width) / total.max(1);
     let bar_stale = (stale * bar_width) / total.max(1);
     // Fill remaining with clean if rounding left gaps
-    let bar_remainder =
-        bar_width - bar_clean - bar_modified - bar_active - bar_pr_open - bar_merged - bar_stale;
+    let bar_remainder = bar_width
+        - bar_clean
+        - bar_modified
+        - bar_active
+        - bar_pr_open
+        - bar_merged
+        - bar_busy
+        - bar_stale;
 
     print!("  ");
     print!("{}", style("█".repeat(bar_clean + bar_remainder)).green());
@@ -542,6 +564,7 @@ pub fn show_stats() -> Result<()> {
     print!("{}", style("█".repeat(bar_active)).green().bold());
     print!("{}", style("█".repeat(bar_pr_open)).cyan());
     print!("{}", style("█".repeat(bar_merged)).magenta());
+    print!("{}", style("█".repeat(bar_busy)).red().bold());
     print!("{}", style("█".repeat(bar_stale)).red());
     println!();
 
@@ -571,6 +594,12 @@ pub fn show_stats() -> Result<()> {
         parts.push(format!(
             "{}",
             style(format!("✓ {} merged", merged)).magenta()
+        ));
+    }
+    if busy > 0 {
+        parts.push(format!(
+            "{}",
+            style(format!("🔒 {} busy", busy)).red().bold()
         ));
     }
     if stale > 0 {
@@ -798,6 +827,53 @@ mod tests {
     fn test_format_age_boundary_below_one_hour() {
         // Less than 1 hour (1/24 day ≈ 0.0417)
         assert_eq!(format_age(0.04), "just now"); // 0.04 * 24 = 0.96h → 0 as i64
+    }
+
+    // Note: this test exercises only the busy signal — repo/worktree
+    // wiring (git::parse_worktrees etc.) is not exercised; the path is
+    // used as a bare directory.
+    #[test]
+    #[cfg(unix)]
+    fn test_get_worktree_status_busy_from_lockfile() {
+        use crate::operations::lockfile::LockEntry;
+        use std::fs;
+        use std::process::{Command, Stdio};
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = tmp.path();
+        let wt = repo.join("wt1");
+        fs::create_dir_all(wt.join(".git")).unwrap();
+
+        // Spawn a child process: its PID is a descendant (not ancestor) of
+        // the current process, so self_process_tree() will not contain it.
+        // This gives us a live foreign PID to prove the busy signal fires.
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn sleep");
+        let foreign_pid: u32 = child.id();
+
+        let entry = LockEntry {
+            version: crate::operations::lockfile::LOCK_VERSION,
+            pid: foreign_pid,
+            started_at: 0,
+            cmd: "claude".to_string(),
+        };
+        fs::write(
+            wt.join(".git").join("gw-session.lock"),
+            serde_json::to_string(&entry).unwrap(),
+        )
+        .unwrap();
+
+        let status = get_worktree_status(&wt, repo, Some("wt1"));
+
+        // Clean up child before asserting, so a failed assert still reaps it.
+        let _ = child.kill();
+        let _ = child.wait();
+
+        assert_eq!(status, "busy");
     }
 
     #[test]

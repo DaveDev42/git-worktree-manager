@@ -65,13 +65,36 @@ pub fn launch_ai_tool(
     // Build shell command string
     let cmd = shell_quote_join(&ai_cmd_parts);
 
-    // Dispatch to launcher
+    // Dispatch to launcher. Foreground blocks on the AI process, so an RAII
+    // lockfile spans the full session. Other launchers detach to a terminal
+    // emulator / multiplexer and return immediately, so a lock acquired here
+    // would be released before the AI session really starts — for those we
+    // rely on process-cwd scanning in `busy::detect_busy` instead.
     match method {
         LaunchMethod::Foreground => {
             println!(
                 "{}\n",
                 style(messages::starting_ai_tool_foreground(ai_tool_name)).cyan()
             );
+            // `_session_lock` binding is intentional: RAII guard lives for
+            // the foreground AI process lifetime; dropped on return.
+            let _session_lock = match crate::operations::lockfile::acquire(path, ai_tool_name) {
+                Ok(lock) => Some(lock),
+                Err(err @ crate::operations::lockfile::AcquireError::ForeignLock(_)) => {
+                    return Err(crate::error::CwError::Other(format!(
+                        "{}; exit that session first",
+                        err
+                    )));
+                }
+                Err(e) => {
+                    eprintln!(
+                        "{} could not write session lock: {}",
+                        style("warning:").yellow(),
+                        e
+                    );
+                    None
+                }
+            };
             launchers::foreground::run(path, &cmd);
         }
         LaunchMethod::Detach => {

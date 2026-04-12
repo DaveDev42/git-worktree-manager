@@ -176,7 +176,7 @@ fn main() {
             target,
             keep_branch,
             delete_remote,
-            force: _,
+            force,
             no_force,
             worktree: is_worktree,
             branch: is_branch,
@@ -188,11 +188,15 @@ fn main() {
             } else {
                 None
             };
+            // Arg mapping for delete_worktree:
+            //   force (git-force)       <- !no_force   (default true)
+            //   allow_busy (busy gate)  <- force       (CLI --force flag)
             worktree::delete_worktree(
                 target.as_deref(),
                 keep_branch,
                 delete_remote,
                 !no_force,
+                force,
                 lookup_mode,
             )
         }
@@ -202,7 +206,8 @@ fn main() {
             older_than,
             interactive,
             dry_run,
-        }) => clean::clean_worktrees(merged, older_than, interactive, dry_run),
+            force,
+        }) => clean::clean_worktrees(merged, older_than, interactive, dry_run, force),
 
         Some(Commands::Sync {
             branch,
