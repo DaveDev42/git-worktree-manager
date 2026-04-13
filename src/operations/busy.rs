@@ -266,13 +266,7 @@ pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
 fn is_multiplexer(cmd: &str) -> bool {
     matches!(
         cmd,
-        "zellij"
-            | "tmux"
-            | "tmux: server"
-            | "tmate"
-            | "tmate: server"
-            | "screen"
-            | "SCREEN"
+        "zellij" | "tmux" | "tmux: server" | "tmate" | "tmate: server" | "screen" | "SCREEN"
     )
 }
 
