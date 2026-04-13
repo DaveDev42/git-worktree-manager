@@ -12,6 +12,8 @@ use crate::error::Result;
 use crate::git;
 use crate::registry;
 
+use rayon::prelude::*;
+
 use super::display::{format_age, get_worktree_status};
 use super::pr_cache::PrCache;
 
@@ -76,6 +78,18 @@ pub fn global_list_worktrees(no_cache: bool) -> Result<()> {
     let mut sorted_repos = repos;
     sorted_repos.sort_by(|a, b| a.0.cmp(&b.0));
 
+    // #19: Pre-fetch caches in parallel; the display loop must remain sequential
+    // to preserve output order. rayon handles thread pooling and join.
+    let pr_caches: std::collections::HashMap<std::path::PathBuf, PrCache> = sorted_repos
+        .par_iter()
+        .map(|(_name, repo_path)| {
+            (
+                repo_path.clone(),
+                PrCache::load_or_fetch(repo_path, no_cache),
+            )
+        })
+        .collect();
+
     for (name, repo_path) in &sorted_repos {
         if !repo_path.exists() {
             println!(
@@ -100,12 +114,13 @@ pub fn global_list_worktrees(no_cache: bool) -> Result<()> {
             }
         };
 
-        let pr_cache = PrCache::load_or_fetch(repo_path, no_cache);
+        let pr_cache = pr_caches
+            .get(repo_path)
+            .expect("pre-fetched for every repo in sorted_repos");
 
         let mut has_feature = false;
         for (branch_name, path) in &feature_wts {
-            let status =
-                get_worktree_status(path, repo_path, Some(branch_name.as_str()), &pr_cache);
+            let status = get_worktree_status(path, repo_path, Some(branch_name.as_str()), pr_cache);
 
             // Check intended branch for mismatch detection
             let intended_key = format_config_key(CONFIG_KEY_INTENDED_BRANCH, branch_name);

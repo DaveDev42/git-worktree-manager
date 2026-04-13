@@ -28,16 +28,27 @@ pub fn stdout_is_tty() -> bool {
 // #20: tracks whether a ratatui terminal is currently active. The panic hook
 // checks this flag so `ratatui::restore()` is only called when it matters —
 // a non-ratatui panic must not clobber terminal state it never set up.
+//
+// Single-thread invariant: only the main thread creates a ratatui Terminal in
+// this codebase. Relaxed ordering is sufficient.
 static RATATUI_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-/// Mark that a ratatui terminal is now active (call from `TerminalGuard::new`).
-pub fn mark_ratatui_active() {
-    RATATUI_ACTIVE.store(true, Ordering::SeqCst);
+/// Mark that a ratatui terminal is now active.
+///
+/// # Safety contract
+/// Must be called only from `TerminalGuard::new`. Direct callers can corrupt
+/// the panic-hook contract.
+pub(crate) fn mark_ratatui_active() {
+    RATATUI_ACTIVE.store(true, Ordering::Relaxed);
 }
 
-/// Mark that the ratatui terminal has been released (call from `TerminalGuard::drop`).
-pub fn mark_ratatui_inactive() {
-    RATATUI_ACTIVE.store(false, Ordering::SeqCst);
+/// Mark that the ratatui terminal has been released.
+///
+/// # Safety contract
+/// Must be called only from `TerminalGuard::Drop`. Direct callers can corrupt
+/// the panic-hook contract.
+pub(crate) fn mark_ratatui_inactive() {
+    RATATUI_ACTIVE.store(false, Ordering::Relaxed);
 }
 
 /// Install a panic hook that restores the terminal state before the default
@@ -53,8 +64,11 @@ pub fn mark_ratatui_inactive() {
 pub fn install_panic_hook() {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        if RATATUI_ACTIVE.load(Ordering::SeqCst) {
-            ratatui::restore();
+        if RATATUI_ACTIVE.load(Ordering::Relaxed) {
+            // #6: catch_unwind guards against a second panic inside restore().
+            let _ = std::panic::catch_unwind(|| {
+                ratatui::restore();
+            });
         }
         default(info);
     }));

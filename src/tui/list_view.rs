@@ -8,17 +8,14 @@ use ratatui::widgets::{Block, Borders, Cell, Row, Table};
 
 use crate::tui::style;
 
-/// Placeholder status shown while a worktree's status is being computed.
-/// Three ASCII dots — chosen for portability across terminals that don't
-/// render Unicode reliably (avoids the Unicode ellipsis "…" which is a
-/// multi-byte character and may not display correctly on all systems).
+/// Three ASCII dots; portable across terminals lacking Unicode rendering.
 pub const PLACEHOLDER: &str = "...";
 
 #[derive(Debug, Clone)]
 pub struct RowData {
     pub worktree_id: String,
     pub current_branch: String,
-    // #29: `status` uses owned String for simplicity; Cow<'static, str> would avoid
+    // `status` uses owned String for simplicity; Cow<'static, str> would avoid
     // the placeholder allocation but adds lifetime gymnastics. Deferred.
     pub status: String, // PLACEHOLDER while pending
     pub age: String,
@@ -41,6 +38,10 @@ impl ListApp {
 
     /// Mutable access to a single row's status by index.
     pub(crate) fn set_status(&mut self, i: usize, status: String) {
+        debug_assert_ne!(
+            status, PLACEHOLDER,
+            "set_status should never restore the placeholder"
+        );
         if let Some(r) = self.rows.get_mut(i) {
             r.status = status;
         }
@@ -56,6 +57,7 @@ impl ListApp {
     ///
     /// Returns `true` if any rows were updated (i.e., had PLACEHOLDER status),
     /// `false` if nothing changed — lets callers skip a redundant redraw.
+    #[must_use = "ignoring whether any rows changed may cause redundant or missing redraws"]
     pub fn finalize_pending(&mut self, replacement: &str) -> bool {
         let mut changed = false;
         for r in self.rows.iter_mut() {
@@ -74,9 +76,8 @@ impl ListApp {
 
     /// Returns true when every row has a non-PLACEHOLDER status.
     ///
-    /// After calling `finalize_pending`, all rows have non-PLACEHOLDER status;
-    /// `is_complete()` will then always return true. Calling `set_status` after
-    /// `finalize_pending` is undefined.
+    /// After [`finalize_pending`] all rows have non-PLACEHOLDER status,
+    /// so this returns `true`.
     pub fn is_complete(&self) -> bool {
         self.rows.iter().all(|r| r.status != PLACEHOLDER)
     }
@@ -231,8 +232,8 @@ mod tests {
             tx.send((1, "modified".to_string())).unwrap();
         });
 
-        run(&mut terminal, &mut app, rx).unwrap();
-        h.join().unwrap(); // #26: propagate any thread panic to the test runner
+        run(&mut terminal, &mut app, rx).expect("run failed");
+        h.join().expect("status producer thread panicked"); // #26: propagate any thread panic to the test runner
         assert_eq!(app.rows()[0].status, "clean");
         assert_eq!(app.rows()[1].status, "modified");
         assert!(app.is_complete());
@@ -254,11 +255,37 @@ mod tests {
             // Drop tx without sending the second row — simulates panic.
         });
 
-        run(&mut terminal, &mut app, rx).unwrap();
-        h.join().unwrap(); // #27: propagate any thread panic to the test runner
+        run(&mut terminal, &mut app, rx).expect("run failed");
+        h.join().expect("status producer thread panicked"); // #27: propagate any thread panic to the test runner
         assert_eq!(app.rows()[0].status, "clean");
         assert_eq!(app.rows()[1].status, PLACEHOLDER); // still pending
         assert!(!app.is_complete());
+    }
+
+    /// #27: finalize_pending correctly fills rows that were still PLACEHOLDER
+    /// when the producer disconnected (simulates panic or early exit).
+    #[test]
+    fn run_then_finalize_replaces_pending_after_disconnect() {
+        let mut app = ListApp::new(vec![
+            sample_row("a", PLACEHOLDER),
+            sample_row("b", PLACEHOLDER),
+        ]);
+        let backend = TestBackend::new(80, 6);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let h = std::thread::spawn(move || {
+            tx.send((0, "clean".to_string())).unwrap();
+            // drop tx without sending row 1 — simulates producer panic
+        });
+        run(&mut terminal, &mut app, rx).expect("status producer thread panicked");
+        h.join().expect("status producer thread panicked");
+        let changed = app.finalize_pending("unknown");
+        assert!(
+            changed,
+            "row 1 was still PLACEHOLDER, so changed must be true"
+        );
+        assert_eq!(app.rows()[0].status, "clean");
+        assert_eq!(app.rows()[1].status, "unknown");
     }
 
     #[test]
@@ -267,7 +294,8 @@ mod tests {
             sample_row("feat/a", PLACEHOLDER),
             sample_row("feat/b", "clean"),
         ]);
-        app.finalize_pending("unknown");
+        let changed = app.finalize_pending("unknown");
+        assert!(changed, "feat/a was PLACEHOLDER so changed should be true");
         assert_eq!(app.rows()[0].status, "unknown");
         assert_eq!(app.rows()[1].status, "clean"); // unchanged
     }

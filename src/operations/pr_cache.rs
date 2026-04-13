@@ -13,8 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-// TTL is intentionally non-configurable — 60s balances freshness against
-// `gh` rate limits. A future env-var escape hatch can be added if users ask.
+/// 60-second TTL — balances freshness against gh rate limits.
 const CACHE_TTL_SECS: u64 = 60;
 
 /// Cap on PRs fetched per `gh pr list` call. Repos with more PRs will see the
@@ -107,8 +106,7 @@ impl PrCache {
 /// If canonicalization fails (transient FS issue), fall back to the raw path.
 /// Caches keyed on raw vs canonical paths will be different but self-consistent.
 ///
-/// Truncated to 64 bits (16 hex chars) — at typical user repo counts (~10s),
-/// collision odds are negligible (birthday bound ≈ 1 in 2^32 per pair).
+/// 16 hex chars / 64 bits — collision-free in practice for per-user repo counts.
 fn repo_hash(repo: &Path) -> String {
     let canon = repo.canonicalize().unwrap_or_else(|_| repo.to_path_buf());
     let mut hasher = Sha256::new();
@@ -249,10 +247,19 @@ fn write_to_disk(repo: &Path, prs: &HashMap<String, PrState>) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    // #13: broken clock (now_secs() == None) means we cannot set a meaningful
-    // fetched_at timestamp — skip persistence entirely; in-memory result is still
-    // returned to the caller via fetch_and_persist.
-    let Some(now) = now_secs() else { return };
+    // #10: compute secs and nanos from a single SystemTime::now() call so
+    // both share the same instant — avoids a second clock call for nanos.
+    // #13: broken clock means we cannot set a meaningful fetched_at timestamp
+    // — skip persistence entirely; in-memory result is still returned to the
+    // caller via fetch_and_persist.
+    let now_instant = SystemTime::now();
+    let dur = match now_instant.duration_since(UNIX_EPOCH) {
+        Ok(d) => d,
+        Err(_) => return, // broken clock
+    };
+    let now = dur.as_secs();
+    let nanos = dur.subsec_nanos();
+
     let file = CacheFile {
         fetched_at: now,
         repo: repo.to_string_lossy().into_owned(),
@@ -267,26 +274,27 @@ fn write_to_disk(repo: &Path, prs: &HashMap<String, PrState>) {
     // processes write concurrently (different pid) or rapidly (different nanos).
     // On Windows, std::fs::rename fails if the target exists; we retry with a
     // remove-then-rename fallback (best-effort, second failure is silently ignored).
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
-        .unwrap_or(0);
-    // #11: use with_file_name instead of with_extension so the .json suffix
-    // is preserved (with_extension would strip it, giving "pr-status-<hash>.tmp.PID.NANOS").
+    // #11: use file_stem to strip .json before the tmp suffix, giving
+    // "pr-status-<hash>.tmp.PID.NANOS" — shorter and groups cleanly with the
+    // final file. Using file_name would produce "pr-status-<hash>.json.tmp…".
     let tmp = path.with_file_name(format!(
         "{}.tmp.{}.{}",
-        path.file_name().unwrap_or_default().to_string_lossy(),
+        path.file_stem().unwrap_or_default().to_string_lossy(),
         std::process::id(),
         nanos,
     ));
-    // #34: clean up the tmp file on initial write failure.
+    // #15/#34: clean up the tmp file on initial write failure. `remove_file`
+    // is best-effort — if write never created the file (e.g. permission error
+    // before any bytes were written) the ENOENT is silently ignored via `.ok()`.
     if std::fs::write(&tmp, &json).is_err() {
-        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&tmp); // ENOENT is harmless here
         return;
     }
     if std::fs::rename(&tmp, &path).is_err() {
         // #12: Windows fallback: target may already exist; best-effort remove then
         // retry. If the second rename also fails, remove the orphaned tmp file.
+        // Best-effort: another process can race the rename and leave an orphan tmp
+        // file, but those will be reaped on the next successful write.
         let _ = std::fs::remove_file(&path);
         if std::fs::rename(&tmp, &path).is_err() {
             let _ = std::fs::remove_file(&tmp); // cleanup orphan
@@ -305,17 +313,16 @@ mod tests {
     // gates above).
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-    /// Acquire the env-var serialization lock. Must be held for the entire
-    /// duration of any test that mutates GW_TEST_GH_*, XDG_CACHE_HOME, or
-    /// other process-global env vars. Recover from poisoning so one failing
-    /// test doesn't break the rest.
-    ///
-    /// #15: If a test panics while holding this lock, the env vars may remain
-    /// polluted. The `with_cache_dir` Drop guard (#16) restores `GW_TEST_CACHE_DIR`
-    /// on drop, so subsequent tests see a clean env for that variable. Tests that
-    /// directly set `GW_TEST_GH_*` vars also remove them in their cleanup block.
+    /// Serializes env-var mutations across tests. Tests pair this with EnvGuard
+    /// for panic-safe restoration.
     fn env_lock() -> MutexGuard<'static, ()> {
         ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// #28: sanity-check that now_secs() works on a normal system.
+    #[test]
+    fn now_secs_returns_some_on_normal_system() {
+        assert!(now_secs().is_some());
     }
 
     #[test]
@@ -368,20 +375,36 @@ mod tests {
 
     use tempfile::tempdir;
 
-    /// Set `GW_TEST_CACHE_DIR` for the duration of `f`. Restores the previous
-    /// value (or removes the var) via a Drop guard, so the env is cleaned up
-    /// even if `f` panics.
-    fn with_cache_dir<F: FnOnce()>(dir: &std::path::Path, f: F) {
-        struct Guard(Option<std::ffi::OsString>);
-        impl Drop for Guard {
-            fn drop(&mut self) {
-                match self.0.take() {
-                    Some(v) => std::env::set_var("GW_TEST_CACHE_DIR", v),
-                    None => std::env::remove_var("GW_TEST_CACHE_DIR"),
+    // #16: generic env-var save/restore guard. Captures the current values of
+    // the given keys and restores them on drop — panic-safe. Handles
+    // GW_TEST_CACHE_DIR, GW_TEST_GH_FAIL, GW_TEST_GH_JSON and any future vars.
+    struct EnvGuard {
+        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    impl EnvGuard {
+        fn capture(keys: &[&'static str]) -> Self {
+            let saved = keys.iter().map(|k| (*k, std::env::var_os(k))).collect();
+            Self { saved }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (k, v) in self.saved.drain(..) {
+                match v {
+                    Some(val) => std::env::set_var(k, val),
+                    None => std::env::remove_var(k),
                 }
             }
         }
-        let _g = Guard(std::env::var_os("GW_TEST_CACHE_DIR"));
+    }
+
+    /// Set `GW_TEST_CACHE_DIR` for the duration of `f`. Restores the previous
+    /// value (or removes the var) via an `EnvGuard`, so the env is cleaned up
+    /// even if `f` panics.
+    fn with_cache_dir<F: FnOnce()>(dir: &std::path::Path, f: F) {
+        let _g = EnvGuard::capture(&["GW_TEST_CACHE_DIR"]);
         std::env::set_var("GW_TEST_CACHE_DIR", dir);
         f();
     }
@@ -587,5 +610,23 @@ mod tests {
             let loaded = PrCache::from_disk(repo).expect("written to disk");
             assert_eq!(loaded.state("main"), Some(&PrState::Open));
         });
+    }
+
+    /// #32: exhaustive variant match so adding a new PrState variant breaks
+    /// this test, forcing a deliberate update of all match arms.
+    #[test]
+    fn pr_state_variants_are_handled() {
+        fn must_handle(s: &PrState) -> &'static str {
+            match s {
+                PrState::Open => "open",
+                PrState::Merged => "merged",
+                PrState::Closed => "closed",
+                PrState::Other => "other",
+            }
+        }
+        assert_eq!(must_handle(&PrState::Open), "open");
+        assert_eq!(must_handle(&PrState::Merged), "merged");
+        assert_eq!(must_handle(&PrState::Closed), "closed");
+        assert_eq!(must_handle(&PrState::Other), "other");
     }
 }

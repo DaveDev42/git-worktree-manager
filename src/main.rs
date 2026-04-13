@@ -53,10 +53,11 @@ fn main() {
     let result = match cli.command {
         // Display commands
         Some(Commands::List { cache }) => {
+            let no_cache = cache.no_cache; // #21: bind once, used in both branches
             if cli.global {
-                global_ops::global_list_worktrees(cache.no_cache)
+                global_ops::global_list_worktrees(no_cache)
             } else {
-                display::list_worktrees(cache.no_cache)
+                display::list_worktrees(no_cache)
             }
         }
         Some(Commands::Status { cache }) => display::show_status(cache.no_cache),

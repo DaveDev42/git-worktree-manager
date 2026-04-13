@@ -45,16 +45,16 @@ const MIN_TABLE_WIDTH: usize = 100;
 /// TODO(perf): #25 — hoist `cwd_canon` (`std::env::current_dir()?.canonicalize()`)
 /// out of this function. Currently computed per worktree; one canonicalization
 /// per `list_worktrees` call is sufficient. Pass via `WorktreeContext`.
-///
-/// Example `WorktreeContext` shape when these are eventually implemented:
-/// ```ignore
-/// pub struct WorktreeContext<'a> {
-///     pub repo: &'a Path,
-///     pub pr_cache: &'a PrCache,
-///     pub base_branches: &'a HashMap<String, String>,
-///     pub cwd_canon: Option<&'a Path>,
-/// }
-/// ```
+//
+// #22: WorktreeContext example kept as a plain comment so it doesn't appear in
+// rustdoc. Future refactor: see plan doc for WorktreeContext design.
+//
+// pub struct WorktreeContext<'a> {
+//     pub repo: &'a Path,
+//     pub pr_cache: &'a PrCache,
+//     pub base_branches: &'a HashMap<String, String>,
+//     pub cwd_canon: Option<&'a Path>,
+// }
 pub fn get_worktree_status(
     path: &Path,
     repo: &Path,
@@ -217,17 +217,18 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
     }
 
     let is_tty = crate::tui::stdout_is_tty();
-    // #18/#33: cache terminal_width() once — used in both the progressive/static
+    // #18/#33/#35: cache terminal_width() once — used in both the progressive/static
     // branch decision and the post-render print guard.
     let term_width = cwconsole::terminal_width();
-    // #18: extracted so both the render-path and the print-path use the same bool.
-    let use_progressive = is_tty && term_width >= MIN_TABLE_WIDTH;
+    // #35: extract narrow so the two places that check MIN_TABLE_WIDTH share
+    // a single bool and cannot drift out of sync.
+    let narrow = term_width < MIN_TABLE_WIDTH;
+    let use_progressive = is_tty && !narrow;
 
     let rows: Vec<WorktreeRow> = if use_progressive {
         render_rows_progressive(&repo, &pr_cache, inputs)?
     } else {
-        // #17: rayon's `par_iter` joins before returning, so `&pr_cache` is
-        // safely borrowed across worker threads (no use-after-free risk).
+        // rayon borrows &pr_cache across workers via the type system.
         inputs
             .into_par_iter()
             .map(|i| {
@@ -241,10 +242,10 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
     // In the TTY+wide path the Inline Viewport has already drawn the table.
     // In the static path (narrow terminal or non-TTY) we still need to print.
     if !use_progressive {
-        if term_width >= MIN_TABLE_WIDTH {
-            print_worktree_table(&rows);
-        } else {
+        if narrow {
             print_worktree_compact(&rows);
+        } else {
+            print_worktree_table(&rows);
         }
     }
 
@@ -272,8 +273,9 @@ struct TerminalGuard(Option<CrosstermTerminal>);
 
 impl TerminalGuard {
     fn new(terminal: CrosstermTerminal) -> Self {
-        // #20: signal to the panic hook that a ratatui terminal is active.
-        crate::tui::mark_ratatui_active();
+        // #1/#20: flag is already set by the caller before Terminal::with_options;
+        // the caller's error path calls mark_ratatui_inactive if construction fails.
+        // Here we just store the terminal — the flag is already live.
         Self(Some(terminal))
     }
 
@@ -318,12 +320,23 @@ fn render_rows_progressive(
 
     let stdout = std::io::stdout();
     let backend = CrosstermBackend::new(stdout);
-    let mut guard = TerminalGuard::new(Terminal::with_options(
+    // #1: mark active BEFORE construction so the panic hook fires correctly
+    // if Terminal::with_options itself panics. If it returns Err, we clear
+    // the flag before propagating so a non-ratatui panic later is not mishandled.
+    crate::tui::mark_ratatui_active();
+    let terminal = match Terminal::with_options(
         backend,
         TerminalOptions {
             viewport: Viewport::Inline(viewport_height),
         },
-    )?);
+    ) {
+        Ok(t) => t,
+        Err(e) => {
+            crate::tui::mark_ratatui_inactive();
+            return Err(e.into());
+        }
+    };
+    let mut guard = TerminalGuard::new(terminal);
 
     // Producer: parallel per-worktree status computation on a dedicated OS
     // thread; rayon parallelism is used within that thread.
@@ -337,8 +350,8 @@ fn render_rows_progressive(
     // subprocesses, which is I/O-bound but small enough that oversubscription
     // doesn't help.
     let (tx, rx) = mpsc::channel();
-    // #3/#4: join always happens before `?` propagates; panic is surfaced as a
-    // warning rather than silently swallowed by `let _ = producer.join()`.
+    // #2: thread::scope blocks until all spawned threads finish; explicit
+    // producer.join() collects panic state for diagnostics before `?` propagates.
     std::thread::scope(|s| -> Result<()> {
         let producer = s.spawn(move || {
             inputs
@@ -358,9 +371,15 @@ fn render_rows_progressive(
         let run_result = crate::tui::list_view::run(guard.as_mut(), &mut app, rx);
         let producer_result = producer.join();
         if let Err(panic) = producer_result {
+            // #3: extract a readable message from the panic payload.
+            let msg = panic
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_string())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "non-string panic payload".to_string());
             eprintln!(
-                "warning: status producer thread panicked, some rows may show \"unknown\": {:?}",
-                panic
+                "warning: status producer thread panicked, some rows may show \"unknown\": {}",
+                msg
             );
         }
         run_result.map_err(crate::error::CwError::from)
@@ -379,7 +398,9 @@ fn render_rows_progressive(
     Ok(app.into_rows().into_iter().map(Into::into).collect())
 }
 
-/// #30: conversion from TUI row data to the internal display row.
+/// Field-for-field 1:1 mapping from TUI row data to the internal display row.
+/// Both structs are intentionally isomorphic; if `RowData` gains fields,
+/// this impl must update.
 impl From<crate::tui::list_view::RowData> for WorktreeRow {
     fn from(r: crate::tui::list_view::RowData) -> Self {
         WorktreeRow {
