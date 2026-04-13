@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.29](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.28...v0.0.29) (2026-04-13)
+
+
+### Bug Fixes
+
+* **busy:** broaden multiplexer match + disable lsof truncation ([22f7778](https://github.com/DaveDev42/git-worktree-manager/commit/22f777855cfc3af80e258495f7500281a08670be))
+* **busy:** exclude terminal multiplexer servers from cwd scan ([5711658](https://github.com/DaveDev42/git-worktree-manager/commit/571165893a872731767827330b0ab6d95d13808a))
+
 ## [0.0.28](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.27...v0.0.28) (2026-04-12)
 
 
