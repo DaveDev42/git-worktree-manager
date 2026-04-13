@@ -167,8 +167,10 @@ fn raw_cwd_scan() -> Vec<(u32, String, PathBuf)> {
     let mut out = Vec::new();
     // `lsof -a -d cwd -F pcn` prints records of the form:
     //   p<pid>\nc<cmd>\nn<path>\n
+    // `+c 0` disables lsof's default 9-char COMMAND truncation so multi-word
+    // names like "tmux: server" survive intact for the multiplexer filter.
     let output = match Command::new("lsof")
-        .args(["-a", "-d", "cwd", "-F", "pcn"])
+        .args(["-a", "-d", "cwd", "-F", "pcn", "+c", "0"])
         .output()
     {
         Ok(o) => o,
@@ -255,8 +257,23 @@ pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
 /// happens in child shells / tools, which the cwd scan reports independently.
 /// Reporting the multiplexer itself just produces noise when running
 /// `gw delete` from a pane hosted by that multiplexer.
+///
+/// Matched against `/proc/<pid>/comm` on Linux (≤15 chars; may reflect
+/// `prctl(PR_SET_NAME)` rather than argv[0], e.g. "tmux: server") or `lsof`'s
+/// COMMAND field on macOS (we pass `+c 0` to disable its default 9-char
+/// truncation — see `raw_cwd_scan`). GNU screen's detached server renames
+/// itself to uppercase "SCREEN" via prctl, so both cases are listed.
 fn is_multiplexer(cmd: &str) -> bool {
-    matches!(cmd, "zellij" | "tmux" | "tmux: server" | "screen")
+    matches!(
+        cmd,
+        "zellij"
+            | "tmux"
+            | "tmux: server"
+            | "tmate"
+            | "tmate: server"
+            | "screen"
+            | "SCREEN"
+    )
 }
 
 fn scan_cwd(worktree: &Path) -> Vec<BusyInfo> {
@@ -286,6 +303,37 @@ fn scan_cwd(worktree: &Path) -> Vec<BusyInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_multiplexer_matches_known_names() {
+        for name in [
+            "zellij",
+            "tmux",
+            "tmux: server",
+            "tmate",
+            "tmate: server",
+            "screen",
+            "SCREEN",
+        ] {
+            assert!(is_multiplexer(name), "expected match for {:?}", name);
+        }
+    }
+
+    #[test]
+    fn is_multiplexer_rejects_non_multiplexers() {
+        for name in [
+            "",
+            "zsh",
+            "bash",
+            "claude",
+            "tmuxinator",
+            "ztmux",
+            "zellij-server",
+            "Screen",
+        ] {
+            assert!(!is_multiplexer(name), "expected no match for {:?}", name);
+        }
+    }
 
     #[test]
     fn self_tree_contains_current_pid() {
