@@ -15,6 +15,7 @@ use git_worktree_manager::shell_functions;
 use git_worktree_manager::update;
 
 fn main() {
+    git_worktree_manager::tui::install_panic_hook();
     let cli = Cli::parse();
 
     // Handle --generate-completion before anything else
