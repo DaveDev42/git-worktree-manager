@@ -31,6 +31,24 @@ impl PrCache {
     pub fn state(&self, branch: &str) -> Option<&str> {
         self.map.get(branch).map(|s| s.as_str())
     }
+
+    /// Load from disk if fresh (and `no_cache` is false), else fetch via
+    /// `gh pr list` and persist. Returns an empty cache on any failure so
+    /// the caller's fallback path still works.
+    pub fn load_or_fetch(repo: &Path, no_cache: bool) -> Self {
+        if !no_cache {
+            if let Some(map) = load_from_disk(repo) {
+                return PrCache { map };
+            }
+        }
+        match fetch_from_gh(repo) {
+            Some(map) => {
+                write_to_disk(repo, &map);
+                PrCache { map }
+            }
+            None => PrCache::default(),
+        }
+    }
 }
 
 /// Compute a stable short hash for a repository path.
@@ -157,6 +175,17 @@ fn write_to_disk(repo: &Path, prs: &HashMap<String, String>) {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::{Mutex, MutexGuard};
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Acquire the env-var serialization lock. Must be held for the entire
+    /// duration of any test that mutates GW_TEST_GH_*, XDG_CACHE_HOME, or
+    /// other process-global env vars. Recover from poisoning so one failing
+    /// test doesn't break the rest.
+    fn env_lock() -> MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     #[test]
     fn repo_hash_is_stable_and_short() {
@@ -186,6 +215,7 @@ mod tests {
 
     #[test]
     fn fetch_parses_gh_json_from_env() {
+        let _g = env_lock();
         std::env::set_var(
             "GW_TEST_GH_JSON",
             r#"[{"headRefName":"feat/foo","state":"OPEN"},{"headRefName":"fix/bar","state":"MERGED"}]"#,
@@ -198,6 +228,7 @@ mod tests {
 
     #[test]
     fn fetch_returns_none_on_forced_failure() {
+        let _g = env_lock();
         std::env::set_var("GW_TEST_GH_FAIL", "1");
         let result = fetch_from_gh(std::path::Path::new("."));
         std::env::remove_var("GW_TEST_GH_FAIL");
@@ -218,6 +249,7 @@ mod tests {
 
     #[test]
     fn load_from_disk_returns_fresh_entry() {
+        let _g = env_lock();
         let dir = tempdir().unwrap();
         with_cache_dir(dir.path(), || {
             let repo = std::path::Path::new("/tmp/repo-xyz");
@@ -238,6 +270,7 @@ mod tests {
 
     #[test]
     fn load_from_disk_rejects_expired_entry() {
+        let _g = env_lock();
         let dir = tempdir().unwrap();
         with_cache_dir(dir.path(), || {
             let repo = std::path::Path::new("/tmp/repo-expired-xyz");
@@ -256,6 +289,7 @@ mod tests {
 
     #[test]
     fn load_from_disk_rejects_corrupt_file() {
+        let _g = env_lock();
         let dir = tempdir().unwrap();
         with_cache_dir(dir.path(), || {
             let repo = std::path::Path::new("/tmp/repo-corrupt-xyz");
@@ -264,6 +298,70 @@ mod tests {
             std::fs::write(&path, "not json").unwrap();
 
             assert!(load_from_disk(repo).is_none());
+        });
+    }
+
+    #[test]
+    fn load_or_fetch_uses_disk_when_fresh() {
+        let _g = env_lock();
+        let dir = tempdir().unwrap();
+        with_cache_dir(dir.path(), || {
+            let repo = std::path::Path::new("/tmp/repo-disk-hit-xyz");
+            let path = cache_path_for(repo).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let file = CacheFile {
+                fetched_at: now_secs(),
+                repo: repo.to_string_lossy().into_owned(),
+                prs: [("feat/cached".to_string(), "MERGED".to_string())].into_iter().collect(),
+            };
+            std::fs::write(&path, serde_json::to_string(&file).unwrap()).unwrap();
+
+            // No GW_TEST_GH_JSON set. gh must not be consulted; if it were
+            // called in CI without a repo, it would fail — instead we get
+            // the disk value.
+            std::env::set_var("GW_TEST_GH_FAIL", "1");
+            let cache = PrCache::load_or_fetch(repo, false);
+            std::env::remove_var("GW_TEST_GH_FAIL");
+            assert_eq!(cache.state("feat/cached"), Some("MERGED"));
+        });
+    }
+
+    #[test]
+    fn load_or_fetch_bypasses_disk_when_no_cache_true() {
+        let _g = env_lock();
+        let dir = tempdir().unwrap();
+        with_cache_dir(dir.path(), || {
+            let repo = std::path::Path::new("/tmp/repo-bypass-xyz");
+            let path = cache_path_for(repo).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let file = CacheFile {
+                fetched_at: now_secs(),
+                repo: repo.to_string_lossy().into_owned(),
+                prs: [("feat/old".to_string(), "OPEN".to_string())].into_iter().collect(),
+            };
+            std::fs::write(&path, serde_json::to_string(&file).unwrap()).unwrap();
+
+            std::env::set_var(
+                "GW_TEST_GH_JSON",
+                r#"[{"headRefName":"feat/new","state":"OPEN"}]"#,
+            );
+            let cache = PrCache::load_or_fetch(repo, true);
+            std::env::remove_var("GW_TEST_GH_JSON");
+            assert_eq!(cache.state("feat/new"), Some("OPEN"));
+            assert_eq!(cache.state("feat/old"), None);
+        });
+    }
+
+    #[test]
+    fn load_or_fetch_empty_when_gh_fails_and_no_cache_file() {
+        let _g = env_lock();
+        let dir = tempdir().unwrap();
+        with_cache_dir(dir.path(), || {
+            let repo = std::path::Path::new("/tmp/repo-empty-xyz");
+            std::env::set_var("GW_TEST_GH_FAIL", "1");
+            let cache = PrCache::load_or_fetch(repo, false);
+            std::env::remove_var("GW_TEST_GH_FAIL");
+            assert!(cache.state("anything").is_none());
         });
     }
 }
