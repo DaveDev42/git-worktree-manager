@@ -29,8 +29,15 @@ struct GlobalWorktreeRow {
 const MIN_GLOBAL_TABLE_WIDTH: usize = 125;
 
 /// List worktrees across all registered repositories.
-pub fn global_list_worktrees() -> Result<()> {
-    // TODO(perf): parallelize across repos.
+///
+/// `no_cache`: when true, bypasses the 60s PR-status cache and re-fetches
+/// from `gh pr list` for each repository.
+pub fn global_list_worktrees(no_cache: bool) -> Result<()> {
+    // TODO(perf): #38 — parallelize PrCache::load_or_fetch across repos using
+    // rayon: `repos.par_iter().map(|(n,r)| (n,r,PrCache::load_or_fetch(r,no_cache)))`.
+    // Deferred because the sequential per-repo loop below also prints/displays
+    // incrementally; parallelizing fetch while keeping serial display requires
+    // collecting into a pre-fetched Vec first. Acceptable for typical repo counts (~10s).
     // Auto-prune stale entries before listing
     if let Ok(removed) = registry::prune_registry() {
         if !removed.is_empty() {
@@ -93,7 +100,7 @@ pub fn global_list_worktrees() -> Result<()> {
             }
         };
 
-        let pr_cache = PrCache::load_or_fetch(repo_path, false);
+        let pr_cache = PrCache::load_or_fetch(repo_path, no_cache);
 
         let mut has_feature = false;
         for (branch_name, path) in &feature_wts {

@@ -54,7 +54,7 @@ fn main() {
         // Display commands
         Some(Commands::List { cache }) => {
             if cli.global {
-                global_ops::global_list_worktrees()
+                global_ops::global_list_worktrees(cache.no_cache)
             } else {
                 display::list_worktrees(cache.no_cache)
             }
@@ -204,12 +204,20 @@ fn main() {
         }
 
         Some(Commands::Clean {
+            cache,
             merged,
             older_than,
             interactive,
             dry_run,
             force,
-        }) => clean::clean_worktrees(merged, older_than, interactive, dry_run, force),
+        }) => clean::clean_worktrees(
+            cache.no_cache,
+            merged,
+            older_than,
+            interactive,
+            dry_run,
+            force,
+        ),
 
         Some(Commands::Sync {
             branch,

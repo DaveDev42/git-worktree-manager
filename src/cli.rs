@@ -9,7 +9,7 @@ use clap::{Args, Parser, Subcommand, ValueHint};
 /// Shared cache-bypass flag, flattened into subcommands that query PR status.
 #[derive(Args, Debug, Clone)]
 pub struct CacheControl {
-    /// Bypass PR status cache and refresh from gh
+    /// Bypass PR status cache (60s TTL) and refresh from gh
     #[arg(long)]
     pub no_cache: bool,
 }
@@ -236,6 +236,9 @@ pub enum Commands {
 
     /// Batch cleanup of worktrees
     Clean {
+        #[command(flatten)]
+        cache: CacheControl,
+
         /// Delete worktrees for branches already merged to base
         #[arg(long)]
         merged: bool,

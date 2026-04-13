@@ -12,6 +12,7 @@ use super::pr_cache::PrCache;
 
 /// Batch cleanup of worktrees based on criteria.
 pub fn clean_worktrees(
+    no_cache: bool,
     merged: bool,
     older_than: Option<u64>,
     interactive: bool,
@@ -82,7 +83,7 @@ pub fn clean_worktrees(
     if interactive && to_delete.is_empty() {
         println!("{}\n", style("Available worktrees:").cyan().bold());
         let mut all_wt = Vec::new();
-        let pr_cache = PrCache::load_or_fetch(&repo, false);
+        let pr_cache = PrCache::load_or_fetch(&repo, no_cache);
         for (branch_name, path) in git::get_feature_worktrees(Some(&repo))? {
             let status = get_worktree_status(&path, &repo, Some(branch_name.as_str()), &pr_cache);
             println!("  [{:8}] {:<30} {}", status, branch_name, path.display());
