@@ -171,6 +171,13 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
         })
         .collect();
 
+    if inputs.is_empty() {
+        // Nothing to render. Footer still runs (it short-circuits on empty).
+        print_summary_footer(&[]);
+        println!();
+        return Ok(());
+    }
+
     let is_tty = crate::tui::stdout_is_tty();
 
     let rows: Vec<WorktreeRow> = if is_tty {
@@ -217,83 +224,92 @@ fn render_rows_progressive(
     use ratatui::{backend::CrosstermBackend, Terminal, TerminalOptions, Viewport};
     use std::sync::mpsc;
 
-    // Build skeleton app.
-    let row_data: Vec<crate::tui::list_view::RowData> = inputs
-        .iter()
-        .map(|i| crate::tui::list_view::RowData {
-            worktree_id: i.worktree_id.clone(),
-            current_branch: i.current_branch.clone(),
-            status: "…".to_string(),
-            age: i.age.clone(),
-            rel_path: i.rel_path.clone(),
-        })
-        .collect();
-    let mut app = crate::tui::list_view::ListApp::new(row_data);
+    let result = (|| -> Result<Vec<WorktreeRow>> {
+        // Build skeleton app.
+        let row_data: Vec<crate::tui::list_view::RowData> = inputs
+            .iter()
+            .map(|i| crate::tui::list_view::RowData {
+                worktree_id: i.worktree_id.clone(),
+                current_branch: i.current_branch.clone(),
+                status: "…".to_string(),
+                age: i.age.clone(),
+                rel_path: i.rel_path.clone(),
+            })
+            .collect();
+        let mut app = crate::tui::list_view::ListApp::new(row_data);
 
-    // +2 for header row and one trailing blank line.
-    let viewport_height = (inputs.len() as u16).saturating_add(2).max(3);
+        // +2 for header row and one trailing blank line.
+        let viewport_height = (inputs.len() as u16).saturating_add(2).max(3);
 
-    let stdout = std::io::stdout();
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::with_options(
-        backend,
-        TerminalOptions {
-            viewport: Viewport::Inline(viewport_height),
-        },
-    )
-    .map_err(crate::error::CwError::Io)?;
-
-    // Producer: parallel per-worktree status computation, scoped to borrow
-    // repo and pr_cache directly rather than via Arc.
-    let (tx, rx) = mpsc::channel();
-    rayon::in_place_scope(|scope| -> Result<()> {
-        scope.spawn(move |_| {
-            inputs
-                .par_iter()
-                .enumerate()
-                .for_each_with(tx, |tx, (i, input)| {
-                    let status = get_worktree_status(
-                        &input.path,
-                        repo,
-                        Some(&input.current_branch),
-                        pr_cache,
-                    );
-                    let _ = tx.send((i, status));
-                });
-        });
-
-        crate::tui::list_view::run(&mut terminal, &mut app, rx)
-            .map_err(crate::error::CwError::Io)?;
-        Ok(())
-    })?;
-
-    // Defensive sweep: if the producer panicked, some rows may still carry
-    // the skeleton placeholder. Promote those to a visible "unknown" status
-    // so the footer summary doesn't count the ellipsis literal.
-    for r in app.rows.iter_mut() {
-        if r.status == "…" {
-            r.status = "unknown".to_string();
-        }
-    }
-
-    // Redraw after the sweep so any panicked rows display "unknown" instead
-    // of "…" in the final scrollback frame.
-    terminal
-        .draw(|f| app.render(f))
+        let stdout = std::io::stdout();
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: Viewport::Inline(viewport_height),
+            },
+        )
         .map_err(crate::error::CwError::Io)?;
-    drop(terminal);
 
-    Ok(app
-        .rows
-        .into_iter()
-        .map(|r| WorktreeRow {
-            worktree_id: r.worktree_id,
-            current_branch: r.current_branch,
-            status: r.status,
-            age: r.age,
-            rel_path: r.rel_path,
-        })
-        .collect())
+        // Producer: parallel per-worktree status computation, scoped to borrow
+        // repo and pr_cache directly rather than via Arc.
+        let (tx, rx) = mpsc::channel();
+        rayon::in_place_scope(|scope| -> Result<()> {
+            scope.spawn(move |_| {
+                inputs
+                    .par_iter()
+                    .enumerate()
+                    .for_each_with(tx, |tx, (i, input)| {
+                        let status = get_worktree_status(
+                            &input.path,
+                            repo,
+                            Some(&input.current_branch),
+                            pr_cache,
+                        );
+                        let _ = tx.send((i, status));
+                    });
+            });
+
+            crate::tui::list_view::run(&mut terminal, &mut app, rx)
+                .map_err(crate::error::CwError::Io)?;
+            Ok(())
+        })?;
+
+        // Defensive sweep: if the producer panicked, some rows may still carry
+        // the skeleton placeholder. Promote those to a visible "unknown" status
+        // so the footer summary doesn't count the ellipsis literal.
+        for r in app.rows.iter_mut() {
+            if r.status == "…" {
+                r.status = "unknown".to_string();
+            }
+        }
+
+        // Redraw after the sweep so any panicked rows display "unknown" instead
+        // of "…" in the final scrollback frame.
+        terminal
+            .draw(|f| app.render(f))
+            .map_err(crate::error::CwError::Io)?;
+        drop(terminal);
+
+        Ok(app
+            .rows
+            .into_iter()
+            .map(|r| WorktreeRow {
+                worktree_id: r.worktree_id,
+                current_branch: r.current_branch,
+                status: r.status,
+                age: r.age,
+                rel_path: r.rel_path,
+            })
+            .collect())
+    })();
+
+    // Always restore the terminal, even on error. ratatui::restore is a no-op
+    // if no terminal modes were changed (Inline Viewport doesn't enter raw
+    // mode), but covers any future code paths that do.
+    ratatui::restore();
+
+    result
 }
 
 /// Look up the intended branch for a worktree via git config metadata.
@@ -345,6 +361,8 @@ fn lookup_intended_branch(repo: &Path, current_branch: &str, path: &Path) -> Opt
 }
 
 fn print_summary_footer(rows: &[WorktreeRow]) {
+    // The first worktree is the primary repo checkout — exclude it from the
+    // "feature worktree" count.
     let feature_count = if rows.len() > 1 { rows.len() - 1 } else { 0 };
     if feature_count == 0 {
         return;
