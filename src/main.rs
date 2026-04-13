@@ -50,11 +50,11 @@ fn main() {
 
     let result = match cli.command {
         // Display commands
-        Some(Commands::List) => {
+        Some(Commands::List { no_cache }) => {
             if cli.global {
                 global_ops::global_list_worktrees()
             } else {
-                display::list_worktrees(false)
+                display::list_worktrees(no_cache)
             }
         }
         Some(Commands::Status) => display::show_status(),

@@ -218,7 +218,11 @@ pub enum Commands {
 
     /// List all worktrees
     #[command(alias = "ls")]
-    List,
+    List {
+        /// Bypass PR status cache and refresh from gh
+        #[arg(long)]
+        no_cache: bool,
+    },
 
     /// Batch cleanup of worktrees
     Clean {
