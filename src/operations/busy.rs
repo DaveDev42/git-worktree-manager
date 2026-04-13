@@ -38,6 +38,12 @@ pub struct BusyInfo {
 /// Cached self-process-tree for the lifetime of this `gw` invocation.
 static SELF_TREE: OnceLock<HashSet<u32>> = OnceLock::new();
 
+/// Cached sibling set — processes sharing `gw`'s direct parent PID, captured
+/// once per invocation. This covers shell pipeline co-members (e.g. when a
+/// user runs `gw list | head` the `head` process is gw's sibling, not an
+/// ancestor) and a few other co-spawned helpers.
+static SELF_SIBLINGS: OnceLock<HashSet<u32>> = OnceLock::new();
+
 /// Cached raw cwd scan. On unix this is populated once per `gw` invocation
 /// (lsof / /proc walk is expensive). Each entry: (pid, cmd, canon_cwd).
 static CWD_SCAN_CACHE: OnceLock<Vec<(u32, String, PathBuf)>> = OnceLock::new();
@@ -81,6 +87,98 @@ fn compute_self_tree() -> HashSet<u32> {
 /// during a single `gw` invocation.
 pub fn self_process_tree() -> &'static HashSet<u32> {
     SELF_TREE.get_or_init(compute_self_tree)
+}
+
+/// Compute the set of processes sharing `gw`'s process group ID.
+///
+/// Shells set up pipelines (`gw list | head | awk`) by putting all members
+/// in a single process group that becomes the foreground job. Using pgid
+/// as the sibling criterion matches exactly those pipeline co-members and
+/// excludes them from busy detection — they inherited the shell's cwd but
+/// are transient artifacts of the current command, not real occupants.
+///
+/// This is deliberately narrower than "processes sharing our ppid": the
+/// broader criterion would also exclude legitimate busy processes that
+/// happen to be spawned by the same parent as `gw` (e.g. a test harness
+/// running both a long-lived worker and `gw` from the same Cargo runner).
+#[cfg(unix)]
+fn compute_self_siblings() -> HashSet<u32> {
+    let mut siblings = HashSet::new();
+    let our_pid = std::process::id();
+    let our_pgid = unsafe { libc::getpgrp() } as u32;
+    if our_pgid == 0 || our_pgid == 1 {
+        return siblings;
+    }
+    // Distinguish two scenarios with the same raw pgid test:
+    //   (a) gw is a member of a shell pipeline (`gw list | head`). The shell
+    //       placed the pipeline in its own process group, so our pgid differs
+    //       from our parent's pgid. Pipeline co-members share our pgid and
+    //       are safe to exclude.
+    //   (b) gw was spawned by a non-shell parent that did not call setpgid
+    //       (e.g. `cargo test` spawning both gw and a long-lived worker).
+    //       Our pgid equals our parent's pgid, which means "same pgid" also
+    //       matches unrelated siblings that legitimately occupy a worktree.
+    //       In this case we return an empty set and let the ancestor-only
+    //       filter handle things.
+    let parent_pid = unsafe { libc::getppid() } as u32;
+    if parent_pid == 0 {
+        return siblings;
+    }
+    let parent_pgid = pgid_of(parent_pid).unwrap_or(0);
+    if parent_pgid == our_pgid {
+        return siblings;
+    }
+    for (pid, _, _) in cwd_scan() {
+        if *pid == our_pid {
+            continue;
+        }
+        if let Some(pgid) = pgid_of(*pid) {
+            if pgid == our_pgid {
+                siblings.insert(*pid);
+            }
+        }
+    }
+    siblings
+}
+
+#[cfg(not(unix))]
+fn compute_self_siblings() -> HashSet<u32> {
+    HashSet::new()
+}
+
+#[cfg(target_os = "linux")]
+fn pgid_of(pid: u32) -> Option<u32> {
+    let status = std::fs::read_to_string(format!("/proc/{}/stat", pid)).ok()?;
+    // /proc/<pid>/stat: "pid (comm) state ppid pgid ..."
+    // Parse from the last ')' to avoid confusion with spaces/parens in comm.
+    let after_comm = status.rsplit_once(')')?.1;
+    let fields: Vec<&str> = after_comm.split_whitespace().collect();
+    // After ')' the fields are: state ppid pgid ...
+    // So pgid is index 2.
+    fields.get(2)?.parse().ok()
+}
+
+#[cfg(target_os = "macos")]
+fn pgid_of(pid: u32) -> Option<u32> {
+    let out = Command::new("ps")
+        .args(["-o", "pgid=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[allow(dead_code)]
+fn pgid_of(_pid: u32) -> Option<u32> {
+    None
+}
+
+/// Returns the memoized sibling set (see `compute_self_siblings`).
+pub fn self_siblings() -> &'static HashSet<u32> {
+    SELF_SIBLINGS.get_or_init(compute_self_siblings)
 }
 
 #[cfg(target_os = "linux")]
@@ -162,6 +260,59 @@ fn raw_cwd_scan() -> Vec<(u32, String, PathBuf)> {
     out
 }
 
+/// Heuristic: does a cmd string look like an argv[0] that was overwritten
+/// with a version or status string rather than a program name? Example from
+/// the wild: Claude Code rewrites argv[0] to "2.1.104". `lsof` reports argv[0]
+/// for macOS processes, so these junk values bleed into busy reporting.
+/// We detect the pattern (all digits, dots, and optional leading `v`) and
+/// fall back to a `ps -o comm=` lookup, which returns the kernel-recorded
+/// basename.
+///
+/// Linux's `/proc/<pid>/comm` already reports the kernel-recorded name so
+/// this heuristic is only used on macOS; the tests remain cross-platform.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+fn is_suspicious_cmd(cmd: &str) -> bool {
+    if cmd.is_empty() {
+        return true;
+    }
+    let mut chars = cmd.chars();
+    let first = chars.next().unwrap();
+    let starts_ok = first == 'v' || first.is_ascii_digit();
+    if !starts_ok {
+        return false;
+    }
+    let mut seen_digit = first.is_ascii_digit();
+    for c in chars {
+        if c.is_ascii_digit() {
+            seen_digit = true;
+        } else if c != '.' {
+            return false;
+        }
+    }
+    seen_digit
+}
+
+#[cfg(target_os = "macos")]
+fn kernel_comm(pid: u32) -> Option<String> {
+    let out = Command::new("ps")
+        .args(["-o", "comm=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if raw.is_empty() {
+        return None;
+    }
+    // `ps -o comm=` on macOS returns the full executable path. Take basename.
+    let base = std::path::Path::new(&raw)
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or(raw);
+    Some(base)
+}
+
 #[cfg(target_os = "macos")]
 fn raw_cwd_scan() -> Vec<(u32, String, PathBuf)> {
     let mut out = Vec::new();
@@ -197,7 +348,12 @@ fn raw_cwd_scan() -> Vec<(u32, String, PathBuf)> {
             if let Some(pid) = cur_pid {
                 let cwd = PathBuf::from(rest);
                 let cwd_canon = cwd.canonicalize().unwrap_or_else(|_| cwd.clone());
-                out.push((pid, cur_cmd.clone(), cwd_canon));
+                let cmd = if is_suspicious_cmd(&cur_cmd) {
+                    kernel_comm(pid).unwrap_or_else(|| cur_cmd.clone())
+                } else {
+                    cur_cmd.clone()
+                };
+                out.push((pid, cmd, cwd_canon));
             }
         }
     }
@@ -220,16 +376,19 @@ fn raw_cwd_scan() -> Vec<(u32, String, PathBuf)> {
 /// means even read-only operations like `gw list` may mutate
 /// `<worktree>/.git/gw-session.lock` when a stale file is encountered.
 pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
-    let exclude = self_process_tree();
+    let exclude_tree = self_process_tree();
+    let exclude_siblings = self_siblings();
+    let is_excluded = |pid: u32| exclude_tree.contains(&pid) || exclude_siblings.contains(&pid);
     let mut out = Vec::new();
 
     // Invariant: lockfile entries are pushed before the cwd scan so the
     // dedup check below keeps the lockfile's richer `cmd` (e.g. "claude").
-    // Edge case: if the lockfile PID is in self_tree it is skipped entirely,
-    // and other PIDs found by the cwd scan are reported with whatever name
-    // `/proc/*/comm` or `lsof` provided — not the lockfile's cmd.
+    // Edge case: if the lockfile PID is in self_tree/self_siblings it is
+    // skipped entirely, and other PIDs found by the cwd scan are reported
+    // with whatever name `/proc/*/comm` or `lsof` provided — not the
+    // lockfile's cmd.
     if let Some(entry) = lockfile::read_and_clean_stale(worktree) {
-        if !exclude.contains(&entry.pid) {
+        if !is_excluded(entry.pid) {
             out.push(BusyInfo {
                 pid: entry.pid,
                 cmd: entry.cmd,
@@ -240,7 +399,7 @@ pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
     }
 
     for info in scan_cwd(worktree) {
-        if exclude.contains(&info.pid) {
+        if is_excluded(info.pid) {
             continue;
         }
         if out.iter().any(|b| b.pid == info.pid) {
@@ -297,6 +456,26 @@ fn scan_cwd(worktree: &Path) -> Vec<BusyInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_suspicious_cmd_flags_version_strings() {
+        assert!(is_suspicious_cmd(""));
+        assert!(is_suspicious_cmd("2.1.104"));
+        assert!(is_suspicious_cmd("0.0.1"));
+        assert!(is_suspicious_cmd("v1.2.3"));
+        assert!(is_suspicious_cmd("42"));
+    }
+
+    #[test]
+    fn is_suspicious_cmd_accepts_real_names() {
+        assert!(!is_suspicious_cmd("claude"));
+        assert!(!is_suspicious_cmd("node"));
+        assert!(!is_suspicious_cmd("zsh"));
+        assert!(!is_suspicious_cmd("tmux: server"));
+        assert!(!is_suspicious_cmd("python3"));
+        assert!(!is_suspicious_cmd("v"));
+        assert!(!is_suspicious_cmd("vim"));
+    }
 
     #[test]
     fn is_multiplexer_matches_known_names() {
