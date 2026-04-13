@@ -1,22 +1,28 @@
 //! `gw list` Inline Viewport view.
 
+use std::sync::mpsc;
+
 use ratatui::layout::Constraint;
 use ratatui::text::Span;
 use ratatui::widgets::{Block, Borders, Cell, Row, Table};
 
 use crate::tui::style;
 
+/// Placeholder status shown while a worktree's status is being computed.
+/// ASCII "..." rather than the Unicode ellipsis "…" for terminal-width safety.
+pub const PLACEHOLDER: &str = "...";
+
 #[derive(Debug, Clone)]
 pub struct RowData {
     pub worktree_id: String,
     pub current_branch: String,
-    pub status: String, // "…" while pending
+    pub status: String, // PLACEHOLDER while pending
     pub age: String,
     pub rel_path: String,
 }
 
 pub struct ListApp {
-    pub rows: Vec<RowData>,
+    rows: Vec<RowData>,
 }
 
 impl ListApp {
@@ -24,8 +30,36 @@ impl ListApp {
         Self { rows }
     }
 
+    /// Read-only access to rows.
+    pub fn rows(&self) -> &[RowData] {
+        &self.rows
+    }
+
+    /// Mutable access to a single row's status by index.
+    pub fn set_status(&mut self, i: usize, status: String) {
+        if let Some(r) = self.rows.get_mut(i) {
+            r.status = status;
+        }
+    }
+
+    /// Replace every row whose status equals `PLACEHOLDER` with `replacement`.
+    /// Called after the producer finishes (or panics) to ensure no placeholder
+    /// remains in the final output.
+    pub fn finalize_pending(&mut self, replacement: &str) {
+        for r in self.rows.iter_mut() {
+            if r.status == PLACEHOLDER {
+                r.status = replacement.to_string();
+            }
+        }
+    }
+
+    /// Consume `self`, yielding the inner rows.
+    pub fn into_rows(self) -> Vec<RowData> {
+        self.rows
+    }
+
     pub fn is_complete(&self) -> bool {
-        self.rows.iter().all(|r| r.status != "…")
+        self.rows.iter().all(|r| r.status != PLACEHOLDER)
     }
 
     pub fn render(&self, frame: &mut ratatui::Frame<'_>) {
@@ -42,10 +76,13 @@ impl ListApp {
             .rows
             .iter()
             .map(|r| {
-                let status_cell = if r.status == "…" {
-                    Cell::from(Span::styled("…", style::placeholder_style()))
+                let status_cell = if r.status == PLACEHOLDER {
+                    Cell::from(Span::styled(PLACEHOLDER, style::placeholder_style()))
                 } else {
-                    Cell::from(Span::styled(r.status.clone(), style::status_style(&r.status)))
+                    Cell::from(Span::styled(
+                        r.status.clone(),
+                        style::status_style(&r.status),
+                    ))
                 };
                 Row::new(vec![
                     Cell::from(r.worktree_id.clone()),
@@ -73,13 +110,12 @@ impl ListApp {
     }
 }
 
-use std::sync::mpsc;
-
 /// Drive the Inline Viewport render loop, consuming `(row_index, status)`
 /// updates from `rx` until all rows are filled or the sender disconnects.
 ///
 /// The caller is responsible for spawning the producer (typically a
-/// `rayon::spawn` that iterates worktrees in parallel and sends results).
+/// `rayon` par_iter inside a `std::thread::scope` that iterates worktrees
+/// in parallel and sends results).
 ///
 /// On return, `app.rows` contains final statuses. The viewport exits via
 /// `drop(terminal)` which leaves the final frame in the scrollback.
@@ -90,25 +126,15 @@ pub fn run<B: ratatui::backend::Backend>(
 ) -> std::io::Result<()> {
     terminal.draw(|f| app.render(f))?;
 
-    loop {
-        match rx.recv_timeout(std::time::Duration::from_millis(50)) {
-            Ok((i, status)) => {
-                if let Some(r) = app.rows.get_mut(i) {
-                    r.status = status;
-                }
-                terminal.draw(|f| app.render(f))?;
-                if app.is_complete() {
-                    break;
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                if app.is_complete() {
-                    break;
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+    while let Ok((i, status)) = rx.recv() {
+        app.set_status(i, status);
+        terminal.draw(|f| app.render(f))?;
+        if app.is_complete() {
+            break;
         }
     }
+    // rx.recv() returns Err when the sender drops — all statuses received or
+    // producer panicked. Either way the loop exits cleanly.
 
     Ok(())
 }
@@ -130,10 +156,10 @@ mod tests {
     }
 
     #[test]
-    fn skeleton_frame_shows_ellipsis_for_all_rows() {
+    fn skeleton_frame_shows_placeholder_for_all_rows() {
         let app = ListApp::new(vec![
-            sample_row("feat/a", "…"),
-            sample_row("feat/b", "…"),
+            sample_row("feat/a", PLACEHOLDER),
+            sample_row("feat/b", PLACEHOLDER),
         ]);
         let backend = TestBackend::new(80, 6);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -142,7 +168,7 @@ mod tests {
         let rendered = buffer_to_string(&buf);
         assert!(rendered.contains("feat/a"));
         assert!(rendered.contains("feat/b"));
-        assert!(rendered.contains("…"));
+        assert!(rendered.contains(PLACEHOLDER));
         assert!(!app.is_complete());
     }
 
@@ -165,8 +191,8 @@ mod tests {
     #[test]
     fn run_fills_statuses_from_channel() {
         let mut app = ListApp::new(vec![
-            sample_row("feat/a", "…"),
-            sample_row("feat/b", "…"),
+            sample_row("feat/a", PLACEHOLDER),
+            sample_row("feat/b", PLACEHOLDER),
         ]);
         let backend = TestBackend::new(80, 6);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -178,16 +204,16 @@ mod tests {
         });
 
         run(&mut terminal, &mut app, rx).unwrap();
-        assert_eq!(app.rows[0].status, "clean");
-        assert_eq!(app.rows[1].status, "modified");
+        assert_eq!(app.rows()[0].status, "clean");
+        assert_eq!(app.rows()[1].status, "modified");
         assert!(app.is_complete());
     }
 
     #[test]
     fn run_exits_when_sender_drops_with_pending_rows() {
         let mut app = ListApp::new(vec![
-            sample_row("feat/a", "…"),
-            sample_row("feat/b", "…"),
+            sample_row("feat/a", PLACEHOLDER),
+            sample_row("feat/b", PLACEHOLDER),
         ]);
         let backend = TestBackend::new(80, 6);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -199,9 +225,20 @@ mod tests {
         });
 
         run(&mut terminal, &mut app, rx).unwrap();
-        assert_eq!(app.rows[0].status, "clean");
-        assert_eq!(app.rows[1].status, "…"); // still pending
+        assert_eq!(app.rows()[0].status, "clean");
+        assert_eq!(app.rows()[1].status, PLACEHOLDER); // still pending
         assert!(!app.is_complete());
+    }
+
+    #[test]
+    fn finalize_pending_replaces_placeholders() {
+        let mut app = ListApp::new(vec![
+            sample_row("feat/a", PLACEHOLDER),
+            sample_row("feat/b", "clean"),
+        ]);
+        app.finalize_pending("unknown");
+        assert_eq!(app.rows()[0].status, "unknown");
+        assert_eq!(app.rows()[1].status, "clean"); // unchanged
     }
 
     fn buffer_to_string(buf: &ratatui::buffer::Buffer) -> String {

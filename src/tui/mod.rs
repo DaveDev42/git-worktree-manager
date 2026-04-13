@@ -26,10 +26,19 @@ pub fn stdout_is_tty() -> bool {
 
 /// Install a panic hook that restores the terminal state before the default
 /// panic handler prints. Safe to call once at process start.
+///
+/// The hook is always installed (we don't know yet whether this invocation
+/// will use ratatui), but the `ratatui::restore()` call inside is gated on
+/// `stdout_is_tty()` so it noop's in non-TTY contexts (pipes, redirects, CI).
+///
+/// `default(info)` chains to the original hook, which prints the panic message
+/// and respects `RUST_BACKTRACE` — so backtrace behaviour is preserved.
 pub fn install_panic_hook() {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        ratatui::restore();
+        if std::io::stdout().is_terminal() {
+            ratatui::restore();
+        }
         default(info);
     }));
 }

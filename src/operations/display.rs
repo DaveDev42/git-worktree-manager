@@ -1,8 +1,10 @@
 /// Display and information operations for git-worktree-manager.
 ///
 use std::path::Path;
+use std::sync::mpsc;
 
 use console::style;
+use ratatui::{backend::CrosstermBackend, Terminal, TerminalOptions, Viewport};
 
 use crate::console as cwconsole;
 use crate::constants::{
@@ -29,6 +31,8 @@ const MIN_TABLE_WIDTH: usize = 100;
 ///    independently of commit SHAs. One `gh` call per repo, cached 60 s.
 /// 2. `git branch --merged` (fallback) — only works when commit SHAs are
 ///    preserved (merge commit strategy). Used when `gh` is not available.
+///
+/// See `pr_cache::PrCache` for the batched fetch and TTL details.
 pub fn get_worktree_status(
     path: &Path,
     repo: &Path,
@@ -67,8 +71,8 @@ pub fn get_worktree_status(
         // Primary: cached PR state from a single `gh pr list` call.
         if let Some(state) = pr_cache.state(branch_name) {
             match state {
-                "MERGED" => return "merged".to_string(),
-                "OPEN" => return "pr-open".to_string(),
+                super::pr_cache::PrState::Merged => return "merged".to_string(),
+                super::pr_cache::PrState::Open => return "pr-open".to_string(),
                 _ => {}
             }
         }
@@ -128,6 +132,8 @@ struct WorktreeRow {
 }
 
 /// Serial-prep input passed to status computation.
+/// Shares all fields with `WorktreeRow` except `path` (used to compute status)
+/// and `status` itself (filled in by the parallel worker).
 #[derive(Clone)]
 struct RowInput {
     path: std::path::PathBuf,
@@ -135,6 +141,18 @@ struct RowInput {
     worktree_id: String,
     age: String,
     rel_path: String,
+}
+
+impl RowInput {
+    fn into_row(self, status: String) -> WorktreeRow {
+        WorktreeRow {
+            worktree_id: self.worktree_id,
+            current_branch: self.current_branch,
+            status,
+            age: self.age,
+            rel_path: self.rel_path,
+        }
+    }
 }
 
 /// List all worktrees for the current repository.
@@ -172,37 +190,29 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
         .collect();
 
     if inputs.is_empty() {
-        // Nothing to render. Footer still runs (it short-circuits on empty).
-        print_summary_footer(&[]);
-        println!();
+        println!("  {}\n", style("No worktrees found.").dim());
         return Ok(());
     }
 
     let is_tty = crate::tui::stdout_is_tty();
+    let term_width = cwconsole::terminal_width();
 
-    let rows: Vec<WorktreeRow> = if is_tty {
+    let rows: Vec<WorktreeRow> = if is_tty && term_width >= MIN_TABLE_WIDTH {
         render_rows_progressive(&repo, &pr_cache, inputs)?
     } else {
         inputs
-            .par_iter()
+            .into_par_iter()
             .map(|i| {
                 let status =
                     get_worktree_status(&i.path, &repo, Some(&i.current_branch), &pr_cache);
-                WorktreeRow {
-                    worktree_id: i.worktree_id.clone(),
-                    current_branch: i.current_branch.clone(),
-                    status,
-                    age: i.age.clone(),
-                    rel_path: i.rel_path.clone(),
-                }
+                i.into_row(status)
             })
             .collect()
     };
 
-    // In the TTY path the Inline Viewport has already drawn the table.
-    // In the static path we still need to print it to stdout.
-    if !is_tty {
-        let term_width = cwconsole::terminal_width();
+    // In the TTY+wide path the Inline Viewport has already drawn the table.
+    // In the static path (narrow terminal or non-TTY) we still need to print.
+    if !(is_tty && term_width >= MIN_TABLE_WIDTH) {
         if term_width >= MIN_TABLE_WIDTH {
             print_worktree_table(&rows);
         } else {
@@ -210,10 +220,34 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
         }
     }
 
+    // Footer is printed via println! after the Inline Viewport drops, so it
+    // appears below the table in scrollback. Alignment is correct for the
+    // static path; in the TTY path the viewport already committed the table
+    // rows and the footer follows naturally. Using terminal.insert_before()
+    // could align it inside the viewport, but the current behaviour is
+    // acceptable and avoids extra ratatui complexity.
     print_summary_footer(&rows);
 
     println!();
     Ok(())
+}
+
+/// RAII guard: drops the terminal before calling `ratatui::restore()`.
+/// Ensures terminal modes are restored deterministically even on early return
+/// or panic, without relying on a closure-then-restore pattern.
+struct TerminalGuard<B: ratatui::backend::Backend>(Option<ratatui::Terminal<B>>);
+
+impl<B: ratatui::backend::Backend> TerminalGuard<B> {
+    fn as_mut(&mut self) -> &mut ratatui::Terminal<B> {
+        self.0.as_mut().expect("terminal already taken")
+    }
+}
+
+impl<B: ratatui::backend::Backend> Drop for TerminalGuard<B> {
+    fn drop(&mut self) {
+        let _ = self.0.take(); // drop terminal first, releasing raw mode if any
+        ratatui::restore();
+    }
 }
 
 fn render_rows_progressive(
@@ -221,95 +255,87 @@ fn render_rows_progressive(
     pr_cache: &PrCache,
     inputs: Vec<RowInput>,
 ) -> Result<Vec<WorktreeRow>> {
-    use ratatui::{backend::CrosstermBackend, Terminal, TerminalOptions, Viewport};
-    use std::sync::mpsc;
+    // Build skeleton app.
+    let row_data: Vec<crate::tui::list_view::RowData> = inputs
+        .iter()
+        .map(|i| crate::tui::list_view::RowData {
+            worktree_id: i.worktree_id.clone(),
+            current_branch: i.current_branch.clone(),
+            status: crate::tui::list_view::PLACEHOLDER.to_string(),
+            age: i.age.clone(),
+            rel_path: i.rel_path.clone(),
+        })
+        .collect();
+    let mut app = crate::tui::list_view::ListApp::new(row_data);
 
-    let result = (|| -> Result<Vec<WorktreeRow>> {
-        // Build skeleton app.
-        let row_data: Vec<crate::tui::list_view::RowData> = inputs
-            .iter()
-            .map(|i| crate::tui::list_view::RowData {
-                worktree_id: i.worktree_id.clone(),
-                current_branch: i.current_branch.clone(),
-                status: "…".to_string(),
-                age: i.age.clone(),
-                rel_path: i.rel_path.clone(),
-            })
-            .collect();
-        let mut app = crate::tui::list_view::ListApp::new(row_data);
+    // +2 for header row and one trailing blank line.
+    let viewport_height = u16::try_from(inputs.len())
+        .unwrap_or(u16::MAX)
+        .saturating_add(2)
+        .max(3);
 
-        // +2 for header row and one trailing blank line.
-        let viewport_height = (inputs.len() as u16).saturating_add(2).max(3);
+    let stdout = std::io::stdout();
+    let backend = CrosstermBackend::new(stdout);
+    let mut guard = TerminalGuard(Some(Terminal::with_options(
+        backend,
+        TerminalOptions {
+            viewport: Viewport::Inline(viewport_height),
+        },
+    )?));
 
-        let stdout = std::io::stdout();
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::with_options(
-            backend,
-            TerminalOptions {
-                viewport: Viewport::Inline(viewport_height),
-            },
-        )
-        .map_err(crate::error::CwError::Io)?;
+    // Producer: parallel per-worktree status computation on a dedicated OS
+    // thread; rayon parallelism is used within that thread.
+    //
+    // Uses std::thread::scope so the consumer (list_view::run) on the main
+    // thread can interleave with the producer thread, giving true progressive
+    // rendering. Producer panics are caught by the scope's join-on-exit and
+    // the sweep below promotes remaining "..." placeholders to "unknown".
+    //
+    // Uses rayon's default pool (CPU cores). Each worker spawns `git`
+    // subprocesses, which is I/O-bound but small enough that oversubscription
+    // doesn't help.
+    let (tx, rx) = mpsc::channel();
+    std::thread::scope(|s| -> Result<()> {
+        let producer = s.spawn(move || {
+            inputs
+                .par_iter()
+                .enumerate()
+                .for_each_with(tx, |tx, (i, input)| {
+                    let status = get_worktree_status(
+                        &input.path,
+                        repo,
+                        Some(&input.current_branch),
+                        pr_cache,
+                    );
+                    let _ = tx.send((i, status));
+                });
+        });
 
-        // Producer: parallel per-worktree status computation, scoped to borrow
-        // repo and pr_cache directly rather than via Arc.
-        let (tx, rx) = mpsc::channel();
-        rayon::in_place_scope(|scope| -> Result<()> {
-            scope.spawn(move |_| {
-                inputs
-                    .par_iter()
-                    .enumerate()
-                    .for_each_with(tx, |tx, (i, input)| {
-                        let status = get_worktree_status(
-                            &input.path,
-                            repo,
-                            Some(&input.current_branch),
-                            pr_cache,
-                        );
-                        let _ = tx.send((i, status));
-                    });
-            });
+        crate::tui::list_view::run(guard.as_mut(), &mut app, rx)?;
+        let _ = producer.join(); // producer panic ⇒ rx already disconnected; sweep below covers it
+        Ok(())
+    })?;
 
-            crate::tui::list_view::run(&mut terminal, &mut app, rx)
-                .map_err(crate::error::CwError::Io)?;
-            Ok(())
-        })?;
+    // Defensive sweep: if the producer panicked, some rows may still carry
+    // the skeleton placeholder. Promote those to a visible "unknown" status
+    // so the footer summary doesn't count the placeholder literal.
+    app.finalize_pending("unknown");
 
-        // Defensive sweep: if the producer panicked, some rows may still carry
-        // the skeleton placeholder. Promote those to a visible "unknown" status
-        // so the footer summary doesn't count the ellipsis literal.
-        for r in app.rows.iter_mut() {
-            if r.status == "…" {
-                r.status = "unknown".to_string();
-            }
-        }
+    // Redraw after the sweep so any panicked rows display "unknown" instead
+    // of "..." in the final scrollback frame.
+    guard.as_mut().draw(|f| app.render(f))?;
 
-        // Redraw after the sweep so any panicked rows display "unknown" instead
-        // of "…" in the final scrollback frame.
-        terminal
-            .draw(|f| app.render(f))
-            .map_err(crate::error::CwError::Io)?;
-        drop(terminal);
-
-        Ok(app
-            .rows
-            .into_iter()
-            .map(|r| WorktreeRow {
-                worktree_id: r.worktree_id,
-                current_branch: r.current_branch,
-                status: r.status,
-                age: r.age,
-                rel_path: r.rel_path,
-            })
-            .collect())
-    })();
-
-    // Always restore the terminal, even on error. ratatui::restore is a no-op
-    // if no terminal modes were changed (Inline Viewport doesn't enter raw
-    // mode), but covers any future code paths that do.
-    ratatui::restore();
-
-    result
+    Ok(app
+        .into_rows()
+        .into_iter()
+        .map(|r| WorktreeRow {
+            worktree_id: r.worktree_id,
+            current_branch: r.current_branch,
+            status: r.status,
+            age: r.age,
+            rel_path: r.rel_path,
+        })
+        .collect())
 }
 
 /// Look up the intended branch for a worktree via git config metadata.
@@ -625,7 +651,7 @@ pub fn show_tree(no_cache: bool) -> Result<()> {
 }
 
 /// Display usage analytics for worktrees.
-pub fn show_stats() -> Result<()> {
+pub fn show_stats(no_cache: bool) -> Result<()> {
     let repo = git::get_repo_root(None)?;
     let feature_worktrees = git::get_feature_worktrees(Some(&repo))?;
 
@@ -648,8 +674,7 @@ pub fn show_stats() -> Result<()> {
 
     let mut data: Vec<WtData> = Vec::new();
 
-    // stats has no --no-cache CLI flag; always uses the cached value.
-    let pr_cache = PrCache::load_or_fetch(&repo, false);
+    let pr_cache = PrCache::load_or_fetch(&repo, no_cache);
 
     for (branch_name, path) in &feature_worktrees {
         let status = get_worktree_status(path, &repo, Some(branch_name.as_str()), &pr_cache);
@@ -1039,6 +1064,9 @@ mod tests {
         use std::path::PathBuf;
         let non_existent = PathBuf::from("/tmp/gw-test-nonexistent-12345");
         let repo = PathBuf::from("/tmp");
-        assert_eq!(get_worktree_status(&non_existent, &repo, None, &PrCache::default()), "stale");
+        assert_eq!(
+            get_worktree_status(&non_existent, &repo, None, &PrCache::default()),
+            "stale"
+        );
     }
 }

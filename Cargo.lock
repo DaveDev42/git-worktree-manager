@@ -508,7 +508,6 @@ dependencies = [
  "clap",
  "clap_complete",
  "console",
- "crossterm",
  "dialoguer",
  "dirs",
  "flate2",

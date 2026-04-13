@@ -12,10 +12,11 @@ use git_worktree_manager::operations::{
     path_cmd, setup_claude, shell, stash, worktree,
 };
 use git_worktree_manager::shell_functions;
+use git_worktree_manager::tui;
 use git_worktree_manager::update;
 
 fn main() {
-    git_worktree_manager::tui::install_panic_hook();
+    tui::install_panic_hook();
     let cli = Cli::parse();
 
     // Handle --generate-completion before anything else
@@ -51,16 +52,16 @@ fn main() {
 
     let result = match cli.command {
         // Display commands
-        Some(Commands::List { no_cache }) => {
+        Some(Commands::List { cache }) => {
             if cli.global {
                 global_ops::global_list_worktrees()
             } else {
-                display::list_worktrees(no_cache)
+                display::list_worktrees(cache.no_cache)
             }
         }
-        Some(Commands::Status { no_cache }) => display::show_status(no_cache),
-        Some(Commands::Tree { no_cache }) => display::show_tree(no_cache),
-        Some(Commands::Stats) => display::show_stats(),
+        Some(Commands::Status { cache }) => display::show_status(cache.no_cache),
+        Some(Commands::Tree { cache }) => display::show_tree(cache.no_cache),
+        Some(Commands::Stats { cache }) => display::show_stats(cache.no_cache),
         Some(Commands::Diff {
             branch1,
             branch2,

@@ -4,7 +4,15 @@
 pub mod completions;
 pub mod global;
 
-use clap::{Parser, Subcommand, ValueHint};
+use clap::{Args, Parser, Subcommand, ValueHint};
+
+/// Shared cache-bypass flag, flattened into subcommands that query PR status.
+#[derive(Args, Debug, Clone)]
+pub struct CacheControl {
+    /// Bypass PR status cache and refresh from gh
+    #[arg(long)]
+    pub no_cache: bool,
+}
 
 /// Validate config key (accepts any string but provides completion hints).
 fn parse_config_key(s: &str) -> Result<String, String> {
@@ -184,9 +192,8 @@ pub enum Commands {
 
     /// Show current worktree status
     Status {
-        /// Bypass PR status cache and refresh from gh
-        #[arg(long)]
-        no_cache: bool,
+        #[command(flatten)]
+        cache: CacheControl,
     },
 
     /// Delete a worktree
@@ -223,9 +230,8 @@ pub enum Commands {
     /// List all worktrees
     #[command(alias = "ls")]
     List {
-        /// Bypass PR status cache and refresh from gh
-        #[arg(long)]
-        no_cache: bool,
+        #[command(flatten)]
+        cache: CacheControl,
     },
 
     /// Batch cleanup of worktrees
@@ -254,13 +260,15 @@ pub enum Commands {
 
     /// Display worktree hierarchy as a tree
     Tree {
-        /// Bypass PR status cache and refresh from gh
-        #[arg(long)]
-        no_cache: bool,
+        #[command(flatten)]
+        cache: CacheControl,
     },
 
     /// Show worktree statistics
-    Stats,
+    Stats {
+        #[command(flatten)]
+        cache: CacheControl,
+    },
 
     /// Compare two branches
     Diff {

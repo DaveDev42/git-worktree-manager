@@ -107,7 +107,8 @@ fn check_worktree_accessibility(
     let mut stale_count = 0u32;
     let mut worktrees: Vec<WtInfo> = Vec::new();
 
-    let pr_cache = PrCache::load_or_fetch(repo, false);
+    // doctor needs fresh state to detect drift; bypass the 60s TTL.
+    let pr_cache = PrCache::load_or_fetch(repo, true);
 
     for (branch_name, path) in &feature_worktrees {
         let status = get_worktree_status(path, repo, Some(branch_name.as_str()), &pr_cache);
