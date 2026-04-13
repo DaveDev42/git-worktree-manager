@@ -9,13 +9,17 @@ use ratatui::widgets::{Block, Borders, Cell, Row, Table};
 use crate::tui::style;
 
 /// Placeholder status shown while a worktree's status is being computed.
-/// ASCII "..." rather than the Unicode ellipsis "…" for terminal-width safety.
+/// Three ASCII dots — chosen for portability across terminals that don't
+/// render Unicode reliably (avoids the Unicode ellipsis "…" which is a
+/// multi-byte character and may not display correctly on all systems).
 pub const PLACEHOLDER: &str = "...";
 
 #[derive(Debug, Clone)]
 pub struct RowData {
     pub worktree_id: String,
     pub current_branch: String,
+    // #29: `status` uses owned String for simplicity; Cow<'static, str> would avoid
+    // the placeholder allocation but adds lifetime gymnastics. Deferred.
     pub status: String, // PLACEHOLDER while pending
     pub age: String,
     pub rel_path: String,
@@ -36,7 +40,7 @@ impl ListApp {
     }
 
     /// Mutable access to a single row's status by index.
-    pub fn set_status(&mut self, i: usize, status: String) {
+    pub(crate) fn set_status(&mut self, i: usize, status: String) {
         if let Some(r) = self.rows.get_mut(i) {
             r.status = status;
         }
@@ -45,12 +49,22 @@ impl ListApp {
     /// Replace every row whose status equals `PLACEHOLDER` with `replacement`.
     /// Called after the producer finishes (or panics) to ensure no placeholder
     /// remains in the final output.
-    pub fn finalize_pending(&mut self, replacement: &str) {
+    ///
+    /// After calling `finalize_pending`, all rows have non-PLACEHOLDER status;
+    /// `is_complete()` will then always return true. Calling `set_status` after
+    /// `finalize_pending` is undefined.
+    ///
+    /// Returns `true` if any rows were updated (i.e., had PLACEHOLDER status),
+    /// `false` if nothing changed — lets callers skip a redundant redraw.
+    pub fn finalize_pending(&mut self, replacement: &str) -> bool {
+        let mut changed = false;
         for r in self.rows.iter_mut() {
             if r.status == PLACEHOLDER {
                 r.status = replacement.to_string();
+                changed = true;
             }
         }
+        changed
     }
 
     /// Consume `self`, yielding the inner rows.
@@ -58,6 +72,11 @@ impl ListApp {
         self.rows
     }
 
+    /// Returns true when every row has a non-PLACEHOLDER status.
+    ///
+    /// After calling `finalize_pending`, all rows have non-PLACEHOLDER status;
+    /// `is_complete()` will then always return true. Calling `set_status` after
+    /// `finalize_pending` is undefined.
     pub fn is_complete(&self) -> bool {
         self.rows.iter().all(|r| r.status != PLACEHOLDER)
     }
@@ -94,6 +113,10 @@ impl ListApp {
             })
             .collect();
 
+        // #28: fixed proportional widths because the terminal width may change
+        // between draws (user resizes). The static layout used for non-TTY and
+        // narrow terminals computes column widths from data lengths instead —
+        // that's safe because it only runs once, after all statuses are known.
         let widths = [
             Constraint::Percentage(20),
             Constraint::Percentage(25),
@@ -119,6 +142,10 @@ impl ListApp {
 ///
 /// On return, `app.rows` contains final statuses. The viewport exits via
 /// `drop(terminal)` which leaves the final frame in the scrollback.
+///
+/// Returns `std::io::Result<()>`. In `display.rs`, the `#[from]` impl on
+/// `CwError::Io` converts this to `crate::error::Result` via `From` — no
+/// manual mapping is needed at the call site.
 pub fn run<B: ratatui::backend::Backend>(
     terminal: &mut ratatui::Terminal<B>,
     app: &mut ListApp,
@@ -198,12 +225,14 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
 
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
+        // #26: bind the handle and join so the thread is not silently leaked.
+        let h = std::thread::spawn(move || {
             tx.send((0, "clean".to_string())).unwrap();
             tx.send((1, "modified".to_string())).unwrap();
         });
 
         run(&mut terminal, &mut app, rx).unwrap();
+        h.join().unwrap(); // #26: propagate any thread panic to the test runner
         assert_eq!(app.rows()[0].status, "clean");
         assert_eq!(app.rows()[1].status, "modified");
         assert!(app.is_complete());
@@ -219,12 +248,14 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
 
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
+        // #27: bind the handle and join so the thread is not silently leaked.
+        let h = std::thread::spawn(move || {
             tx.send((0, "clean".to_string())).unwrap();
             // Drop tx without sending the second row — simulates panic.
         });
 
         run(&mut terminal, &mut app, rx).unwrap();
+        h.join().unwrap(); // #27: propagate any thread panic to the test runner
         assert_eq!(app.rows()[0].status, "clean");
         assert_eq!(app.rows()[1].status, PLACEHOLDER); // still pending
         assert!(!app.is_complete());
@@ -239,6 +270,34 @@ mod tests {
         app.finalize_pending("unknown");
         assert_eq!(app.rows()[0].status, "unknown");
         assert_eq!(app.rows()[1].status, "clean"); // unchanged
+    }
+
+    // #36: tests for finalize_pending's bool return value (guarded redraw).
+    #[test]
+    fn finalize_pending_replaces_only_placeholders() {
+        let mut app = ListApp::new(vec![
+            sample_row("a", "clean"),
+            sample_row("b", PLACEHOLDER),
+            sample_row("c", "modified"),
+        ]);
+        let changed = app.finalize_pending("unknown");
+        assert!(
+            changed,
+            "should return true when placeholders were replaced"
+        );
+        let rows = app.rows();
+        assert_eq!(rows[0].status, "clean");
+        assert_eq!(rows[1].status, "unknown");
+        assert_eq!(rows[2].status, "modified");
+    }
+
+    #[test]
+    fn finalize_pending_returns_false_when_nothing_pending() {
+        let mut app = ListApp::new(vec![sample_row("a", "clean")]);
+        assert!(
+            !app.finalize_pending("unknown"),
+            "should return false when no placeholders present"
+        );
     }
 
     fn buffer_to_string(buf: &ratatui::buffer::Buffer) -> String {

@@ -13,8 +13,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-// TODO(config): make TTL configurable via GW_PR_CACHE_TTL env var in a
-// follow-up (config surface decision deferred from review).
+// TTL is intentionally non-configurable — 60s balances freshness against
+// `gh` rate limits. A future env-var escape hatch can be added if users ask.
 const CACHE_TTL_SECS: u64 = 60;
 
 /// Cap on PRs fetched per `gh pr list` call. Repos with more PRs will see the
@@ -28,6 +28,7 @@ const GH_FETCH_LIMIT: usize = 500;
 ///
 /// The `#[serde(other)]` variant catches any future states GitHub may add
 /// without breaking deserialization.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum PrState {
@@ -70,6 +71,9 @@ impl PrCache {
 
     /// Fetch PR state via `gh pr list` and persist to disk. Returns an empty
     /// cache on any failure so callers' fallback path still works.
+    ///
+    /// On failure, the on-disk cache (if any) is left untouched — only a
+    /// successful fetch triggers a write.
     pub fn fetch_and_persist(repo: &Path) -> Self {
         match fetch_from_gh(repo) {
             Some(map) => {
@@ -83,6 +87,10 @@ impl PrCache {
     /// Load from disk if fresh (and `no_cache` is false), else fetch via
     /// `gh pr list` and persist. Returns an empty cache on any failure so
     /// the caller's fallback path still works.
+    ///
+    /// When `no_cache=true` and `gh` is down, the previous on-disk cache is
+    /// preserved but not consulted; the next non-bypass call may serve stale
+    /// data until `gh` recovers.
     pub fn load_or_fetch(repo: &Path, no_cache: bool) -> Self {
         if !no_cache {
             if let Some(c) = Self::from_disk(repo) {
@@ -98,6 +106,9 @@ impl PrCache {
 ///
 /// If canonicalization fails (transient FS issue), fall back to the raw path.
 /// Caches keyed on raw vs canonical paths will be different but self-consistent.
+///
+/// Truncated to 64 bits (16 hex chars) — at typical user repo counts (~10s),
+/// collision odds are negligible (birthday bound ≈ 1 in 2^32 per pair).
 fn repo_hash(repo: &Path) -> String {
     let canon = repo.canonicalize().unwrap_or_else(|_| repo.to_path_buf());
     let mut hasher = Sha256::new();
@@ -145,6 +156,8 @@ struct GhPr {
 fn fetch_from_gh(repo: &Path) -> Option<HashMap<String, PrState>> {
     #[cfg(test)]
     {
+        // #37: GW_TEST_GH_FAIL takes precedence over GW_TEST_GH_JSON — a test
+        // that sets both will always get None, never the JSON payload.
         if std::env::var("GW_TEST_GH_FAIL").ok().as_deref() == Some("1") {
             return None;
         }
@@ -191,19 +204,24 @@ fn fetch_from_gh(repo: &Path) -> Option<HashMap<String, PrState>> {
     Some(map)
 }
 
-fn now_secs() -> u64 {
+/// Returns the current Unix timestamp in seconds, or `None` if the system
+/// clock is broken (pre-epoch or overflow). `None` means: skip caching
+/// entirely — broken clock = no TTL we can trust.
+fn now_secs() -> Option<u64> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
+        .ok()
         .map(|d| d.as_secs())
-        .unwrap_or(0)
 }
 
 /// Read cache file if it exists and is still within TTL. Any error → None.
+/// Returns None if `now_secs()` is None (broken clock — safer to refetch).
 fn load_from_disk(repo: &Path) -> Option<HashMap<String, PrState>> {
     let path = cache_path_for(repo)?;
     let data = std::fs::read_to_string(&path).ok()?;
     let file: CacheFile = serde_json::from_str(&data).ok()?;
-    let now = now_secs();
+    // broken clock (None) → refuse to serve possibly-stale cache
+    let now = now_secs()?;
     // Reject entries from the future (clock skew guard).
     if file.fetched_at > now {
         return None;
@@ -218,8 +236,12 @@ fn load_from_disk(repo: &Path) -> Option<HashMap<String, PrState>> {
 /// Best-effort write. Failures are silently ignored — the in-memory result is
 /// still returned to the caller.
 ///
-/// TODO(perf): avoid prs.clone() by taking ownership; deferred as premature
-/// optimization for this PR.
+/// On failure, the on-disk cache (if any) is left untouched.
+///
+/// #14/#23: `prs` is borrowed (&HashMap) and cloned into `CacheFile`. Taking
+/// ownership would require `fetch_and_persist` to pass the map by value,
+/// complicating the return-value path for no meaningful perf gain at typical
+/// worktree counts (~10s of PRs). Kept as a borrow for clarity.
 fn write_to_disk(repo: &Path, prs: &HashMap<String, PrState>) {
     let Some(path) = cache_path_for(repo) else {
         return;
@@ -227,8 +249,12 @@ fn write_to_disk(repo: &Path, prs: &HashMap<String, PrState>) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
+    // #13: broken clock (now_secs() == None) means we cannot set a meaningful
+    // fetched_at timestamp — skip persistence entirely; in-memory result is still
+    // returned to the caller via fetch_and_persist.
+    let Some(now) = now_secs() else { return };
     let file = CacheFile {
-        fetched_at: now_secs(),
+        fetched_at: now,
         repo: repo.to_string_lossy().into_owned(),
         prs: prs.clone(),
     };
@@ -245,11 +271,26 @@ fn write_to_disk(repo: &Path, prs: &HashMap<String, PrState>) {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.subsec_nanos())
         .unwrap_or(0);
-    let tmp = path.with_extension(format!("tmp.{}.{}", std::process::id(), nanos));
-    if std::fs::write(&tmp, json).is_ok() && std::fs::rename(&tmp, &path).is_err() {
-        // Windows fallback: target may already exist; best-effort remove then retry.
+    // #11: use with_file_name instead of with_extension so the .json suffix
+    // is preserved (with_extension would strip it, giving "pr-status-<hash>.tmp.PID.NANOS").
+    let tmp = path.with_file_name(format!(
+        "{}.tmp.{}.{}",
+        path.file_name().unwrap_or_default().to_string_lossy(),
+        std::process::id(),
+        nanos,
+    ));
+    // #34: clean up the tmp file on initial write failure.
+    if std::fs::write(&tmp, &json).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return;
+    }
+    if std::fs::rename(&tmp, &path).is_err() {
+        // #12: Windows fallback: target may already exist; best-effort remove then
+        // retry. If the second rename also fails, remove the orphaned tmp file.
         let _ = std::fs::remove_file(&path);
-        let _ = std::fs::rename(&tmp, &path);
+        if std::fs::rename(&tmp, &path).is_err() {
+            let _ = std::fs::remove_file(&tmp); // cleanup orphan
+        }
     }
 }
 
@@ -268,6 +309,11 @@ mod tests {
     /// duration of any test that mutates GW_TEST_GH_*, XDG_CACHE_HOME, or
     /// other process-global env vars. Recover from poisoning so one failing
     /// test doesn't break the rest.
+    ///
+    /// #15: If a test panics while holding this lock, the env vars may remain
+    /// polluted. The `with_cache_dir` Drop guard (#16) restores `GW_TEST_CACHE_DIR`
+    /// on drop, so subsequent tests see a clean env for that variable. Tests that
+    /// directly set `GW_TEST_GH_*` vars also remove them in their cleanup block.
     fn env_lock() -> MutexGuard<'static, ()> {
         ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -322,14 +368,22 @@ mod tests {
 
     use tempfile::tempdir;
 
+    /// Set `GW_TEST_CACHE_DIR` for the duration of `f`. Restores the previous
+    /// value (or removes the var) via a Drop guard, so the env is cleaned up
+    /// even if `f` panics.
     fn with_cache_dir<F: FnOnce()>(dir: &std::path::Path, f: F) {
-        let prev = std::env::var_os("GW_TEST_CACHE_DIR");
+        struct Guard(Option<std::ffi::OsString>);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(v) => std::env::set_var("GW_TEST_CACHE_DIR", v),
+                    None => std::env::remove_var("GW_TEST_CACHE_DIR"),
+                }
+            }
+        }
+        let _g = Guard(std::env::var_os("GW_TEST_CACHE_DIR"));
         std::env::set_var("GW_TEST_CACHE_DIR", dir);
         f();
-        match prev {
-            Some(v) => std::env::set_var("GW_TEST_CACHE_DIR", v),
-            None => std::env::remove_var("GW_TEST_CACHE_DIR"),
-        }
     }
 
     #[test]
@@ -385,7 +439,7 @@ mod tests {
             let repo = std::path::Path::new("/tmp/repo-future-xyz");
             let path = cache_path_for(repo).unwrap();
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            let far_future = now_secs() + 9999;
+            let far_future = now_secs().unwrap() + 9999;
             let file = CacheFile {
                 fetched_at: far_future,
                 repo: repo.to_string_lossy().into_owned(),
@@ -420,7 +474,7 @@ mod tests {
             let path = cache_path_for(repo).unwrap();
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             let file = CacheFile {
-                fetched_at: now_secs(),
+                fetched_at: now_secs().unwrap(),
                 repo: repo.to_string_lossy().into_owned(),
                 prs: [("feat/cached".to_string(), PrState::Merged)]
                     .into_iter()
@@ -447,7 +501,7 @@ mod tests {
             let path = cache_path_for(repo).unwrap();
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             let file = CacheFile {
-                fetched_at: now_secs(),
+                fetched_at: now_secs().unwrap(),
                 repo: repo.to_string_lossy().into_owned(),
                 prs: [("feat/old".to_string(), PrState::Open)]
                     .into_iter()

@@ -584,7 +584,6 @@ pub fn is_branch_merged(feature_branch: &str, base_branch: &str, repo: Option<&P
     false
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

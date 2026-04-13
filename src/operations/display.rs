@@ -3,6 +3,10 @@
 use std::path::Path;
 use std::sync::mpsc;
 
+// #35: two `console`-related imports are intentional:
+// - `console::style` is from the external `console` crate (ANSI styling)
+// - `crate::console as cwconsole` is this crate's own console helpers (terminal_width, etc.)
+// Aliasing avoids a name collision that would shadow the crate's `style` function.
 use console::style;
 use ratatui::{backend::CrosstermBackend, Terminal, TerminalOptions, Viewport};
 
@@ -33,6 +37,24 @@ const MIN_TABLE_WIDTH: usize = 100;
 ///    preserved (merge commit strategy). Used when `gh` is not available.
 ///
 /// See `pr_cache::PrCache` for the batched fetch and TTL details.
+///
+/// TODO(perf): #24 — hoist `base_branch` lookup out of this function. Build a
+/// `HashMap<branch, base>` in `list_worktrees` before the par_iter and pass it
+/// in via a `WorktreeContext` struct alongside `pr_cache` and `cwd_canon`.
+///
+/// TODO(perf): #25 — hoist `cwd_canon` (`std::env::current_dir()?.canonicalize()`)
+/// out of this function. Currently computed per worktree; one canonicalization
+/// per `list_worktrees` call is sufficient. Pass via `WorktreeContext`.
+///
+/// Example `WorktreeContext` shape when these are eventually implemented:
+/// ```ignore
+/// pub struct WorktreeContext<'a> {
+///     pub repo: &'a Path,
+///     pub pr_cache: &'a PrCache,
+///     pub base_branches: &'a HashMap<String, String>,
+///     pub cwd_canon: Option<&'a Path>,
+/// }
+/// ```
 pub fn get_worktree_status(
     path: &Path,
     repo: &Path,
@@ -195,11 +217,17 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
     }
 
     let is_tty = crate::tui::stdout_is_tty();
+    // #18/#33: cache terminal_width() once — used in both the progressive/static
+    // branch decision and the post-render print guard.
     let term_width = cwconsole::terminal_width();
+    // #18: extracted so both the render-path and the print-path use the same bool.
+    let use_progressive = is_tty && term_width >= MIN_TABLE_WIDTH;
 
-    let rows: Vec<WorktreeRow> = if is_tty && term_width >= MIN_TABLE_WIDTH {
+    let rows: Vec<WorktreeRow> = if use_progressive {
         render_rows_progressive(&repo, &pr_cache, inputs)?
     } else {
+        // #17: rayon's `par_iter` joins before returning, so `&pr_cache` is
+        // safely borrowed across worker threads (no use-after-free risk).
         inputs
             .into_par_iter()
             .map(|i| {
@@ -212,7 +240,7 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
 
     // In the TTY+wide path the Inline Viewport has already drawn the table.
     // In the static path (narrow terminal or non-TTY) we still need to print.
-    if !(is_tty && term_width >= MIN_TABLE_WIDTH) {
+    if !use_progressive {
         if term_width >= MIN_TABLE_WIDTH {
             print_worktree_table(&rows);
         } else {
@@ -235,18 +263,32 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
 /// RAII guard: drops the terminal before calling `ratatui::restore()`.
 /// Ensures terminal modes are restored deterministically even on early return
 /// or panic, without relying on a closure-then-restore pattern.
-struct TerminalGuard<B: ratatui::backend::Backend>(Option<ratatui::Terminal<B>>);
+///
+/// #19: concrete backend type avoids unnecessary generics — this guard is only
+/// ever created for the crossterm+stdout path used in `render_rows_progressive`.
+type CrosstermTerminal = ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>;
 
-impl<B: ratatui::backend::Backend> TerminalGuard<B> {
-    fn as_mut(&mut self) -> &mut ratatui::Terminal<B> {
+struct TerminalGuard(Option<CrosstermTerminal>);
+
+impl TerminalGuard {
+    fn new(terminal: CrosstermTerminal) -> Self {
+        // #20: signal to the panic hook that a ratatui terminal is active.
+        crate::tui::mark_ratatui_active();
+        Self(Some(terminal))
+    }
+
+    fn as_mut(&mut self) -> &mut CrosstermTerminal {
         self.0.as_mut().expect("terminal already taken")
     }
 }
 
-impl<B: ratatui::backend::Backend> Drop for TerminalGuard<B> {
+impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = self.0.take(); // drop terminal first, releasing raw mode if any
         ratatui::restore();
+        // #20: clear the panic-hook flag after restore — a subsequent panic
+        // (unlikely but possible) must not try to restore a non-existent terminal.
+        crate::tui::mark_ratatui_inactive();
     }
 }
 
@@ -276,12 +318,12 @@ fn render_rows_progressive(
 
     let stdout = std::io::stdout();
     let backend = CrosstermBackend::new(stdout);
-    let mut guard = TerminalGuard(Some(Terminal::with_options(
+    let mut guard = TerminalGuard::new(Terminal::with_options(
         backend,
         TerminalOptions {
             viewport: Viewport::Inline(viewport_height),
         },
-    )?));
+    )?);
 
     // Producer: parallel per-worktree status computation on a dedicated OS
     // thread; rayon parallelism is used within that thread.
@@ -295,6 +337,8 @@ fn render_rows_progressive(
     // subprocesses, which is I/O-bound but small enough that oversubscription
     // doesn't help.
     let (tx, rx) = mpsc::channel();
+    // #3/#4: join always happens before `?` propagates; panic is surfaced as a
+    // warning rather than silently swallowed by `let _ = producer.join()`.
     std::thread::scope(|s| -> Result<()> {
         let producer = s.spawn(move || {
             inputs
@@ -311,31 +355,41 @@ fn render_rows_progressive(
                 });
         });
 
-        crate::tui::list_view::run(guard.as_mut(), &mut app, rx)?;
-        let _ = producer.join(); // producer panic ⇒ rx already disconnected; sweep below covers it
-        Ok(())
+        let run_result = crate::tui::list_view::run(guard.as_mut(), &mut app, rx);
+        let producer_result = producer.join();
+        if let Err(panic) = producer_result {
+            eprintln!(
+                "warning: status producer thread panicked, some rows may show \"unknown\": {:?}",
+                panic
+            );
+        }
+        run_result.map_err(crate::error::CwError::from)
     })?;
 
     // Defensive sweep: if the producer panicked, some rows may still carry
     // the skeleton placeholder. Promote those to a visible "unknown" status
     // so the footer summary doesn't count the placeholder literal.
-    app.finalize_pending("unknown");
+    // #5/#39: only redraw when something actually changed to avoid adding a
+    // duplicate table frame to scrollback. finalize_pending returns true iff
+    // at least one placeholder was replaced.
+    if app.finalize_pending("unknown") {
+        guard.as_mut().draw(|f| app.render(f))?;
+    }
 
-    // Redraw after the sweep so any panicked rows display "unknown" instead
-    // of "..." in the final scrollback frame.
-    guard.as_mut().draw(|f| app.render(f))?;
+    Ok(app.into_rows().into_iter().map(Into::into).collect())
+}
 
-    Ok(app
-        .into_rows()
-        .into_iter()
-        .map(|r| WorktreeRow {
+/// #30: conversion from TUI row data to the internal display row.
+impl From<crate::tui::list_view::RowData> for WorktreeRow {
+    fn from(r: crate::tui::list_view::RowData) -> Self {
+        WorktreeRow {
             worktree_id: r.worktree_id,
             current_branch: r.current_branch,
             status: r.status,
             age: r.age,
             rel_path: r.rel_path,
-        })
-        .collect())
+        }
+    }
 }
 
 /// Look up the intended branch for a worktree via git config metadata.
