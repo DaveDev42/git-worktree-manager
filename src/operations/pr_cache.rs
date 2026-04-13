@@ -115,6 +115,44 @@ fn fetch_from_gh(repo: &Path) -> Option<HashMap<String, String>> {
     Some(map)
 }
 
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Read cache file if it exists and is still within TTL. Any error → None.
+fn load_from_disk(repo: &Path) -> Option<HashMap<String, String>> {
+    let path = cache_path_for(repo)?;
+    let data = std::fs::read_to_string(&path).ok()?;
+    let file: CacheFile = serde_json::from_str(&data).ok()?;
+    let age = now_secs().saturating_sub(file.fetched_at);
+    if age > CACHE_TTL_SECS {
+        return None;
+    }
+    Some(file.prs)
+}
+
+/// Best-effort write. Failures are silently ignored — the in-memory result is
+/// still returned to the caller.
+fn write_to_disk(repo: &Path, prs: &HashMap<String, String>) {
+    let Some(path) = cache_path_for(repo) else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let file = CacheFile {
+        fetched_at: now_secs(),
+        repo: repo.to_string_lossy().into_owned(),
+        prs: prs.clone(),
+    };
+    if let Ok(json) = serde_json::to_string(&file) {
+        let _ = std::fs::write(&path, json);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,5 +202,68 @@ mod tests {
         let result = fetch_from_gh(std::path::Path::new("."));
         std::env::remove_var("GW_TEST_GH_FAIL");
         assert!(result.is_none());
+    }
+
+    use tempfile::tempdir;
+
+    fn with_cache_dir<F: FnOnce()>(dir: &std::path::Path, f: F) {
+        let prev = std::env::var_os("XDG_CACHE_HOME");
+        std::env::set_var("XDG_CACHE_HOME", dir);
+        f();
+        match prev {
+            Some(v) => std::env::set_var("XDG_CACHE_HOME", v),
+            None => std::env::remove_var("XDG_CACHE_HOME"),
+        }
+    }
+
+    #[test]
+    fn load_from_disk_returns_fresh_entry() {
+        let dir = tempdir().unwrap();
+        with_cache_dir(dir.path(), || {
+            let repo = std::path::Path::new("/tmp/repo-xyz");
+            let path = cache_path_for(repo).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+            let file = CacheFile {
+                fetched_at: now,
+                repo: repo.to_string_lossy().into_owned(),
+                prs: [("feat/a".to_string(), "OPEN".to_string())].into_iter().collect(),
+            };
+            std::fs::write(&path, serde_json::to_string(&file).unwrap()).unwrap();
+
+            let loaded = load_from_disk(repo).expect("fresh cache");
+            assert_eq!(loaded.get("feat/a").map(String::as_str), Some("OPEN"));
+        });
+    }
+
+    #[test]
+    fn load_from_disk_rejects_expired_entry() {
+        let dir = tempdir().unwrap();
+        with_cache_dir(dir.path(), || {
+            let repo = std::path::Path::new("/tmp/repo-expired-xyz");
+            let path = cache_path_for(repo).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let file = CacheFile {
+                fetched_at: 0, // ancient
+                repo: repo.to_string_lossy().into_owned(),
+                prs: HashMap::new(),
+            };
+            std::fs::write(&path, serde_json::to_string(&file).unwrap()).unwrap();
+
+            assert!(load_from_disk(repo).is_none());
+        });
+    }
+
+    #[test]
+    fn load_from_disk_rejects_corrupt_file() {
+        let dir = tempdir().unwrap();
+        with_cache_dir(dir.path(), || {
+            let repo = std::path::Path::new("/tmp/repo-corrupt-xyz");
+            let path = cache_path_for(repo).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "not json").unwrap();
+
+            assert!(load_from_disk(repo).is_none());
+        });
     }
 }
