@@ -58,6 +58,63 @@ fn cache_path_for(repo: &Path) -> Option<PathBuf> {
     Some(base.join(format!("pr-status-{}.json", repo_hash(repo))))
 }
 
+#[derive(Debug, Deserialize)]
+struct GhPr {
+    #[serde(rename = "headRefName")]
+    head_ref_name: String,
+    state: String,
+}
+
+/// Run `gh pr list --state all --json headRefName,state --limit N` and parse.
+/// Returns None on any failure (gh missing, non-zero exit, JSON parse error).
+///
+/// Test hooks:
+/// - `GW_TEST_GH_JSON` env var: if set, parsed as the `gh` output instead of
+///   spawning `gh`.
+/// - `GW_TEST_GH_FAIL=1`: simulate a failure.
+fn fetch_from_gh(repo: &Path) -> Option<HashMap<String, String>> {
+    if std::env::var("GW_TEST_GH_FAIL").ok().as_deref() == Some("1") {
+        return None;
+    }
+
+    let stdout = if let Ok(json) = std::env::var("GW_TEST_GH_JSON") {
+        json
+    } else {
+        if !crate::git::has_command("gh") {
+            return None;
+        }
+        let limit = GH_FETCH_LIMIT.to_string();
+        let result = crate::git::run_command(
+            &[
+                "gh",
+                "pr",
+                "list",
+                "--state",
+                "all",
+                "--json",
+                "headRefName,state",
+                "--limit",
+                &limit,
+            ],
+            Some(repo),
+            false,
+            true,
+        )
+        .ok()?;
+        if result.returncode != 0 {
+            return None;
+        }
+        result.stdout
+    };
+
+    let prs: Vec<GhPr> = serde_json::from_str(stdout.trim()).ok()?;
+    let mut map = HashMap::with_capacity(prs.len());
+    for pr in prs {
+        map.insert(pr.head_ref_name, pr.state);
+    }
+    Some(map)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,5 +144,25 @@ mod tests {
         assert!(s.contains("gw"));
         assert!(s.contains("pr-status-"));
         assert!(s.ends_with(".json"));
+    }
+
+    #[test]
+    fn fetch_parses_gh_json_from_env() {
+        std::env::set_var(
+            "GW_TEST_GH_JSON",
+            r#"[{"headRefName":"feat/foo","state":"OPEN"},{"headRefName":"fix/bar","state":"MERGED"}]"#,
+        );
+        let prs = fetch_from_gh(std::path::Path::new(".")).expect("parsed");
+        std::env::remove_var("GW_TEST_GH_JSON");
+        assert_eq!(prs.get("feat/foo").map(String::as_str), Some("OPEN"));
+        assert_eq!(prs.get("fix/bar").map(String::as_str), Some("MERGED"));
+    }
+
+    #[test]
+    fn fetch_returns_none_on_forced_failure() {
+        std::env::set_var("GW_TEST_GH_FAIL", "1");
+        let result = fetch_from_gh(std::path::Path::new("."));
+        std::env::remove_var("GW_TEST_GH_FAIL");
+        assert!(result.is_none());
     }
 }
