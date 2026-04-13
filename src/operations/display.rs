@@ -20,12 +20,17 @@ const MIN_TABLE_WIDTH: usize = 100;
 /// Status priority: stale > busy > active > merged > pr-open > modified > clean
 ///
 /// Merge detection strategy:
-/// 1. `gh pr view` (primary) — works with all merge strategies (merge commit,
-///    squash merge, rebase merge) because GitHub tracks PR state independently
-///    of commit SHAs.
+/// 1. Cached `gh pr list` (primary) — works with all merge strategies (merge
+///    commit, squash merge, rebase merge) because GitHub tracks PR state
+///    independently of commit SHAs. One `gh` call per repo, cached 60 s.
 /// 2. `git branch --merged` (fallback) — only works when commit SHAs are
 ///    preserved (merge commit strategy). Used when `gh` is not available.
-pub fn get_worktree_status(path: &Path, repo: &Path, branch: Option<&str>) -> String {
+pub fn get_worktree_status(
+    path: &Path,
+    repo: &Path,
+    branch: Option<&str>,
+    pr_cache: &crate::operations::pr_cache::PrCache,
+) -> String {
     if !path.exists() {
         return "stale".to_string();
     }
@@ -55,13 +60,12 @@ pub fn get_worktree_status(path: &Path, repo: &Path, branch: Option<&str>) -> St
                 .unwrap_or_else(|| git::detect_default_branch(Some(repo)))
         };
 
-        // Primary: GitHub PR status via `gh` CLI
-        // Handles all merge strategies (merge commit, squash, rebase)
-        if let Some(pr_state) = git::get_pr_state(branch_name, Some(repo)) {
-            match pr_state.as_str() {
+        // Primary: cached PR state from a single `gh pr list` call.
+        if let Some(state) = pr_cache.state(branch_name) {
+            match state {
                 "MERGED" => return "merged".to_string(),
                 "OPEN" => return "pr-open".to_string(),
-                _ => {} // CLOSED or other — fall through
+                _ => {}
             }
         }
 
@@ -132,9 +136,11 @@ pub fn list_worktrees() -> Result<()> {
 
     let mut rows: Vec<WorktreeRow> = Vec::new();
 
+    let pr_cache = crate::operations::pr_cache::PrCache::load_or_fetch(&repo, false);
+
     for (branch, path) in &worktrees {
         let current_branch = git::normalize_branch_name(branch).to_string();
-        let status = get_worktree_status(path, &repo, Some(&current_branch));
+        let status = get_worktree_status(path, &repo, Some(&current_branch), &pr_cache);
         let rel_path = pathdiff::diff_paths(path, &repo)
             .map(|p: std::path::PathBuf| p.to_string_lossy().to_string())
             .unwrap_or_else(|| path.to_string_lossy().to_string());
@@ -391,11 +397,13 @@ pub fn show_tree() -> Result<()> {
     let mut sorted = feature_worktrees;
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
 
+    let pr_cache = crate::operations::pr_cache::PrCache::load_or_fetch(&repo, false);
+
     for (i, (branch_name, path)) in sorted.iter().enumerate() {
         let is_last = i == sorted.len() - 1;
         let prefix = if is_last { "└── " } else { "├── " };
 
-        let status = get_worktree_status(path, &repo, Some(branch_name.as_str()));
+        let status = get_worktree_status(path, &repo, Some(branch_name.as_str()), &pr_cache);
         let is_current = cwd
             .to_string_lossy()
             .starts_with(&path.to_string_lossy().to_string());
@@ -493,8 +501,10 @@ pub fn show_stats() -> Result<()> {
 
     let mut data: Vec<WtData> = Vec::new();
 
+    let pr_cache = crate::operations::pr_cache::PrCache::load_or_fetch(&repo, false);
+
     for (branch_name, path) in &feature_worktrees {
-        let status = get_worktree_status(path, &repo, Some(branch_name.as_str()));
+        let status = get_worktree_status(path, &repo, Some(branch_name.as_str()), &pr_cache);
         let age_days = path_age_days(path).unwrap_or(0.0);
 
         let commit_count = git::git_command(
@@ -867,7 +877,7 @@ mod tests {
         )
         .unwrap();
 
-        let status = get_worktree_status(&wt, repo, Some("wt1"));
+        let status = get_worktree_status(&wt, repo, Some("wt1"), &crate::operations::pr_cache::PrCache::default());
 
         // Clean up child before asserting, so a failed assert still reaps it.
         let _ = child.kill();
@@ -881,6 +891,6 @@ mod tests {
         use std::path::PathBuf;
         let non_existent = PathBuf::from("/tmp/gw-test-nonexistent-12345");
         let repo = PathBuf::from("/tmp");
-        assert_eq!(get_worktree_status(&non_existent, &repo, None), "stale");
+        assert_eq!(get_worktree_status(&non_existent, &repo, None, &crate::operations::pr_cache::PrCache::default()), "stale");
     }
 }

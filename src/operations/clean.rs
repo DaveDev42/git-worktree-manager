@@ -81,8 +81,9 @@ pub fn clean_worktrees(
     if interactive && to_delete.is_empty() {
         println!("{}\n", style("Available worktrees:").cyan().bold());
         let mut all_wt = Vec::new();
+        let pr_cache = crate::operations::pr_cache::PrCache::load_or_fetch(&repo, false);
         for (branch_name, path) in git::get_feature_worktrees(Some(&repo))? {
-            let status = get_worktree_status(&path, &repo, Some(branch_name.as_str()));
+            let status = get_worktree_status(&path, &repo, Some(branch_name.as_str()), &pr_cache);
             println!("  [{:8}] {:<30} {}", status, branch_name, path.display());
             all_wt.push((branch_name, path.to_string_lossy().to_string()));
         }
