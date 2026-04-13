@@ -10,6 +10,7 @@ use crate::error::Result;
 use crate::git;
 
 use super::display::get_worktree_status;
+use super::pr_cache::PrCache;
 use super::setup_claude;
 
 /// Worktree info collected during health check.
@@ -106,7 +107,7 @@ fn check_worktree_accessibility(
     let mut stale_count = 0u32;
     let mut worktrees: Vec<WtInfo> = Vec::new();
 
-    let pr_cache = crate::operations::pr_cache::PrCache::load_or_fetch(repo, false);
+    let pr_cache = PrCache::load_or_fetch(repo, false);
 
     for (branch_name, path) in &feature_worktrees {
         let status = get_worktree_status(path, repo, Some(branch_name.as_str()), &pr_cache);

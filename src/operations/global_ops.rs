@@ -13,6 +13,7 @@ use crate::git;
 use crate::registry;
 
 use super::display::{format_age, get_worktree_status};
+use super::pr_cache::PrCache;
 
 /// Collected row for global worktree display.
 struct GlobalWorktreeRow {
@@ -91,7 +92,7 @@ pub fn global_list_worktrees() -> Result<()> {
             }
         };
 
-        let pr_cache = crate::operations::pr_cache::PrCache::load_or_fetch(repo_path, false);
+        let pr_cache = PrCache::load_or_fetch(repo_path, false);
 
         let mut has_feature = false;
         for (branch_name, path) in &feature_wts {

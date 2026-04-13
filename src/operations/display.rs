@@ -12,6 +12,8 @@ use crate::constants::{
 use crate::error::Result;
 use crate::git;
 
+use super::pr_cache::PrCache;
+
 /// Minimum terminal width for table layout; below this, use compact layout.
 const MIN_TABLE_WIDTH: usize = 100;
 
@@ -29,7 +31,7 @@ pub fn get_worktree_status(
     path: &Path,
     repo: &Path,
     branch: Option<&str>,
-    pr_cache: &crate::operations::pr_cache::PrCache,
+    pr_cache: &PrCache,
 ) -> String {
     if !path.exists() {
         return "stale".to_string();
@@ -136,7 +138,7 @@ pub fn list_worktrees() -> Result<()> {
 
     let mut rows: Vec<WorktreeRow> = Vec::new();
 
-    let pr_cache = crate::operations::pr_cache::PrCache::load_or_fetch(&repo, false);
+    let pr_cache = PrCache::load_or_fetch(&repo, false);
 
     for (branch, path) in &worktrees {
         let current_branch = git::normalize_branch_name(branch).to_string();
@@ -397,7 +399,7 @@ pub fn show_tree() -> Result<()> {
     let mut sorted = feature_worktrees;
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let pr_cache = crate::operations::pr_cache::PrCache::load_or_fetch(&repo, false);
+    let pr_cache = PrCache::load_or_fetch(&repo, false);
 
     for (i, (branch_name, path)) in sorted.iter().enumerate() {
         let is_last = i == sorted.len() - 1;
@@ -501,7 +503,7 @@ pub fn show_stats() -> Result<()> {
 
     let mut data: Vec<WtData> = Vec::new();
 
-    let pr_cache = crate::operations::pr_cache::PrCache::load_or_fetch(&repo, false);
+    let pr_cache = PrCache::load_or_fetch(&repo, false);
 
     for (branch_name, path) in &feature_worktrees {
         let status = get_worktree_status(path, &repo, Some(branch_name.as_str()), &pr_cache);
@@ -877,7 +879,7 @@ mod tests {
         )
         .unwrap();
 
-        let status = get_worktree_status(&wt, repo, Some("wt1"), &crate::operations::pr_cache::PrCache::default());
+        let status = get_worktree_status(&wt, repo, Some("wt1"), &PrCache::default());
 
         // Clean up child before asserting, so a failed assert still reaps it.
         let _ = child.kill();
@@ -891,6 +893,6 @@ mod tests {
         use std::path::PathBuf;
         let non_existent = PathBuf::from("/tmp/gw-test-nonexistent-12345");
         let repo = PathBuf::from("/tmp");
-        assert_eq!(get_worktree_status(&non_existent, &repo, None, &crate::operations::pr_cache::PrCache::default()), "stale");
+        assert_eq!(get_worktree_status(&non_existent, &repo, None, &PrCache::default()), "stale");
     }
 }

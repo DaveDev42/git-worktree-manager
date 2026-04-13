@@ -8,6 +8,7 @@ use crate::git;
 use crate::messages;
 
 use super::display::get_worktree_status;
+use super::pr_cache::PrCache;
 
 /// Batch cleanup of worktrees based on criteria.
 pub fn clean_worktrees(
@@ -81,7 +82,7 @@ pub fn clean_worktrees(
     if interactive && to_delete.is_empty() {
         println!("{}\n", style("Available worktrees:").cyan().bold());
         let mut all_wt = Vec::new();
-        let pr_cache = crate::operations::pr_cache::PrCache::load_or_fetch(&repo, false);
+        let pr_cache = PrCache::load_or_fetch(&repo, false);
         for (branch_name, path) in git::get_feature_worktrees(Some(&repo))? {
             let status = get_worktree_status(&path, &repo, Some(branch_name.as_str()), &pr_cache);
             println!("  [{:8}] {:<30} {}", status, branch_name, path.display());
