@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.31](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.30...v0.0.31) (2026-04-13)
+
+
+### Bug Fixes
+
+* **busy:** clean up process name and pgid-based sibling exclusion ([92d6d5b](https://github.com/DaveDev42/git-worktree-manager/commit/92d6d5ba87a6eeb302c92ab2904e4483d6f3817b))
+* **busy:** resolve argv-rewritten cmd and exclude pipeline siblings ([6d2e957](https://github.com/DaveDev42/git-worktree-manager/commit/6d2e957a6537c645f30473829a6c86561a9263ed))
+
 ## [0.0.30](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.29...v0.0.30) (2026-04-13)
 
 
