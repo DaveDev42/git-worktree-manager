@@ -171,7 +171,9 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
         })
         .collect();
 
-    let rows: Vec<WorktreeRow> = if crate::tui::stdout_is_tty() {
+    let is_tty = crate::tui::stdout_is_tty();
+
+    let rows: Vec<WorktreeRow> = if is_tty {
         render_rows_progressive(&repo, &pr_cache, inputs)?
     } else {
         inputs
@@ -192,7 +194,7 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
 
     // In the TTY path the Inline Viewport has already drawn the table.
     // In the static path we still need to print it to stdout.
-    if !crate::tui::stdout_is_tty() {
+    if !is_tty {
         let term_width = cwconsole::terminal_width();
         if term_width >= MIN_TABLE_WIDTH {
             print_worktree_table(&rows);
@@ -201,38 +203,7 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
         }
     }
 
-    // Summary footer
-    let feature_count = if rows.len() > 1 { rows.len() - 1 } else { 0 };
-    if feature_count > 0 {
-        let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-        for row in &rows {
-            *counts.entry(row.status.as_str()).or_insert(0) += 1;
-        }
-
-        let mut summary_parts = Vec::new();
-        for &status_name in &[
-            "clean", "modified", "busy", "active", "pr-open", "merged", "stale",
-        ] {
-            if let Some(&count) = counts.get(status_name) {
-                if count > 0 {
-                    let styled = cwconsole::status_style(status_name)
-                        .apply_to(format!("{} {}", count, status_name));
-                    summary_parts.push(styled.to_string());
-                }
-            }
-        }
-
-        let summary = if summary_parts.is_empty() {
-            format!("\n{} feature worktree(s)", feature_count)
-        } else {
-            format!(
-                "\n{} feature worktree(s) — {}",
-                feature_count,
-                summary_parts.join(", ")
-            )
-        };
-        println!("{}", summary);
-    }
+    print_summary_footer(&rows);
 
     println!();
     Ok(())
@@ -244,7 +215,7 @@ fn render_rows_progressive(
     inputs: Vec<RowInput>,
 ) -> Result<Vec<WorktreeRow>> {
     use ratatui::{backend::CrosstermBackend, Terminal, TerminalOptions, Viewport};
-    use std::sync::{mpsc, Arc};
+    use std::sync::mpsc;
 
     // Build skeleton app.
     let row_data: Vec<crate::tui::list_view::RowData> = inputs
@@ -272,33 +243,41 @@ fn render_rows_progressive(
     )
     .map_err(crate::error::CwError::Io)?;
 
-    // Producer: parallel per-worktree status computation.
+    // Producer: parallel per-worktree status computation, scoped to borrow
+    // repo and pr_cache directly rather than via Arc.
     let (tx, rx) = mpsc::channel();
-    let repo_arc = Arc::new(repo.to_path_buf());
-    let pr_cache_arc = Arc::new(pr_cache.clone());
-    let inputs_arc = Arc::new(inputs);
-    let producer_inputs = Arc::clone(&inputs_arc);
-    let producer_repo = Arc::clone(&repo_arc);
-    let producer_cache = Arc::clone(&pr_cache_arc);
-    rayon::spawn(move || {
-        producer_inputs
-            .par_iter()
-            .enumerate()
-            .for_each_with(tx, |tx, (i, input)| {
-                let status = get_worktree_status(
-                    &input.path,
-                    &producer_repo,
-                    Some(&input.current_branch),
-                    &producer_cache,
-                );
-                let _ = tx.send((i, status));
-            });
-    });
+    rayon::in_place_scope(|scope| -> Result<()> {
+        scope.spawn(move |_| {
+            inputs
+                .par_iter()
+                .enumerate()
+                .for_each_with(tx, |tx, (i, input)| {
+                    let status = get_worktree_status(
+                        &input.path,
+                        repo,
+                        Some(&input.current_branch),
+                        pr_cache,
+                    );
+                    let _ = tx.send((i, status));
+                });
+        });
 
-    crate::tui::list_view::run(&mut terminal, &mut app, rx)
-        .map_err(crate::error::CwError::Io)?;
+        crate::tui::list_view::run(&mut terminal, &mut app, rx)
+            .map_err(crate::error::CwError::Io)?;
+        Ok(())
+    })?;
 
-    // Ensure a final redraw of the complete state, then leave scrollback.
+    // Defensive sweep: if the producer panicked, some rows may still carry
+    // the skeleton placeholder. Promote those to a visible "unknown" status
+    // so the footer summary doesn't count the ellipsis literal.
+    for r in app.rows.iter_mut() {
+        if r.status == "…" {
+            r.status = "unknown".to_string();
+        }
+    }
+
+    // Redraw after the sweep so any panicked rows display "unknown" instead
+    // of "…" in the final scrollback frame.
     terminal
         .draw(|f| app.render(f))
         .map_err(crate::error::CwError::Io)?;
@@ -363,6 +342,42 @@ fn lookup_intended_branch(repo: &Path, current_branch: &str, path: &Path) -> Opt
     }
 
     None
+}
+
+fn print_summary_footer(rows: &[WorktreeRow]) {
+    let feature_count = if rows.len() > 1 { rows.len() - 1 } else { 0 };
+    if feature_count == 0 {
+        return;
+    }
+
+    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for row in rows {
+        *counts.entry(row.status.as_str()).or_insert(0) += 1;
+    }
+
+    let mut summary_parts = Vec::new();
+    for &status_name in &[
+        "clean", "modified", "busy", "active", "pr-open", "merged", "stale",
+    ] {
+        if let Some(&count) = counts.get(status_name) {
+            if count > 0 {
+                let styled = cwconsole::status_style(status_name)
+                    .apply_to(format!("{} {}", count, status_name));
+                summary_parts.push(styled.to_string());
+            }
+        }
+    }
+
+    let summary = if summary_parts.is_empty() {
+        format!("\n{} feature worktree(s)", feature_count)
+    } else {
+        format!(
+            "\n{} feature worktree(s) — {}",
+            feature_count,
+            summary_parts.join(", ")
+        )
+    };
+    println!("{}", summary);
 }
 
 fn print_worktree_table(rows: &[WorktreeRow]) {
