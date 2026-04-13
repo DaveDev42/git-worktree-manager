@@ -59,8 +59,6 @@ impl ListApp {
     ///
     /// Returns `true` if any rows were updated (i.e., had PLACEHOLDER status),
     /// `false` if nothing changed — lets callers skip a redundant redraw.
-    // `#[must_use]` is preventive: there are no negative tests asserting it fires,
-    // because clippy's `#[must_use]` lint is not exercised by `cargo test`.
     #[must_use = "ignoring whether any rows changed may cause redundant or missing redraws"]
     pub fn finalize_pending(&mut self, replacement: &str) -> bool {
         let mut changed = false;

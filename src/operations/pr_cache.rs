@@ -9,11 +9,20 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(not(test))]
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Per-process counter appended to tmp filenames for nano-collision safety
-/// when two goroutines write the same repo cache within the same nanosecond.
+/// when two threads or processes write the same repo cache within the same nanosecond.
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Ensures the orphan-sweep runs at most once per process. Running it on every
+/// write would add a `read_dir` syscall to every cache update; once per process
+/// is sufficient because tmp files from prior runs are already old enough to sweep
+/// and new ones created within this run will be renamed away or cleaned up inline.
+#[cfg(not(test))]
+static SWEEP_DONE: OnceLock<()> = OnceLock::new();
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -276,19 +285,30 @@ fn write_to_disk(repo: &Path, prs: &HashMap<String, PrState>) {
 
     // Sweep orphans from prior failed runs (older than 60s) so the cache dir
     // doesn't accumulate cruft. Best-effort: any error is silently ignored.
-    if let Some(parent) = path.parent() {
-        if let Ok(entries) = std::fs::read_dir(parent) {
-            let cutoff = SystemTime::now()
-                .checked_sub(std::time::Duration::from_secs(60))
-                .unwrap_or_else(SystemTime::now);
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-                if name_str.contains(".tmp.") {
-                    if let Ok(meta) = entry.metadata() {
-                        if let Ok(modified) = meta.modified() {
-                            if modified < cutoff {
-                                let _ = std::fs::remove_file(entry.path());
+    // Gated on SWEEP_DONE so the read_dir syscall runs at most once per process —
+    // orphans from prior runs are already old; ones from this run are handled inline.
+    // In test builds the gate is skipped so each test gets a deterministic sweep.
+    #[cfg(not(test))]
+    let do_sweep = SWEEP_DONE.set(()).is_ok();
+    #[cfg(test)]
+    let do_sweep = true;
+    if do_sweep {
+        if let Some(parent) = path.parent() {
+            if let Ok(entries) = std::fs::read_dir(parent) {
+                // On systems with a clock < 60s past epoch, this collapses to "no orphans
+                // older than `now`", effectively skipping the sweep — acceptable degenerate.
+                let cutoff = SystemTime::now()
+                    .checked_sub(std::time::Duration::from_secs(60))
+                    .unwrap_or_else(SystemTime::now);
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    if name_str.starts_with("pr-status-") && name_str.contains(".tmp.") {
+                        if let Ok(meta) = entry.metadata() {
+                            if let Ok(modified) = meta.modified() {
+                                if modified < cutoff {
+                                    let _ = std::fs::remove_file(entry.path());
+                                }
                             }
                         }
                     }
@@ -675,6 +695,10 @@ mod tests {
                 unsafe { libc::utimes(c_path.as_ptr(), times.as_ptr()) };
             }
 
+            // Plant a fresh tmp file with current mtime — the sweep must NOT remove it.
+            let fresh_tmp = parent.join("pr-status-fresh.tmp.123.456.0");
+            std::fs::write(&fresh_tmp, "fresh").unwrap();
+
             // Trigger a write — the sweep runs before writing the tmp file.
             let mut prs = HashMap::new();
             prs.insert("feat/sweep".to_string(), PrState::Open);
@@ -684,6 +708,7 @@ mod tests {
                 !orphan.exists(),
                 "old orphan tmp file should have been swept"
             );
+            assert!(fresh_tmp.exists(), "fresh tmp file should not be swept");
             assert!(final_path.exists(), "final cache file should exist");
         });
     }

@@ -119,9 +119,11 @@ pub fn global_list_worktrees(no_cache: bool) -> Result<()> {
             }
         };
 
-        // #3/#14: use remove() to move the cache out of the map (avoids a clone),
-        // with unwrap_or_default() for safety against the narrow timing window
-        // where a repo disappears between the pre-filter and the display loop.
+        // #3/#14: use remove() to move the cache out of the map (avoids a clone).
+        // The loop has an .exists() check above (line ~99), but pr_caches is built
+        // from existing_repos, a snapshot taken before the loop. A repo that appears
+        // between the snapshot and this point passes the exists check yet has no entry
+        // in pr_caches — unwrap_or_default() handles that narrow timing window safely.
         let pr_cache = pr_caches.remove(repo_path).unwrap_or_default();
 
         let mut has_feature = false;

@@ -607,13 +607,9 @@ mod tests {
     #[test]
     fn clean_accepts_no_cache_flag() {
         let cli = Cli::try_parse_from(["gw", "clean", "--no-cache"]).expect("parses");
-        assert!(
-            matches!(&cli.command, Some(Commands::Clean { .. })),
-            "expected Clean variant, got {:?}",
-            cli.command
-        );
-        if let Some(Commands::Clean { cache, .. }) = cli.command {
-            assert!(cache.no_cache);
-        }
+        let Some(Commands::Clean { cache, .. }) = cli.command else {
+            panic!("expected Clean variant, got {:?}", cli.command);
+        };
+        assert!(cache.no_cache);
     }
 }

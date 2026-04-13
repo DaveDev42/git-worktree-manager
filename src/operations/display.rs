@@ -346,6 +346,8 @@ fn render_rows_progressive(
         }
     };
     let mut guard = TerminalGuard::new(terminal);
+    // Note: no test exercises a panicking Terminal::with_options. The double-restore
+    // path (panic hook + TerminalGuard::Drop) is documented safe in ratatui 0.28.
 
     // Producer: parallel per-worktree status computation on a dedicated OS
     // thread; rayon parallelism is used within that thread.
@@ -387,12 +389,7 @@ fn render_rows_progressive(
                 .downcast_ref::<&str>()
                 .map(|s| (*s).to_string())
                 .or_else(|| panic.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| {
-                    format!(
-                        "non-string panic payload (type {:?})",
-                        std::any::type_name_of_val(&*panic)
-                    )
-                });
+                .unwrap_or_else(|| "non-string panic payload".to_string());
             eprintln!(
                 "warning: status producer thread panicked, some rows may show \"unknown\": {}",
                 msg
