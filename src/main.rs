@@ -58,8 +58,8 @@ fn main() {
                 display::list_worktrees(no_cache)
             }
         }
-        Some(Commands::Status) => display::show_status(),
-        Some(Commands::Tree) => display::show_tree(),
+        Some(Commands::Status { no_cache }) => display::show_status(no_cache),
+        Some(Commands::Tree { no_cache }) => display::show_tree(no_cache),
         Some(Commands::Stats) => display::show_stats(),
         Some(Commands::Diff {
             branch1,

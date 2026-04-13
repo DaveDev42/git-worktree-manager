@@ -174,8 +174,15 @@ fn write_to_disk(repo: &Path, prs: &HashMap<String, String>) {
         repo: repo.to_string_lossy().into_owned(),
         prs: prs.clone(),
     };
-    if let Ok(json) = serde_json::to_string(&file) {
-        let _ = std::fs::write(&path, json);
+    let Ok(json) = serde_json::to_string(&file) else {
+        return;
+    };
+
+    // Atomic write: write to <path>.tmp.<pid>, then rename.
+    // Concurrent gw runs won't observe a torn JSON file.
+    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+    if std::fs::write(&tmp, json).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
     }
 }
 

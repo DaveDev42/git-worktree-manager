@@ -183,7 +183,11 @@ pub enum Commands {
     },
 
     /// Show current worktree status
-    Status,
+    Status {
+        /// Bypass PR status cache and refresh from gh
+        #[arg(long)]
+        no_cache: bool,
+    },
 
     /// Delete a worktree
     Delete {
@@ -249,7 +253,11 @@ pub enum Commands {
     },
 
     /// Display worktree hierarchy as a tree
-    Tree,
+    Tree {
+        /// Bypass PR status cache and refresh from gh
+        #[arg(long)]
+        no_cache: bool,
+    },
 
     /// Show worktree statistics
     Stats,

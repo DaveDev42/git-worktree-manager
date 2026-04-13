@@ -485,7 +485,7 @@ fn print_worktree_compact(rows: &[WorktreeRow]) {
 }
 
 /// Show status of current worktree and list all worktrees.
-pub fn show_status() -> Result<()> {
+pub fn show_status(no_cache: bool) -> Result<()> {
     let repo = git::get_repo_root(None)?;
 
     match git::get_current_branch(Some(&std::env::current_dir().unwrap_or_default())) {
@@ -515,11 +515,11 @@ pub fn show_status() -> Result<()> {
         }
     }
 
-    list_worktrees(false)
+    list_worktrees(no_cache)
 }
 
 /// Display worktree hierarchy in a visual tree format.
-pub fn show_tree() -> Result<()> {
+pub fn show_tree(no_cache: bool) -> Result<()> {
     let repo = git::get_repo_root(None)?;
     let cwd = std::env::current_dir().unwrap_or_default();
 
@@ -544,7 +544,7 @@ pub fn show_tree() -> Result<()> {
     let mut sorted = feature_worktrees;
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let pr_cache = PrCache::load_or_fetch(&repo, false);
+    let pr_cache = PrCache::load_or_fetch(&repo, no_cache);
 
     for (i, (branch_name, path)) in sorted.iter().enumerate() {
         let is_last = i == sorted.len() - 1;
@@ -648,6 +648,7 @@ pub fn show_stats() -> Result<()> {
 
     let mut data: Vec<WtData> = Vec::new();
 
+    // stats has no --no-cache CLI flag; always uses the cached value.
     let pr_cache = PrCache::load_or_fetch(&repo, false);
 
     for (branch_name, path) in &feature_worktrees {
