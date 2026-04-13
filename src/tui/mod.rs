@@ -29,7 +29,7 @@ pub fn stdout_is_tty() -> bool {
 pub fn install_panic_hook() {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let _ = ratatui::restore();
+        ratatui::restore();
         default(info);
     }));
 }
