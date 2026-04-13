@@ -127,6 +127,16 @@ struct WorktreeRow {
     rel_path: String,
 }
 
+/// Serial-prep input passed to status computation.
+#[derive(Clone)]
+struct RowInput {
+    path: std::path::PathBuf,
+    current_branch: String,
+    worktree_id: String,
+    age: String,
+    rel_path: String,
+}
+
 /// List all worktrees for the current repository.
 pub fn list_worktrees(no_cache: bool) -> Result<()> {
     let repo = git::get_repo_root(None)?;
@@ -141,14 +151,6 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
     let pr_cache = PrCache::load_or_fetch(&repo, no_cache);
 
     // Serial prep: cheap local work. Keep single-threaded for clarity.
-    struct RowInput {
-        path: std::path::PathBuf,
-        current_branch: String,
-        worktree_id: String,
-        age: String,
-        rel_path: String,
-    }
-
     let inputs: Vec<RowInput> = worktrees
         .iter()
         .map(|(branch, path)| {
@@ -169,26 +171,34 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
         })
         .collect();
 
-    // Parallel: I/O-bound per-worktree status work.
-    let rows: Vec<WorktreeRow> = inputs
-        .par_iter()
-        .map(|i| {
-            let status = get_worktree_status(&i.path, &repo, Some(&i.current_branch), &pr_cache);
-            WorktreeRow {
-                worktree_id: i.worktree_id.clone(),
-                current_branch: i.current_branch.clone(),
-                status,
-                age: i.age.clone(),
-                rel_path: i.rel_path.clone(),
-            }
-        })
-        .collect();
-
-    let term_width = cwconsole::terminal_width();
-    if term_width >= MIN_TABLE_WIDTH {
-        print_worktree_table(&rows);
+    let rows: Vec<WorktreeRow> = if crate::tui::stdout_is_tty() {
+        render_rows_progressive(&repo, &pr_cache, inputs)?
     } else {
-        print_worktree_compact(&rows);
+        inputs
+            .par_iter()
+            .map(|i| {
+                let status =
+                    get_worktree_status(&i.path, &repo, Some(&i.current_branch), &pr_cache);
+                WorktreeRow {
+                    worktree_id: i.worktree_id.clone(),
+                    current_branch: i.current_branch.clone(),
+                    status,
+                    age: i.age.clone(),
+                    rel_path: i.rel_path.clone(),
+                }
+            })
+            .collect()
+    };
+
+    // In the TTY path the Inline Viewport has already drawn the table.
+    // In the static path we still need to print it to stdout.
+    if !crate::tui::stdout_is_tty() {
+        let term_width = cwconsole::terminal_width();
+        if term_width >= MIN_TABLE_WIDTH {
+            print_worktree_table(&rows);
+        } else {
+            print_worktree_compact(&rows);
+        }
     }
 
     // Summary footer
@@ -226,6 +236,85 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
 
     println!();
     Ok(())
+}
+
+fn render_rows_progressive(
+    repo: &std::path::Path,
+    pr_cache: &PrCache,
+    inputs: Vec<RowInput>,
+) -> Result<Vec<WorktreeRow>> {
+    use ratatui::{backend::CrosstermBackend, Terminal, TerminalOptions, Viewport};
+    use std::sync::{mpsc, Arc};
+
+    // Build skeleton app.
+    let row_data: Vec<crate::tui::list_view::RowData> = inputs
+        .iter()
+        .map(|i| crate::tui::list_view::RowData {
+            worktree_id: i.worktree_id.clone(),
+            current_branch: i.current_branch.clone(),
+            status: "…".to_string(),
+            age: i.age.clone(),
+            rel_path: i.rel_path.clone(),
+        })
+        .collect();
+    let mut app = crate::tui::list_view::ListApp::new(row_data);
+
+    // +2 for header row and one trailing blank line.
+    let viewport_height = (inputs.len() as u16).saturating_add(2).max(3);
+
+    let stdout = std::io::stdout();
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::with_options(
+        backend,
+        TerminalOptions {
+            viewport: Viewport::Inline(viewport_height),
+        },
+    )
+    .map_err(crate::error::CwError::Io)?;
+
+    // Producer: parallel per-worktree status computation.
+    let (tx, rx) = mpsc::channel();
+    let repo_arc = Arc::new(repo.to_path_buf());
+    let pr_cache_arc = Arc::new(pr_cache.clone());
+    let inputs_arc = Arc::new(inputs);
+    let producer_inputs = Arc::clone(&inputs_arc);
+    let producer_repo = Arc::clone(&repo_arc);
+    let producer_cache = Arc::clone(&pr_cache_arc);
+    rayon::spawn(move || {
+        producer_inputs
+            .par_iter()
+            .enumerate()
+            .for_each_with(tx, |tx, (i, input)| {
+                let status = get_worktree_status(
+                    &input.path,
+                    &producer_repo,
+                    Some(&input.current_branch),
+                    &producer_cache,
+                );
+                let _ = tx.send((i, status));
+            });
+    });
+
+    crate::tui::list_view::run(&mut terminal, &mut app, rx)
+        .map_err(crate::error::CwError::Io)?;
+
+    // Ensure a final redraw of the complete state, then leave scrollback.
+    terminal
+        .draw(|f| app.render(f))
+        .map_err(crate::error::CwError::Io)?;
+    drop(terminal);
+
+    Ok(app
+        .rows
+        .into_iter()
+        .map(|r| WorktreeRow {
+            worktree_id: r.worktree_id,
+            current_branch: r.current_branch,
+            status: r.status,
+            age: r.age,
+            rel_path: r.rel_path,
+        })
+        .collect())
 }
 
 /// Look up the intended branch for a worktree via git config metadata.
