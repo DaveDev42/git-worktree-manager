@@ -73,6 +73,46 @@ impl ListApp {
     }
 }
 
+use std::sync::mpsc;
+
+/// Drive the Inline Viewport render loop, consuming `(row_index, status)`
+/// updates from `rx` until all rows are filled or the sender disconnects.
+///
+/// The caller is responsible for spawning the producer (typically a
+/// `rayon::spawn` that iterates worktrees in parallel and sends results).
+///
+/// On return, `app.rows` contains final statuses. The viewport exits via
+/// `drop(terminal)` which leaves the final frame in the scrollback.
+pub fn run<B: ratatui::backend::Backend>(
+    terminal: &mut ratatui::Terminal<B>,
+    app: &mut ListApp,
+    rx: mpsc::Receiver<(usize, String)>,
+) -> std::io::Result<()> {
+    terminal.draw(|f| app.render(f))?;
+
+    loop {
+        match rx.recv_timeout(std::time::Duration::from_millis(50)) {
+            Ok((i, status)) => {
+                if let Some(r) = app.rows.get_mut(i) {
+                    r.status = status;
+                }
+                terminal.draw(|f| app.render(f))?;
+                if app.is_complete() {
+                    break;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if app.is_complete() {
+                    break;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,6 +159,27 @@ mod tests {
         let rendered = buffer_to_string(&buf);
         assert!(rendered.contains("clean"));
         assert!(rendered.contains("modified"));
+        assert!(app.is_complete());
+    }
+
+    #[test]
+    fn run_fills_statuses_from_channel() {
+        let mut app = ListApp::new(vec![
+            sample_row("feat/a", "…"),
+            sample_row("feat/b", "…"),
+        ]);
+        let backend = TestBackend::new(80, 6);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            tx.send((0, "clean".to_string())).unwrap();
+            tx.send((1, "modified".to_string())).unwrap();
+        });
+
+        run(&mut terminal, &mut app, rx).unwrap();
+        assert_eq!(app.rows[0].status, "clean");
+        assert_eq!(app.rows[1].status, "modified");
         assert!(app.is_complete());
     }
 
