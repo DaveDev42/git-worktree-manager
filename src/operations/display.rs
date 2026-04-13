@@ -25,17 +25,9 @@ use super::pr_cache::PrCache;
 /// Minimum terminal width for table layout; below this, use compact layout.
 const MIN_TABLE_WIDTH: usize = 100;
 
-// TODO(perf): #24/#25 — WorktreeContext refactor: hoist base_branch/cwd_canon
-// lookups out of get_worktree_status to avoid N×git-config calls. Pseudo-shape:
-//
-// pub struct WorktreeContext<'a> {
-//     pub repo: &'a Path,
-//     pub pr_cache: &'a PrCache,
-//     pub base_branches: &'a HashMap<String, String>,
-//     pub cwd_canon: Option<&'a Path>,
-// }
-//
-// (Deferred — 6 call sites across 4 files.)
+// TODO(perf): hoist `base_branch` and `cwd_canon` lookups out of `get_worktree_status`
+// to avoid N×git-config calls. ~6 call sites; consider a `WorktreeContext` struct.
+// (Deferred in this PR to keep diff scope manageable.)
 
 /// Determine the status of a worktree.
 ///
@@ -89,6 +81,7 @@ pub fn get_worktree_status(
             match state {
                 super::pr_cache::PrState::Merged => return "merged".to_string(),
                 super::pr_cache::PrState::Open => return "pr-open".to_string(),
+                // Closed/Other: fall through to git-based merge detection
                 _ => {}
             }
         }
@@ -312,7 +305,8 @@ fn render_rows_progressive(
         .collect();
     let mut app = crate::tui::list_view::ListApp::new(row_data);
 
-    // +2 for header row and one trailing blank line.
+    // `+2` accounts for the header row plus a trailing blank line. Borders are
+    // disabled (`Borders::NONE`); the spec's `+4` figure assumed bordered layout.
     let viewport_height = u16::try_from(inputs.len())
         .unwrap_or(u16::MAX)
         .saturating_add(2)
@@ -361,6 +355,13 @@ fn render_rows_progressive(
     // subprocesses, which is I/O-bound but small enough that oversubscription
     // doesn't help.
     let (tx, rx) = mpsc::channel();
+
+    // Draw skeleton immediately so the user sees the table even before any
+    // status computations finish. `list_view::run` would draw this on its
+    // first iteration, but for very fast producers (small repos) the rows
+    // can fill before that initial draw.
+    guard.as_mut().draw(|f| app.render(f))?;
+
     // `thread::scope` blocks until all spawned threads finish (when the closure
     // returns). The explicit `producer.join()` here is solely to extract the
     // panic payload for diagnostics; the actual join would happen automatically

@@ -12,8 +12,7 @@ pub mod arrow_select;
 pub mod list_view;
 pub mod style;
 
-// Re-export the legacy selector so `crate::tui::arrow_select(...)` still works
-// for existing callers that used the previous flat-file module shape.
+// Re-export for backwards-compatible call sites that use `crate::tui::arrow_select(...)`.
 pub use arrow_select::arrow_select;
 
 use std::io::IsTerminal;

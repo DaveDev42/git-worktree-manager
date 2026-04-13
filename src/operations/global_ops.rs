@@ -80,8 +80,18 @@ pub fn global_list_worktrees(no_cache: bool) -> Result<()> {
 
     // #2/#19: Pre-filter non-existent repos before the parallel cache fetch so
     // we don't spend a `gh pr list` round-trip on missing repos. Missing repos
-    // are printed inline in the display loop below.
-    let existing_repos: Vec<_> = sorted_repos.iter().filter(|(_, p)| p.exists()).collect();
+    // are printed inline in the display loop below. A HashSet is used so each
+    // path is stat'd exactly once — the display loop just does O(1) lookups.
+    use std::collections::HashSet;
+    let missing: HashSet<std::path::PathBuf> = sorted_repos
+        .iter()
+        .filter(|(_, p)| !p.exists())
+        .map(|(_, p)| p.clone())
+        .collect();
+    let existing_repos: Vec<_> = sorted_repos
+        .iter()
+        .filter(|(_, p)| !missing.contains(p))
+        .collect();
 
     // Pre-fetch caches in parallel; the display loop must remain sequential
     // to preserve output order. rayon handles thread pooling and join.
@@ -96,7 +106,7 @@ pub fn global_list_worktrees(no_cache: bool) -> Result<()> {
         .collect();
 
     for (name, repo_path) in &sorted_repos {
-        if !repo_path.exists() {
+        if missing.contains(repo_path) {
             println!(
                 "{} {} — {}",
                 style(format!("⚠ {}", name)).yellow(),

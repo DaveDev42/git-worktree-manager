@@ -102,16 +102,16 @@ impl ListApp {
                     Cell::from(Span::styled(PLACEHOLDER, style::placeholder_style()))
                 } else {
                     Cell::from(Span::styled(
-                        r.status.clone(),
+                        r.status.as_str(),
                         style::status_style(&r.status),
                     ))
                 };
                 Row::new(vec![
-                    Cell::from(r.worktree_id.clone()),
-                    Cell::from(r.current_branch.clone()),
+                    Cell::from(r.worktree_id.as_str()),
+                    Cell::from(r.current_branch.as_str()),
                     status_cell,
-                    Cell::from(r.age.clone()),
-                    Cell::from(r.rel_path.clone()),
+                    Cell::from(r.age.as_str()),
+                    Cell::from(r.rel_path.as_str()),
                 ])
             })
             .collect();
@@ -141,7 +141,10 @@ impl ListApp {
 ///
 /// The caller is responsible for spawning the producer (typically a
 /// `rayon` par_iter inside a `std::thread::scope` that iterates worktrees
-/// in parallel and sends results).
+/// in parallel and sends results) and for drawing the initial skeleton frame
+/// before calling `run` (e.g. `terminal.draw(|f| app.render(f))`). `run`
+/// draws the skeleton itself on its first iteration for backward-compat with
+/// test callers that do not pre-draw; the duplicate draw is harmless.
 ///
 /// On return, `app.rows` contains final statuses. The viewport exits via
 /// `drop(terminal)` which leaves the final frame in the scrollback.
@@ -156,6 +159,9 @@ pub fn run<B: ratatui::backend::Backend>(
 ) -> std::io::Result<()> {
     terminal.draw(|f| app.render(f))?;
 
+    // Spec called for `recv_timeout(50ms)` for periodic refresh; we use blocking
+    // `recv()` because ratatui handles resize between draws automatically and
+    // every status message already triggers a redraw. No tick needed.
     while let Ok((i, status)) = rx.recv() {
         app.set_status(i, status);
         terminal.draw(|f| app.render(f))?;
@@ -234,7 +240,7 @@ mod tests {
             tx.send((1, "modified".to_string())).unwrap();
         });
 
-        run(&mut terminal, &mut app, rx).expect("run failed");
+        run(&mut terminal, &mut app, rx).expect("list_view::run failed");
         h.join().expect("status producer thread panicked"); // #26: propagate any thread panic to the test runner
         assert_eq!(app.rows()[0].status, "clean");
         assert_eq!(app.rows()[1].status, "modified");
@@ -257,7 +263,7 @@ mod tests {
             // Drop tx without sending the second row — simulates panic.
         });
 
-        run(&mut terminal, &mut app, rx).expect("run failed");
+        run(&mut terminal, &mut app, rx).expect("list_view::run failed");
         h.join().expect("status producer thread panicked"); // #27: propagate any thread panic to the test runner
         assert_eq!(app.rows()[0].status, "clean");
         assert_eq!(app.rows()[1].status, PLACEHOLDER); // still pending

@@ -245,6 +245,32 @@ fn load_from_disk(repo: &Path) -> Option<HashMap<String, PrState>> {
     Some(file.prs)
 }
 
+/// Remove orphaned `.tmp.` files from `parent` that are older than `cutoff`.
+///
+/// Orphans accumulate when a prior `gw` process crashed between the `fs::write`
+/// and `fs::rename` steps. Best-effort: any I/O error is silently ignored.
+fn sweep_orphans(parent: &Path, cutoff: SystemTime) {
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if !(name_str.starts_with("pr-status-") && name_str.contains(".tmp.")) {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
+        if modified < cutoff {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 /// Best-effort write. Failures are silently ignored — the in-memory result is
 /// still returned to the caller.
 ///
@@ -294,26 +320,12 @@ fn write_to_disk(repo: &Path, prs: &HashMap<String, PrState>) {
     let do_sweep = true;
     if do_sweep {
         if let Some(parent) = path.parent() {
-            if let Ok(entries) = std::fs::read_dir(parent) {
-                // On systems with a clock < 60s past epoch, this collapses to "no orphans
-                // older than `now`", effectively skipping the sweep — acceptable degenerate.
-                let cutoff = SystemTime::now()
-                    .checked_sub(std::time::Duration::from_secs(60))
-                    .unwrap_or_else(SystemTime::now);
-                for entry in entries.flatten() {
-                    let name = entry.file_name();
-                    let name_str = name.to_string_lossy();
-                    if name_str.starts_with("pr-status-") && name_str.contains(".tmp.") {
-                        if let Ok(meta) = entry.metadata() {
-                            if let Ok(modified) = meta.modified() {
-                                if modified < cutoff {
-                                    let _ = std::fs::remove_file(entry.path());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            // On systems with a clock < 60s past epoch, this collapses to "no orphans
+            // older than `now`", effectively skipping the sweep — acceptable degenerate.
+            let cutoff = SystemTime::now()
+                .checked_sub(std::time::Duration::from_secs(60))
+                .unwrap_or_else(SystemTime::now);
+            sweep_orphans(parent, cutoff);
         }
     }
 
@@ -713,23 +725,18 @@ mod tests {
         });
     }
 
-    /// Canary test: ensures every PrState variant exists at the time of writing.
-    /// Adding a new variant breaks this test, which is the intent — it forces the
-    /// author to inspect all match sites (notably `display.rs::get_worktree_status`)
-    /// and decide whether the new variant maps to a worktree status.
+    /// Canary: ensures every PrState variant is enumerated. A new variant
+    /// breaks compilation here, forcing the author to inspect callers.
     #[test]
     fn pr_state_variants_are_handled() {
-        fn must_handle(s: &PrState) -> &'static str {
+        // The value is the exhaustiveness check; runtime asserts are noise.
+        fn _must_handle(s: &PrState) {
             match s {
-                PrState::Open => "open",
-                PrState::Merged => "merged",
-                PrState::Closed => "closed",
-                PrState::Other => "other",
+                PrState::Open => {}
+                PrState::Merged => {}
+                PrState::Closed => {}
+                PrState::Other => {}
             }
         }
-        assert_eq!(must_handle(&PrState::Open), "open");
-        assert_eq!(must_handle(&PrState::Merged), "merged");
-        assert_eq!(must_handle(&PrState::Closed), "closed");
-        assert_eq!(must_handle(&PrState::Other), "other");
     }
 }
