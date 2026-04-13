@@ -54,7 +54,7 @@ fn main() {
             if cli.global {
                 global_ops::global_list_worktrees()
             } else {
-                display::list_worktrees()
+                display::list_worktrees(false)
             }
         }
         Some(Commands::Status) => display::show_status(),

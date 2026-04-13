@@ -12,6 +12,8 @@ use crate::constants::{
 use crate::error::Result;
 use crate::git;
 
+use rayon::prelude::*;
+
 use super::pr_cache::PrCache;
 
 /// Minimum terminal width for table layout; below this, use compact layout.
@@ -126,7 +128,7 @@ struct WorktreeRow {
 }
 
 /// List all worktrees for the current repository.
-pub fn list_worktrees() -> Result<()> {
+pub fn list_worktrees(no_cache: bool) -> Result<()> {
     let repo = git::get_repo_root(None)?;
     let worktrees = git::parse_worktrees(&repo)?;
 
@@ -136,30 +138,51 @@ pub fn list_worktrees() -> Result<()> {
         repo.display()
     );
 
-    let mut rows: Vec<WorktreeRow> = Vec::new();
+    let pr_cache = PrCache::load_or_fetch(&repo, no_cache);
 
-    let pr_cache = PrCache::load_or_fetch(&repo, false);
-
-    for (branch, path) in &worktrees {
-        let current_branch = git::normalize_branch_name(branch).to_string();
-        let status = get_worktree_status(path, &repo, Some(&current_branch), &pr_cache);
-        let rel_path = pathdiff::diff_paths(path, &repo)
-            .map(|p: std::path::PathBuf| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string_lossy().to_string());
-        let age = path_age_str(path);
-
-        // Look up intended branch
-        let intended_branch = lookup_intended_branch(&repo, &current_branch, path);
-        let worktree_id = intended_branch.unwrap_or_else(|| current_branch.clone());
-
-        rows.push(WorktreeRow {
-            worktree_id,
-            current_branch,
-            status,
-            age,
-            rel_path,
-        });
+    // Serial prep: cheap local work. Keep single-threaded for clarity.
+    struct RowInput {
+        path: std::path::PathBuf,
+        current_branch: String,
+        worktree_id: String,
+        age: String,
+        rel_path: String,
     }
+
+    let inputs: Vec<RowInput> = worktrees
+        .iter()
+        .map(|(branch, path)| {
+            let current_branch = git::normalize_branch_name(branch).to_string();
+            let rel_path = pathdiff::diff_paths(path, &repo)
+                .map(|p: std::path::PathBuf| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.to_string_lossy().to_string());
+            let age = path_age_str(path);
+            let intended_branch = lookup_intended_branch(&repo, &current_branch, path);
+            let worktree_id = intended_branch.unwrap_or_else(|| current_branch.clone());
+            RowInput {
+                path: path.clone(),
+                current_branch,
+                worktree_id,
+                age,
+                rel_path,
+            }
+        })
+        .collect();
+
+    // Parallel: I/O-bound per-worktree status work.
+    let rows: Vec<WorktreeRow> = inputs
+        .par_iter()
+        .map(|i| {
+            let status = get_worktree_status(&i.path, &repo, Some(&i.current_branch), &pr_cache);
+            WorktreeRow {
+                worktree_id: i.worktree_id.clone(),
+                current_branch: i.current_branch.clone(),
+                status,
+                age: i.age.clone(),
+                rel_path: i.rel_path.clone(),
+            }
+        })
+        .collect();
 
     let term_width = cwconsole::terminal_width();
     if term_width >= MIN_TABLE_WIDTH {
@@ -370,7 +393,7 @@ pub fn show_status() -> Result<()> {
         }
     }
 
-    list_worktrees()
+    list_worktrees(false)
 }
 
 /// Display worktree hierarchy in a visual tree format.
