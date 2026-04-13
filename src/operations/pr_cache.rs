@@ -8,7 +8,12 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Per-process counter appended to tmp filenames for nano-collision safety
+/// when two goroutines write the same repo cache within the same nanosecond.
+static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -269,19 +274,45 @@ fn write_to_disk(repo: &Path, prs: &HashMap<String, PrState>) {
         return;
     };
 
-    // Atomic write: write to <path>.tmp.<pid>.<nanos>, then rename.
-    // Using both pid and nanoseconds avoids collisions when multiple gw
-    // processes write concurrently (different pid) or rapidly (different nanos).
+    // Sweep orphans from prior failed runs (older than 60s) so the cache dir
+    // doesn't accumulate cruft. Best-effort: any error is silently ignored.
+    if let Some(parent) = path.parent() {
+        if let Ok(entries) = std::fs::read_dir(parent) {
+            let cutoff = SystemTime::now()
+                .checked_sub(std::time::Duration::from_secs(60))
+                .unwrap_or_else(SystemTime::now);
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.contains(".tmp.") {
+                    if let Ok(meta) = entry.metadata() {
+                        if let Ok(modified) = meta.modified() {
+                            if modified < cutoff {
+                                let _ = std::fs::remove_file(entry.path());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Atomic write: write to <path>.tmp.<pid>.<nanos>.<counter>, then rename.
+    // Using pid + nanoseconds + per-process counter avoids collisions when:
+    //   - multiple gw processes write concurrently (different pid), or
+    //   - two writes happen within the same nanosecond (counter breaks the tie).
     // On Windows, std::fs::rename fails if the target exists; we retry with a
     // remove-then-rename fallback (best-effort, second failure is silently ignored).
-    // #11: use file_stem to strip .json before the tmp suffix, giving
-    // "pr-status-<hash>.tmp.PID.NANOS" — shorter and groups cleanly with the
-    // final file. Using file_name would produce "pr-status-<hash>.json.tmp…".
+    // #11/#8: use file_stem to strip .json before the tmp suffix, giving
+    // "pr-status-<hash>.tmp.PID.NANOS.COUNTER" — shorter and groups cleanly
+    // with the final file. Using file_name would produce "pr-status-<hash>.json.tmp…".
+    let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let tmp = path.with_file_name(format!(
-        "{}.tmp.{}.{}",
+        "{}.tmp.{}.{}.{}",
         path.file_stem().unwrap_or_default().to_string_lossy(),
         std::process::id(),
         nanos,
+        counter,
     ));
     // #15/#34: clean up the tmp file on initial write failure. `remove_file`
     // is best-effort — if write never created the file (e.g. permission error
@@ -319,7 +350,9 @@ mod tests {
         ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// #28: sanity-check that now_secs() works on a normal system.
+    /// Sanity-check that now_secs() works on a normal system.
+    // Note: the `None` branch (broken clock) is not exercised by tests; it requires
+    // time manipulation. Coverage gap accepted.
     #[test]
     fn now_secs_returns_some_on_normal_system() {
         assert!(now_secs().is_some());
@@ -354,12 +387,12 @@ mod tests {
     #[test]
     fn fetch_parses_gh_json_from_env() {
         let _g = env_lock();
+        let _env = EnvGuard::capture(&["GW_TEST_GH_FAIL", "GW_TEST_GH_JSON"]);
         std::env::set_var(
             "GW_TEST_GH_JSON",
             r#"[{"headRefName":"feat/foo","state":"OPEN"},{"headRefName":"fix/bar","state":"MERGED"}]"#,
         );
         let prs = fetch_from_gh(std::path::Path::new(".")).expect("parsed");
-        std::env::remove_var("GW_TEST_GH_JSON");
         assert_eq!(prs.get("feat/foo"), Some(&PrState::Open));
         assert_eq!(prs.get("fix/bar"), Some(&PrState::Merged));
     }
@@ -367,9 +400,9 @@ mod tests {
     #[test]
     fn fetch_returns_none_on_forced_failure() {
         let _g = env_lock();
+        let _env = EnvGuard::capture(&["GW_TEST_GH_FAIL", "GW_TEST_GH_JSON"]);
         std::env::set_var("GW_TEST_GH_FAIL", "1");
         let result = fetch_from_gh(std::path::Path::new("."));
-        std::env::remove_var("GW_TEST_GH_FAIL");
         assert!(result.is_none());
     }
 
@@ -491,6 +524,7 @@ mod tests {
     #[test]
     fn load_or_fetch_uses_disk_when_fresh() {
         let _g = env_lock();
+        let _env = EnvGuard::capture(&["GW_TEST_CACHE_DIR", "GW_TEST_GH_FAIL", "GW_TEST_GH_JSON"]);
         let dir = tempdir().unwrap();
         with_cache_dir(dir.path(), || {
             let repo = std::path::Path::new("/tmp/repo-disk-hit-xyz");
@@ -510,7 +544,6 @@ mod tests {
             // the disk value.
             std::env::set_var("GW_TEST_GH_FAIL", "1");
             let cache = PrCache::load_or_fetch(repo, false);
-            std::env::remove_var("GW_TEST_GH_FAIL");
             assert_eq!(cache.state("feat/cached"), Some(&PrState::Merged));
         });
     }
@@ -518,6 +551,7 @@ mod tests {
     #[test]
     fn load_or_fetch_bypasses_disk_when_no_cache_true() {
         let _g = env_lock();
+        let _env = EnvGuard::capture(&["GW_TEST_CACHE_DIR", "GW_TEST_GH_FAIL", "GW_TEST_GH_JSON"]);
         let dir = tempdir().unwrap();
         with_cache_dir(dir.path(), || {
             let repo = std::path::Path::new("/tmp/repo-bypass-xyz");
@@ -537,7 +571,6 @@ mod tests {
                 r#"[{"headRefName":"feat/new","state":"OPEN"}]"#,
             );
             let cache = PrCache::load_or_fetch(repo, true);
-            std::env::remove_var("GW_TEST_GH_JSON");
             assert_eq!(cache.state("feat/new"), Some(&PrState::Open));
             assert_eq!(cache.state("feat/old"), None);
         });
@@ -546,12 +579,12 @@ mod tests {
     #[test]
     fn load_or_fetch_empty_when_gh_fails_and_no_cache_file() {
         let _g = env_lock();
+        let _env = EnvGuard::capture(&["GW_TEST_CACHE_DIR", "GW_TEST_GH_FAIL", "GW_TEST_GH_JSON"]);
         let dir = tempdir().unwrap();
         with_cache_dir(dir.path(), || {
             let repo = std::path::Path::new("/tmp/repo-empty-xyz");
             std::env::set_var("GW_TEST_GH_FAIL", "1");
             let cache = PrCache::load_or_fetch(repo, false);
-            std::env::remove_var("GW_TEST_GH_FAIL");
             assert!(cache.state("anything").is_none());
         });
     }
@@ -587,6 +620,7 @@ mod tests {
     #[test]
     fn from_disk_and_fetch_and_persist_split() {
         let _g = env_lock();
+        let _env = EnvGuard::capture(&["GW_TEST_CACHE_DIR", "GW_TEST_GH_FAIL", "GW_TEST_GH_JSON"]);
         let dir = tempdir().unwrap();
         with_cache_dir(dir.path(), || {
             let repo = std::path::Path::new("/tmp/repo-split-xyz");
@@ -596,8 +630,9 @@ mod tests {
             // fetch_and_persist falls back to empty on gh failure
             std::env::set_var("GW_TEST_GH_FAIL", "1");
             let empty = PrCache::fetch_and_persist(repo);
-            std::env::remove_var("GW_TEST_GH_FAIL");
             assert!(empty.state("anything").is_none());
+            // Transition to success phase: clear FAIL so GH_JSON is consulted.
+            std::env::remove_var("GW_TEST_GH_FAIL");
 
             // fetch_and_persist writes to disk on success
             std::env::set_var(
@@ -605,15 +640,58 @@ mod tests {
                 r#"[{"headRefName":"main","state":"OPEN"}]"#,
             );
             let _ = PrCache::fetch_and_persist(repo);
-            std::env::remove_var("GW_TEST_GH_JSON");
             // from_disk now returns the written file
             let loaded = PrCache::from_disk(repo).expect("written to disk");
             assert_eq!(loaded.state("main"), Some(&PrState::Open));
         });
     }
 
-    /// #32: exhaustive variant match so adding a new PrState variant breaks
-    /// this test, forcing a deliberate update of all match arms.
+    /// Verify that write_to_disk removes orphaned .tmp.* files older than 60s.
+    #[cfg(unix)]
+    #[test]
+    fn write_to_disk_sweeps_old_orphan_tmp_files() {
+        let _g = env_lock();
+        let _env = EnvGuard::capture(&["GW_TEST_CACHE_DIR"]);
+        let dir = tempdir().unwrap();
+        with_cache_dir(dir.path(), || {
+            let repo = std::path::Path::new("/tmp/repo-sweep-xyz");
+            let final_path = cache_path_for(repo).unwrap();
+            let parent = final_path.parent().unwrap();
+            std::fs::create_dir_all(parent).unwrap();
+
+            // Plant an old orphan tmp file and backdate its mtime to epoch
+            // (clearly older than the 60s sweep cutoff).
+            let orphan = parent.join("pr-status-orphan.tmp.99999.123456789.0");
+            std::fs::write(&orphan, "stale").unwrap();
+            // Set mtime to Unix epoch via libc::utimes (available on unix).
+            {
+                use std::ffi::CString;
+                let c_path = CString::new(orphan.to_string_lossy().as_bytes()).unwrap();
+                let times = [libc::timeval {
+                    tv_sec: 0,
+                    tv_usec: 0,
+                }; 2];
+                // SAFETY: c_path is valid, times array is correctly sized.
+                unsafe { libc::utimes(c_path.as_ptr(), times.as_ptr()) };
+            }
+
+            // Trigger a write — the sweep runs before writing the tmp file.
+            let mut prs = HashMap::new();
+            prs.insert("feat/sweep".to_string(), PrState::Open);
+            write_to_disk(repo, &prs);
+
+            assert!(
+                !orphan.exists(),
+                "old orphan tmp file should have been swept"
+            );
+            assert!(final_path.exists(), "final cache file should exist");
+        });
+    }
+
+    /// Canary test: ensures every PrState variant exists at the time of writing.
+    /// Adding a new variant breaks this test, which is the intent — it forces the
+    /// author to inspect all match sites (notably `display.rs::get_worktree_status`)
+    /// and decide whether the new variant maps to a worktree status.
     #[test]
     fn pr_state_variants_are_handled() {
         fn must_handle(s: &PrState) -> &'static str {

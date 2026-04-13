@@ -25,6 +25,18 @@ use super::pr_cache::PrCache;
 /// Minimum terminal width for table layout; below this, use compact layout.
 const MIN_TABLE_WIDTH: usize = 100;
 
+// TODO(perf): #24/#25 — WorktreeContext refactor: hoist base_branch/cwd_canon
+// lookups out of get_worktree_status to avoid N×git-config calls. Pseudo-shape:
+//
+// pub struct WorktreeContext<'a> {
+//     pub repo: &'a Path,
+//     pub pr_cache: &'a PrCache,
+//     pub base_branches: &'a HashMap<String, String>,
+//     pub cwd_canon: Option<&'a Path>,
+// }
+//
+// (Deferred — 6 call sites across 4 files.)
+
 /// Determine the status of a worktree.
 ///
 /// Status priority: stale > busy > active > merged > pr-open > modified > clean
@@ -37,24 +49,6 @@ const MIN_TABLE_WIDTH: usize = 100;
 ///    preserved (merge commit strategy). Used when `gh` is not available.
 ///
 /// See `pr_cache::PrCache` for the batched fetch and TTL details.
-///
-/// TODO(perf): #24 — hoist `base_branch` lookup out of this function. Build a
-/// `HashMap<branch, base>` in `list_worktrees` before the par_iter and pass it
-/// in via a `WorktreeContext` struct alongside `pr_cache` and `cwd_canon`.
-///
-/// TODO(perf): #25 — hoist `cwd_canon` (`std::env::current_dir()?.canonicalize()`)
-/// out of this function. Currently computed per worktree; one canonicalization
-/// per `list_worktrees` call is sufficient. Pass via `WorktreeContext`.
-//
-// #22: WorktreeContext example kept as a plain comment so it doesn't appear in
-// rustdoc. Future refactor: see plan doc for WorktreeContext design.
-//
-// pub struct WorktreeContext<'a> {
-//     pub repo: &'a Path,
-//     pub pr_cache: &'a PrCache,
-//     pub base_branches: &'a HashMap<String, String>,
-//     pub cwd_canon: Option<&'a Path>,
-// }
 pub fn get_worktree_status(
     path: &Path,
     repo: &Path,
@@ -269,6 +263,12 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
 /// ever created for the crossterm+stdout path used in `render_rows_progressive`.
 type CrosstermTerminal = ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>;
 
+/// Wraps a ratatui Terminal with deterministic cleanup.
+///
+/// # Contract
+/// - The caller must call `mark_ratatui_active()` before constructing the terminal.
+/// - On Drop, this guard drops the terminal first, then calls `mark_ratatui_inactive()`
+///   followed by `ratatui::restore()`.
 struct TerminalGuard(Option<CrosstermTerminal>);
 
 impl TerminalGuard {
@@ -320,20 +320,29 @@ fn render_rows_progressive(
 
     let stdout = std::io::stdout();
     let backend = CrosstermBackend::new(stdout);
-    // #1: mark active BEFORE construction so the panic hook fires correctly
-    // if Terminal::with_options itself panics. If it returns Err, we clear
-    // the flag before propagating so a non-ratatui panic later is not mishandled.
+    // #1/#5: mark active BEFORE construction so the panic hook fires correctly
+    // if Terminal::with_options itself panics. If it returns Err or panics, we
+    // clear the flag before propagating so a non-ratatui panic later is not
+    // mishandled.
+    // Restore is idempotent — if construction fails or panics, the panic hook
+    // may still call `ratatui::restore()`, which is documented safe.
     crate::tui::mark_ratatui_active();
-    let terminal = match Terminal::with_options(
-        backend,
-        TerminalOptions {
-            viewport: Viewport::Inline(viewport_height),
-        },
-    ) {
-        Ok(t) => t,
-        Err(e) => {
+    let terminal = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: Viewport::Inline(viewport_height),
+            },
+        )
+    })) {
+        Ok(Ok(t)) => t,
+        Ok(Err(e)) => {
             crate::tui::mark_ratatui_inactive();
             return Err(e.into());
+        }
+        Err(panic) => {
+            crate::tui::mark_ratatui_inactive();
+            std::panic::resume_unwind(panic);
         }
     };
     let mut guard = TerminalGuard::new(terminal);
@@ -350,8 +359,10 @@ fn render_rows_progressive(
     // subprocesses, which is I/O-bound but small enough that oversubscription
     // doesn't help.
     let (tx, rx) = mpsc::channel();
-    // #2: thread::scope blocks until all spawned threads finish; explicit
-    // producer.join() collects panic state for diagnostics before `?` propagates.
+    // `thread::scope` blocks until all spawned threads finish (when the closure
+    // returns). The explicit `producer.join()` here is solely to extract the
+    // panic payload for diagnostics; the actual join would happen automatically
+    // at scope exit.
     std::thread::scope(|s| -> Result<()> {
         let producer = s.spawn(move || {
             inputs
@@ -376,7 +387,12 @@ fn render_rows_progressive(
                 .downcast_ref::<&str>()
                 .map(|s| (*s).to_string())
                 .or_else(|| panic.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "non-string panic payload".to_string());
+                .unwrap_or_else(|| {
+                    format!(
+                        "non-string panic payload (type {:?})",
+                        std::any::type_name_of_val(&*panic)
+                    )
+                });
             eprintln!(
                 "warning: status producer thread panicked, some rows may show \"unknown\": {}",
                 msg
@@ -399,16 +415,23 @@ fn render_rows_progressive(
 }
 
 /// Field-for-field 1:1 mapping from TUI row data to the internal display row.
-/// Both structs are intentionally isomorphic; if `RowData` gains fields,
-/// this impl must update.
+/// Both structs are intentionally isomorphic; the destructuring below makes a
+/// new field in `RowData` a compile error here — exactly the safety the reviewer wanted.
 impl From<crate::tui::list_view::RowData> for WorktreeRow {
     fn from(r: crate::tui::list_view::RowData) -> Self {
+        let crate::tui::list_view::RowData {
+            worktree_id,
+            current_branch,
+            status,
+            age,
+            rel_path,
+        } = r;
         WorktreeRow {
-            worktree_id: r.worktree_id,
-            current_branch: r.current_branch,
-            status: r.status,
-            age: r.age,
-            rel_path: r.rel_path,
+            worktree_id,
+            current_branch,
+            status,
+            age,
+            rel_path,
         }
     }
 }

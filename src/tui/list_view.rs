@@ -9,6 +9,7 @@ use ratatui::widgets::{Block, Borders, Cell, Row, Table};
 use crate::tui::style;
 
 /// Three ASCII dots; portable across terminals lacking Unicode rendering.
+/// Do not change to U+2026 ('…'); equality checks elsewhere depend on this exact value.
 pub const PLACEHOLDER: &str = "...";
 
 #[derive(Debug, Clone)]
@@ -36,7 +37,8 @@ impl ListApp {
         &self.rows
     }
 
-    /// Mutable access to a single row's status by index.
+    /// Update a row's status. Rejects PLACEHOLDER (use `finalize_pending` to bulk-reset).
+    /// In debug builds, calling with PLACEHOLDER trips a debug_assert.
     pub(crate) fn set_status(&mut self, i: usize, status: String) {
         debug_assert_ne!(
             status, PLACEHOLDER,
@@ -57,6 +59,8 @@ impl ListApp {
     ///
     /// Returns `true` if any rows were updated (i.e., had PLACEHOLDER status),
     /// `false` if nothing changed — lets callers skip a redundant redraw.
+    // `#[must_use]` is preventive: there are no negative tests asserting it fires,
+    // because clippy's `#[must_use]` lint is not exercised by `cargo test`.
     #[must_use = "ignoring whether any rows changed may cause redundant or missing redraws"]
     pub fn finalize_pending(&mut self, replacement: &str) -> bool {
         let mut changed = false;

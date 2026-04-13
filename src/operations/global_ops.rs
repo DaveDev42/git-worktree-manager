@@ -78,13 +78,18 @@ pub fn global_list_worktrees(no_cache: bool) -> Result<()> {
     let mut sorted_repos = repos;
     sorted_repos.sort_by(|a, b| a.0.cmp(&b.0));
 
-    // #19: Pre-fetch caches in parallel; the display loop must remain sequential
+    // #2/#19: Pre-filter non-existent repos before the parallel cache fetch so
+    // we don't spend a `gh pr list` round-trip on missing repos. Missing repos
+    // are printed inline in the display loop below.
+    let existing_repos: Vec<_> = sorted_repos.iter().filter(|(_, p)| p.exists()).collect();
+
+    // Pre-fetch caches in parallel; the display loop must remain sequential
     // to preserve output order. rayon handles thread pooling and join.
-    let pr_caches: std::collections::HashMap<std::path::PathBuf, PrCache> = sorted_repos
+    let mut pr_caches: std::collections::HashMap<std::path::PathBuf, PrCache> = existing_repos
         .par_iter()
-        .map(|(_name, repo_path)| {
+        .map(|(_, repo_path)| {
             (
-                repo_path.clone(),
+                (*repo_path).clone(),
                 PrCache::load_or_fetch(repo_path, no_cache),
             )
         })
@@ -114,13 +119,15 @@ pub fn global_list_worktrees(no_cache: bool) -> Result<()> {
             }
         };
 
-        let pr_cache = pr_caches
-            .get(repo_path)
-            .expect("pre-fetched for every repo in sorted_repos");
+        // #3/#14: use remove() to move the cache out of the map (avoids a clone),
+        // with unwrap_or_default() for safety against the narrow timing window
+        // where a repo disappears between the pre-filter and the display loop.
+        let pr_cache = pr_caches.remove(repo_path).unwrap_or_default();
 
         let mut has_feature = false;
         for (branch_name, path) in &feature_wts {
-            let status = get_worktree_status(path, repo_path, Some(branch_name.as_str()), pr_cache);
+            let status =
+                get_worktree_status(path, repo_path, Some(branch_name.as_str()), &pr_cache);
 
             // Check intended branch for mismatch detection
             let intended_key = format_config_key(CONFIG_KEY_INTENDED_BRANCH, branch_name);

@@ -236,8 +236,9 @@ pub enum Commands {
 
     /// Batch cleanup of worktrees
     ///
-    /// Note: `--no-cache` only affects the interactive listing path. Merge/age-based
-    /// deletion logic does not consult the PR cache.
+    /// Note: `--no-cache` only affects the interactive listing path inside `clean`
+    /// (which calls `get_worktree_status`). Merge/age-based deletion logic in `clean`
+    /// uses git directly and does not consult the PR cache.
     Clean {
         #[command(flatten)]
         cache: CacheControl,
@@ -601,15 +602,18 @@ mod tests {
     use super::*;
     use clap::Parser;
 
-    /// #20: assert that `gw clean --no-cache` parses correctly. This pins the
-    /// CacheControl flag on Clean so accidental removal breaks the test.
+    /// Assert that `gw clean --no-cache` parses correctly. Pins the CacheControl
+    /// flag on Clean so accidental removal breaks the test.
     #[test]
     fn clean_accepts_no_cache_flag() {
         let cli = Cli::try_parse_from(["gw", "clean", "--no-cache"]).expect("parses");
+        assert!(
+            matches!(&cli.command, Some(Commands::Clean { .. })),
+            "expected Clean variant, got {:?}",
+            cli.command
+        );
         if let Some(Commands::Clean { cache, .. }) = cli.command {
             assert!(cache.no_cache);
-        } else {
-            panic!("expected Clean variant");
         }
     }
 }

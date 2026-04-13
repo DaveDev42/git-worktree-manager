@@ -25,12 +25,13 @@ pub fn stdout_is_tty() -> bool {
     std::io::stdout().is_terminal()
 }
 
-// #20: tracks whether a ratatui terminal is currently active. The panic hook
+// #20/#4: tracks whether a ratatui terminal is currently active. The panic hook
 // checks this flag so `ratatui::restore()` is only called when it matters —
 // a non-ratatui panic must not clobber terminal state it never set up.
 //
-// Single-thread invariant: only the main thread creates a ratatui Terminal in
-// this codebase. Relaxed ordering is sufficient.
+// Single-thread invariant: only the main thread creates ratatui terminals
+// in this codebase. Relaxed ordering is sufficient. If callers ever cross
+// threads, upgrade to Acquire/Release.
 static RATATUI_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Mark that a ratatui terminal is now active.
