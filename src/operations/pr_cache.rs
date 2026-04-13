@@ -71,8 +71,16 @@ fn hex_short(bytes: &[u8]) -> String {
 
 /// Return the on-disk cache path for a given repo.
 /// Returns None if we cannot determine a cache directory on this platform.
+///
+/// When `GW_TEST_CACHE_DIR` is set (test hook), uses that path as the base
+/// instead of `dirs::cache_dir()` so tests never touch `~/Library/Caches` on
+/// macOS (which ignores `XDG_CACHE_HOME`).
 fn cache_path_for(repo: &Path) -> Option<PathBuf> {
-    let base = dirs::cache_dir()?.join("gw");
+    let base = if let Ok(dir) = std::env::var("GW_TEST_CACHE_DIR") {
+        PathBuf::from(dir).join("gw")
+    } else {
+        dirs::cache_dir()?.join("gw")
+    };
     Some(base.join(format!("pr-status-{}.json", repo_hash(repo))))
 }
 
@@ -238,12 +246,12 @@ mod tests {
     use tempfile::tempdir;
 
     fn with_cache_dir<F: FnOnce()>(dir: &std::path::Path, f: F) {
-        let prev = std::env::var_os("XDG_CACHE_HOME");
-        std::env::set_var("XDG_CACHE_HOME", dir);
+        let prev = std::env::var_os("GW_TEST_CACHE_DIR");
+        std::env::set_var("GW_TEST_CACHE_DIR", dir);
         f();
         match prev {
-            Some(v) => std::env::set_var("XDG_CACHE_HOME", v),
-            None => std::env::remove_var("XDG_CACHE_HOME"),
+            Some(v) => std::env::set_var("GW_TEST_CACHE_DIR", v),
+            None => std::env::remove_var("GW_TEST_CACHE_DIR"),
         }
     }
 
