@@ -183,6 +183,27 @@ mod tests {
         assert!(app.is_complete());
     }
 
+    #[test]
+    fn run_exits_when_sender_drops_with_pending_rows() {
+        let mut app = ListApp::new(vec![
+            sample_row("feat/a", "…"),
+            sample_row("feat/b", "…"),
+        ]);
+        let backend = TestBackend::new(80, 6);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            tx.send((0, "clean".to_string())).unwrap();
+            // Drop tx without sending the second row — simulates panic.
+        });
+
+        run(&mut terminal, &mut app, rx).unwrap();
+        assert_eq!(app.rows[0].status, "clean");
+        assert_eq!(app.rows[1].status, "…"); // still pending
+        assert!(!app.is_complete());
+    }
+
     fn buffer_to_string(buf: &ratatui::buffer::Buffer) -> String {
         let mut out = String::new();
         let area = buf.area();

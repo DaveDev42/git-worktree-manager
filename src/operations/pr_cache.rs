@@ -379,4 +379,35 @@ mod tests {
             assert!(cache.state("anything").is_none());
         });
     }
+
+    #[test]
+    fn write_to_disk_does_not_create_tmp_file() {
+        let _g = env_lock();
+        let dir = tempdir().unwrap();
+        with_cache_dir(dir.path(), || {
+            let repo = std::path::Path::new("/tmp/repo-atomic-xyz");
+            let mut prs = HashMap::new();
+            prs.insert("feat/x".to_string(), "OPEN".to_string());
+            write_to_disk(repo, &prs);
+
+            let final_path = cache_path_for(repo).unwrap();
+            assert!(final_path.exists(), "final cache file exists");
+
+            // The .tmp.<pid> file should have been renamed away.
+            let parent = final_path.parent().unwrap();
+            let entries: Vec<_> = std::fs::read_dir(parent)
+                .unwrap()
+                .flatten()
+                .collect();
+            for entry in &entries {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                assert!(
+                    !name_str.contains(".tmp."),
+                    "no tmp file should remain: {}",
+                    name_str
+                );
+            }
+        });
+    }
 }
