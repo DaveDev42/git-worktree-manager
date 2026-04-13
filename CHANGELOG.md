@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.0.30](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.29...v0.0.30) (2026-04-13)
+
+
+### Features
+
+* **cli:** --no-cache on clean and global; parallelize TODO; rename pr_state ([f324ae6](https://github.com/DaveDev42/git-worktree-manager/commit/f324ae600c2cb762e8bfe469caca5357091a6a54))
+* **cli:** add --no-cache flag to list subcommand ([4b96b17](https://github.com/DaveDev42/git-worktree-manager/commit/4b96b1731017cc4ce6c6a8a1f68bc1a283d2286e))
+* **list:** progressive Inline Viewport rendering in TTY mode ([67bae1d](https://github.com/DaveDev42/git-worktree-manager/commit/67bae1d7f5f2232c3429623eb768c9b37f6ba08f))
+* **list:** restore terminal on err, early-return on empty worktree set ([268758f](https://github.com/DaveDev42/git-worktree-manager/commit/268758f996ebc2084fa67a15a3fe5f0d83aafee0))
+* **pr_cache:** add module skeleton with repo-hash and cache path ([85dd3b7](https://github.com/DaveDev42/git-worktree-manager/commit/85dd3b7b69b7d1985c28a1de0ac3aa559a3fdc3a))
+* **pr_cache:** fetch PR state from gh in one batched call ([3bfbe53](https://github.com/DaveDev42/git-worktree-manager/commit/3bfbe53e40b35151f1b6d959452aec950087cd1d))
+* **pr_cache:** persist PR state to disk with 60s TTL ([2c7699b](https://github.com/DaveDev42/git-worktree-manager/commit/2c7699ba3f0cee9f3a7b9ecd84bf2e7ce8d1309e))
+* **pr_cache:** public load_or_fetch with --no-cache semantics ([f61b3dd](https://github.com/DaveDev42/git-worktree-manager/commit/f61b3dd9265df6781ea6ab977fc175d253357ebf))
+* **tui:** Inline Viewport app skeleton with snapshot tests ([8084246](https://github.com/DaveDev42/git-worktree-manager/commit/8084246b7cdafedc9870bc02c1823842501a234f))
+* **tui:** progressive render loop consuming mpsc updates ([6f4f52a](https://github.com/DaveDev42/git-worktree-manager/commit/6f4f52a25772773da9dae09be8bde87172a1a05e))
+* **tui:** promote tui to directory module, add style palette and panic hook ([c5e6855](https://github.com/DaveDev42/git-worktree-manager/commit/c5e685529884ca3f0e930827cc2600421b9a85f0))
+
+
+### Bug Fixes
+
+* **list:** apply all 52 review items — correctness, hygiene, API, polish, docs ([3d7a942](https://github.com/DaveDev42/git-worktree-manager/commit/3d7a942c04a59c18e835273c26ea03d7c986d8f1))
+* **list:** correctness, behavior polish, docs, tests — apply pass-2 items A/B/D/E ([ec2e0a9](https://github.com/DaveDev42/git-worktree-manager/commit/ec2e0a95f8a51c9a522e6598e25b68b06b0affde))
+* **list:** panic-safe sweep, in_place_scope, extract footer helper ([d4b64d2](https://github.com/DaveDev42/git-worktree-manager/commit/d4b64d2ec9152d6bb15f852ec72f4b1a43daf1aa))
+* **list:** pass-3 correctness — atomic flag ordering, panic readability, ratatui setup race ([0d074e8](https://github.com/DaveDev42/git-worktree-manager/commit/0d074e8a094d388277a1abef93cfa8319eab9bb4))
+* **list:** pass-4 — env safety, prefetch filter, exhaustive PrState, comment fixes ([1e91d72](https://github.com/DaveDev42/git-worktree-manager/commit/1e91d727cb9b09063ee772f0fe78695c0a7b7451))
+* **list:** pass-5 final — sweep scope, panic message clarity, test rigor ([89d472e](https://github.com/DaveDev42/git-worktree-manager/commit/89d472ec6f4b043d14390be7d7563551ba696bb3))
+* **tui:** drop let _ on unit-typed ratatui::restore ([dbc88e0](https://github.com/DaveDev42/git-worktree-manager/commit/dbc88e04b0ef52a004f2865c0751119aef72f6a6))
+
+
+### Performance Improvements
+
+* **list:** batched gh, on-disk cache, parallelism, progressive ratatui rendering ([ae7b0f2](https://github.com/DaveDev42/git-worktree-manager/commit/ae7b0f27ec009e1c7fdfc154f5a4eddd78af4635))
+* **list:** parallelize worktree status with rayon ([80e8e9c](https://github.com/DaveDev42/git-worktree-manager/commit/80e8e9c60a5fc77db23b8b2e7c2af9ce010373aa))
+
 ## [0.0.29](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.28...v0.0.29) (2026-04-13)
 
 
