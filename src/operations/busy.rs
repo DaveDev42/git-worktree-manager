@@ -250,6 +250,15 @@ pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
     out
 }
 
+/// Terminal multiplexers whose server process may have been launched from
+/// within a worktree but does not meaningfully "occupy" it — the real work
+/// happens in child shells / tools, which the cwd scan reports independently.
+/// Reporting the multiplexer itself just produces noise when running
+/// `gw delete` from a pane hosted by that multiplexer.
+fn is_multiplexer(cmd: &str) -> bool {
+    matches!(cmd, "zellij" | "tmux" | "tmux: server" | "screen")
+}
+
 fn scan_cwd(worktree: &Path) -> Vec<BusyInfo> {
     let canon_target = match worktree.canonicalize() {
         Ok(p) => p,
@@ -260,6 +269,9 @@ fn scan_cwd(worktree: &Path) -> Vec<BusyInfo> {
         // Both sides were canonicalized upstream (handles macOS /var vs
         // /private/var skew). This starts_with is the containment check.
         if cwd.starts_with(&canon_target) {
+            if is_multiplexer(cmd) {
+                continue;
+            }
             out.push(BusyInfo {
                 pid: *pid,
                 cmd: cmd.clone(),
