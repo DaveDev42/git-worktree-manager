@@ -4,7 +4,15 @@
 pub mod completions;
 pub mod global;
 
-use clap::{Parser, Subcommand, ValueHint};
+use clap::{Args, Parser, Subcommand, ValueHint};
+
+/// Shared cache-bypass flag, flattened into subcommands that query PR status.
+#[derive(Args, Debug, Clone)]
+pub struct CacheControl {
+    /// Bypass PR status cache (60s TTL) and refresh from gh
+    #[arg(long)]
+    pub no_cache: bool,
+}
 
 /// Validate config key (accepts any string but provides completion hints).
 fn parse_config_key(s: &str) -> Result<String, String> {
@@ -183,7 +191,10 @@ pub enum Commands {
     },
 
     /// Show current worktree status
-    Status,
+    Status {
+        #[command(flatten)]
+        cache: CacheControl,
+    },
 
     /// Delete a worktree
     Delete {
@@ -218,10 +229,20 @@ pub enum Commands {
 
     /// List all worktrees
     #[command(alias = "ls")]
-    List,
+    List {
+        #[command(flatten)]
+        cache: CacheControl,
+    },
 
     /// Batch cleanup of worktrees
+    ///
+    /// Note: `--no-cache` only affects the interactive listing path inside `clean`
+    /// (which calls `get_worktree_status`). Merge/age-based deletion logic in `clean`
+    /// uses git directly and does not consult the PR cache.
     Clean {
+        #[command(flatten)]
+        cache: CacheControl,
+
         /// Delete worktrees for branches already merged to base
         #[arg(long)]
         merged: bool,
@@ -245,10 +266,16 @@ pub enum Commands {
     },
 
     /// Display worktree hierarchy as a tree
-    Tree,
+    Tree {
+        #[command(flatten)]
+        cache: CacheControl,
+    },
 
     /// Show worktree statistics
-    Stats,
+    Stats {
+        #[command(flatten)]
+        cache: CacheControl,
+    },
 
     /// Compare two branches
     Diff {
@@ -568,4 +595,21 @@ pub enum HookAction {
         #[arg(long)]
         dry_run: bool,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    /// Assert that `gw clean --no-cache` parses correctly. Pins the CacheControl
+    /// flag on Clean so accidental removal breaks the test.
+    #[test]
+    fn clean_accepts_no_cache_flag() {
+        let cli = Cli::try_parse_from(["gw", "clean", "--no-cache"]).expect("parses");
+        let Some(Commands::Clean { cache, .. }) = cli.command else {
+            panic!("expected Clean variant, got {:?}", cli.command);
+        };
+        assert!(cache.no_cache);
+    }
 }

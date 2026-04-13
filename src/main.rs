@@ -12,9 +12,11 @@ use git_worktree_manager::operations::{
     path_cmd, setup_claude, shell, stash, worktree,
 };
 use git_worktree_manager::shell_functions;
+use git_worktree_manager::tui;
 use git_worktree_manager::update;
 
 fn main() {
+    tui::install_panic_hook();
     let cli = Cli::parse();
 
     // Handle --generate-completion before anything else
@@ -50,16 +52,17 @@ fn main() {
 
     let result = match cli.command {
         // Display commands
-        Some(Commands::List) => {
+        Some(Commands::List { cache }) => {
+            let no_cache = cache.no_cache; // #21: bind once, used in both branches
             if cli.global {
-                global_ops::global_list_worktrees()
+                global_ops::global_list_worktrees(no_cache)
             } else {
-                display::list_worktrees()
+                display::list_worktrees(no_cache)
             }
         }
-        Some(Commands::Status) => display::show_status(),
-        Some(Commands::Tree) => display::show_tree(),
-        Some(Commands::Stats) => display::show_stats(),
+        Some(Commands::Status { cache }) => display::show_status(cache.no_cache),
+        Some(Commands::Tree { cache }) => display::show_tree(cache.no_cache),
+        Some(Commands::Stats { cache }) => display::show_stats(cache.no_cache),
         Some(Commands::Diff {
             branch1,
             branch2,
@@ -202,12 +205,20 @@ fn main() {
         }
 
         Some(Commands::Clean {
+            cache,
             merged,
             older_than,
             interactive,
             dry_run,
             force,
-        }) => clean::clean_worktrees(merged, older_than, interactive, dry_run, force),
+        }) => clean::clean_worktrees(
+            cache.no_cache,
+            merged,
+            older_than,
+            interactive,
+            dry_run,
+            force,
+        ),
 
         Some(Commands::Sync {
             branch,

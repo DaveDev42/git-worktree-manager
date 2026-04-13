@@ -584,42 +584,6 @@ pub fn is_branch_merged(feature_branch: &str, base_branch: &str, repo: Option<&P
     false
 }
 
-/// Query GitHub PR state for a branch using `gh` CLI.
-///
-/// Returns the PR state string (e.g., "OPEN", "MERGED", "CLOSED") or None
-/// if `gh` is unavailable, no PR exists, or the query fails.
-pub fn get_pr_state(feature_branch: &str, repo: Option<&Path>) -> Option<String> {
-    if !has_command("gh") {
-        return None;
-    }
-
-    let result = run_command(
-        &[
-            "gh",
-            "pr",
-            "view",
-            feature_branch,
-            "--json",
-            "state",
-            "--jq",
-            ".state",
-        ],
-        repo,
-        false,
-        true,
-    )
-    .ok()?;
-
-    if result.returncode == 0 {
-        let state = result.stdout.trim().to_string();
-        if !state.is_empty() {
-            return Some(state);
-        }
-    }
-
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
