@@ -153,8 +153,13 @@ gw new <branch-name> -T <terminal-method> --prompt "<short task>"
 
 **Piping from another command:**
 ```bash
-generate-spec | gw new <branch-name> -T <terminal-method> --prompt-stdin
+generate-spec | gw new <branch-name> --prompt-stdin
 ```
+
+Note: `--prompt-stdin` consumes the process's stdin. Avoid combining it with
+`-T <terminal-method>` — the spawned terminal may inherit a closed stdin and
+behave unpredictably. Prefer `--prompt-file` whenever you need a specific
+terminal launcher.
 
 Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be given per invocation.
 
@@ -234,7 +239,11 @@ Use the method matching the user's terminal. If unsure, ask.
 
 ### Feature development
 ```bash
-gw new feature-x --prompt "Implement feature X"
+cat > /tmp/gw-prompt-$$.txt <<'PROMPT'
+Implement feature X
+PROMPT
+gw new feature-x --prompt-file /tmp/gw-prompt-$$.txt
+rm -f /tmp/gw-prompt-$$.txt
 # ... work is done in the new worktree ...
 gw pr feature-x                    # create PR
 gw delete feature-x                # cleanup after merge
