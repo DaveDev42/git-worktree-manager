@@ -93,6 +93,8 @@ fn main() {
             term,
             bg: _,
             prompt,
+            prompt_file: _,
+            prompt_stdin: _,
         }) => {
             // Prompt for .cwshare setup on first run
             cwshare_setup::prompt_cwshare_setup();
