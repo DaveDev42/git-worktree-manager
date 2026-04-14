@@ -73,6 +73,13 @@ Same git config metadata keys and session storage paths.
 - Release process: [release-please](https://github.com/googleapis/release-please) automates versioning via conventional commits
 - Commit messages: conventional commits (`feat:`, `fix:`, `perf:`, `chore:`, etc.)
 
+### Commit & Release Convention
+
+- **Default to patch version bumps.** Unless the user explicitly asks for a major or minor bump, every change (including API-breaking ones in 0.x) must ship as a patch release.
+- **Never use `feat!`, `fix!`, or a `BREAKING CHANGE:` footer** in PR titles, merge-commit messages, or commit messages. These escalate release-please to major bumps automatically (e.g. 0.x → 1.0.0). Use plain `feat:` / `fix:` / `refactor:` / `chore:` instead, and describe breaking changes in the PR body and migration notes rather than the commit prefix.
+- **Manual major/minor bump**: when a major/minor release is explicitly requested, push a commit to `main` with a `Release-As: x.y.z` footer, or temporarily set `release-as` in `release-please-config.json` via a chore PR, then remove it in a follow-up chore PR after the release ships.
+- Since this repo uses merge commits (not squash), every commit on the PR branch is visible to release-please; make sure no commit on the branch uses the banned prefixes.
+
 ## Code Conventions
 
 - Error handling: `Result<T>` with `CwError` enum, no `unwrap()` in production
