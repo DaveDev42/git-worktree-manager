@@ -411,6 +411,40 @@ pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
     out
 }
 
+/// Fast busy detection using only the session lockfile.
+///
+/// Unlike [`detect_busy`], this does not perform a system-wide process cwd
+/// scan (lsof on macOS, /proc walk on Linux). The cwd scan takes ~1.5s on
+/// typical macOS systems and dominates `gw list` latency, so read-only
+/// display paths use this variant.
+///
+/// This trades coverage for speed: worktrees entered via external `cd`
+/// without a `gw shell`/`gw start` session will not be flagged as busy.
+/// Commands that need strong busy guarantees (`gw delete`, `gw clean`)
+/// continue to use [`detect_busy`].
+pub fn detect_busy_lockfile_only(worktree: &Path) -> Vec<BusyInfo> {
+    // Skip self_siblings: it internally triggers cwd_scan (lsof / /proc walk)
+    // which is exactly what this fast path exists to avoid. Lockfile PIDs are
+    // owned by long-lived editors/shells, not pipeline co-members of this gw
+    // invocation, so ancestor-only exclusion is sufficient in practice.
+    let exclude_tree = self_process_tree();
+    let is_excluded = |pid: u32| exclude_tree.contains(&pid);
+    let mut out = Vec::new();
+
+    if let Some(entry) = lockfile::read_and_clean_stale(worktree) {
+        if !is_excluded(entry.pid) {
+            out.push(BusyInfo {
+                pid: entry.pid,
+                cmd: entry.cmd,
+                cwd: worktree.to_path_buf(),
+                source: BusySource::Lockfile,
+            });
+        }
+    }
+
+    out
+}
+
 /// Terminal multiplexers whose server process may have been launched from
 /// within a worktree but does not meaningfully "occupy" it — the real work
 /// happens in child shells / tools, which the cwd scan reports independently.
