@@ -127,7 +127,7 @@ When the user invokes `/gw <task description>` (e.g., `/gw fix the auth token ex
 
 ### Step 1: Parse the user's intent
 From the natural language input, determine:
-- **Task description** — what to pass as `--prompt`
+- **Task description** — the full task text (will be passed via `--prompt-file` in Step 2)
 - **Branch name** — generate a short, descriptive branch name from the task (e.g., `fix-auth-token-expiration`). Use conventional prefixes: `fix-`, `feat-`, `refactor-`, `docs-`, `test-`, `chore-`.
 - **Base branch** — use the default unless the user specifies otherwise
 
@@ -205,11 +205,12 @@ Three ways to supply the initial prompt (mutually exclusive):
 
 Example (recommended):
 ```bash
-cat > /tmp/gw-prompt.txt <<'PROMPT'
+cat > /tmp/gw-prompt-$$.txt <<'PROMPT'
 Fix JWT token expiration check in src/auth.rs.
 Make sure to cover the "leeway" edge case and add a unit test.
 PROMPT
-gw new fix-auth -T w-t --prompt-file /tmp/gw-prompt.txt
+gw new fix-auth -T w-t --prompt-file /tmp/gw-prompt-$$.txt
+rm -f /tmp/gw-prompt-$$.txt
 ```
 
 Example (short form):
@@ -260,7 +261,7 @@ gw -g scan --dir ~/projects        # discover repositories
 ## Guidelines
 
 - Use descriptive branch names: `fix-auth`, `feat-login-page`, `refactor-api`
-- Specify base branch if not main/master: `gw new fix-auth --base develop -T w-t --prompt "..."`
+- Specify base branch if not main/master: `gw new fix-auth --base develop -T w-t --prompt-file /tmp/gw-prompt-$$.txt`
 - One focused task per worktree
 - The delegated Claude Code instance works independently in its own worktree directory
 - You can delegate multiple tasks in parallel to different worktrees
