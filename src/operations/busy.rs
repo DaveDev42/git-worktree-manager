@@ -433,7 +433,9 @@ pub fn detect_busy_lockfile_only(worktree: &Path) -> Vec<BusyInfo> {
     // which is exactly what this fast path exists to avoid. Pipeline co-members
     // of this gw invocation are short-lived CLI tools (e.g. `gw list | head`)
     // that never call `gw shell`/`gw start`, so they cannot own a lockfile.
-    // Ancestor-only exclusion is strictly sufficient here.
+    // Ancestor-only exclusion is sufficient in practice — and in the rare case
+    // where a true sibling (e.g. a backgrounded `gw start`) does own a
+    // lockfile, reporting its worktree as busy is correct, not a false positive.
     let exclude_tree = self_process_tree();
     let is_excluded = |pid: u32| exclude_tree.contains(&pid);
     let mut out = Vec::new();
