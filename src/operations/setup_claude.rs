@@ -132,10 +132,31 @@ From the natural language input, determine:
 - **Base branch** — use the default unless the user specifies otherwise
 
 ### Step 2: Confirm and execute
-Show the user what you're about to run, then execute:
+
+Prefer `--prompt-file` for anything beyond a single short line — it avoids all
+shell escaping issues with quotes, newlines, and special characters.
+
+**Recommended (use this by default):**
 ```bash
-gw new <branch-name> -T <terminal-method> --prompt "<task description>"
+# Write the full prompt to a temp file, then pass the path.
+cat > /tmp/gw-prompt-$$.txt <<'PROMPT'
+<task description — multi-line OK, quotes OK, no escaping needed>
+PROMPT
+gw new <branch-name> -T <terminal-method> --prompt-file /tmp/gw-prompt-$$.txt
+rm -f /tmp/gw-prompt-$$.txt
 ```
+
+**Short one-liner alternative:**
+```bash
+gw new <branch-name> -T <terminal-method> --prompt "<short task>"
+```
+
+**Piping from another command:**
+```bash
+generate-spec | gw new <branch-name> -T <terminal-method> --prompt-stdin
+```
+
+Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be given per invocation.
 
 ### Branch name rules
 - Lowercase, hyphen-separated, max ~50 chars
@@ -154,7 +175,7 @@ gw new <branch-name> -T <terminal-method> --prompt "<task description>"
 
 | Command | Description |
 |---------|-------------|
-| `gw new <branch> [--prompt "..."]` | Create worktree + optionally launch AI with task |
+| `gw new <branch> [--prompt-file <path> \| --prompt "..." \| --prompt-stdin]` | Create worktree + optionally launch AI with task |
 | `gw delete <branch>` | Delete worktree and branch |
 | `gw list` | List all worktrees with status |
 | `gw status` | Show current worktree info |
@@ -174,19 +195,27 @@ gw new <branch-name> -T <terminal-method> --prompt "<task description>"
 
 ## Delegate a task to a new worktree
 
+Three ways to supply the initial prompt (mutually exclusive):
+
+| Flag | When to use |
+|------|-------------|
+| `--prompt-file <path>` ⭐ | **Recommended.** Multi-line prompts, prompts with quotes/special chars, anything skill-generated. |
+| `--prompt "<text>"` | Short single-line prompts only. |
+| `--prompt-stdin` | Piping from another command (`cmd \| gw new ... --prompt-stdin`). |
+
+Example (recommended):
 ```bash
-gw new <branch-name> -T <terminal-method> --prompt "<task description>"
+cat > /tmp/gw-prompt.txt <<'PROMPT'
+Fix JWT token expiration check in src/auth.rs.
+Make sure to cover the "leeway" edge case and add a unit test.
+PROMPT
+gw new fix-auth -T w-t --prompt-file /tmp/gw-prompt.txt
 ```
 
-Example:
+Example (short form):
 ```bash
-gw new fix-auth -T w-t --prompt "Fix JWT token expiration check in src/auth.rs"
+gw new fix-auth -T w-t --prompt "Fix JWT token expiration check"
 ```
-
-This will:
-1. Create a new git worktree on a new branch based on the current base branch
-2. Open a new terminal (e.g. WezTerm tab)
-3. Start Claude Code with the given prompt in interactive mode
 
 ### Terminal methods (use with -T flag)
 - `w-t` — WezTerm new tab
@@ -235,8 +264,9 @@ gw -g scan --dir ~/projects        # discover repositories
 - One focused task per worktree
 - The delegated Claude Code instance works independently in its own worktree directory
 - You can delegate multiple tasks in parallel to different worktrees
-- **Fire-and-forget**: Once a worktree task is spawned, you CANNOT stop it, send follow-up messages, or interact with it. The `--prompt` is the ONLY instruction the delegated instance receives. Therefore:
-  - Make the `--prompt` comprehensive — include all requirements, constraints, and acceptance criteria upfront
+- **Fire-and-forget**: Once a worktree task is spawned, you CANNOT stop it, send follow-up messages, or interact with it. The initial prompt is the ONLY instruction the delegated instance receives. Therefore:
+  - Make the prompt comprehensive — include all requirements, constraints, and acceptance criteria upfront
+  - Use `--prompt-file` for anything non-trivial so escaping does not silently corrupt the instructions
   - If the user's request is vague or ambiguous, ask clarifying questions BEFORE spawning
   - Do NOT spawn a task assuming you can "correct course later" — you cannot
 
@@ -260,7 +290,11 @@ Create new worktree for feature branch.
 - `--no-term` — Skip AI tool launch
 - `-T, --term <METHOD>` — Terminal launch method. Accepts canonical name (e.g., `tmux`, `wezterm-tab`) or alias (e.g., `t`, `w-t`). Supports `method:session-name` for tmux/zellij (e.g., `tmux:mywork`). See Terminal Launch Methods section below.
 - `--bg` — Launch AI tool in background
-- `--prompt <PROMPT>` — Initial prompt to pass to AI tool (interactive session)
+- `--prompt <PROMPT>` — Initial prompt as a CLI string (single-line, best for short prompts)
+- `--prompt-file <PATH>` — Read initial prompt from a file (recommended for multi-line / quoted content)
+- `--prompt-stdin` — Read initial prompt from standard input (for piping)
+
+Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be used per invocation.
 
 ### `gw delete [target] [OPTIONS]`
 Delete a worktree.
