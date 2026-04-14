@@ -11,7 +11,7 @@ use git_worktree_manager::operations::{
     ai_tools, backup, clean, config_ops, diagnostics, display, git_ops, global_ops, helpers,
     path_cmd, setup_claude, shell, stash, worktree,
 };
-use git_worktree_manager::prompt_source::resolve_prompt;
+use git_worktree_manager::resolve_prompt;
 use git_worktree_manager::shell_functions;
 use git_worktree_manager::tui;
 use git_worktree_manager::update;

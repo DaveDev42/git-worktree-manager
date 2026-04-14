@@ -16,3 +16,5 @@ pub mod shared_files;
 pub mod shell_functions;
 pub mod tui;
 pub mod update;
+
+pub use prompt_source::resolve_prompt;

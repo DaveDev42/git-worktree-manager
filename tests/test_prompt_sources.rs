@@ -1,4 +1,4 @@
-use git_worktree_manager::prompt_source::resolve_prompt;
+use git_worktree_manager::resolve_prompt;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -35,4 +35,20 @@ fn resolve_prompt_errors_when_file_missing() {
     let p = PathBuf::from("/nonexistent/definitely/not/here.txt");
     let err = resolve_prompt(None, Some(&p), false, || unreachable!()).unwrap_err();
     assert!(err.to_string().to_lowercase().contains("prompt"));
+}
+
+#[test]
+fn resolve_prompt_errors_when_stdin_reader_fails() {
+    let out = resolve_prompt(None, None, true, || {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::BrokenPipe,
+            "pipe closed",
+        ))
+    });
+    let err = out.unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("--prompt-stdin"),
+        "expected error message to mention --prompt-stdin, got: {msg}"
+    );
 }
