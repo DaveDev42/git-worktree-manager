@@ -99,16 +99,19 @@ fn main() {
             prompt_file,
             prompt_stdin,
         }) => {
-            // Prompt for .cwshare setup on first run
-            cwshare_setup::prompt_cwshare_setup();
-
             (|| -> Result<()> {
+                // Resolve the prompt first so a missing file / bad stdin
+                // fails before any interactive side effects.
                 let resolved =
                     resolve_prompt(prompt, prompt_file.as_deref(), prompt_stdin, || {
                         let mut buf = String::new();
                         std::io::stdin().read_to_string(&mut buf)?;
                         Ok(buf)
                     })?;
+
+                // Prompt for .cwshare setup on first run.
+                cwshare_setup::prompt_cwshare_setup();
+
                 worktree::create_worktree(
                     &name,
                     base.as_deref(),

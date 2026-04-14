@@ -15,9 +15,10 @@ use crate::error::{CwError, Result};
 ///
 /// Trailing newline characters (`\r`, `\n`, or any mix thereof) are stripped
 /// from the end of the resolved string — editors and heredocs routinely append
-/// one or more, and the AI tool doesn't want them. If the resolved string is empty or whitespace-only after
-/// stripping, `None` is returned so downstream code behaves as if no prompt
-/// was given (avoids passing an empty argv entry like `claude ""`).
+/// one or more, and the AI tool doesn't want them.
+/// If the resolved string is empty or whitespace-only after stripping, `None`
+/// is returned so downstream code behaves as if no prompt was given (avoids
+/// passing an empty argv entry like `claude ""`).
 pub fn resolve_prompt(
     inline: Option<String>,
     file: Option<&Path>,

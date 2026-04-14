@@ -163,25 +163,55 @@ fn test_workflow_new_with_prompt_file() {
     use std::io::Write;
     let repo = TestRepo::new();
 
-    let prompt_path =
-        std::env::temp_dir().join(format!("gw-test-prompt-{}.txt", std::process::id()));
-    {
-        let mut f = std::fs::File::create(&prompt_path).unwrap();
-        writeln!(f, "do the thing").unwrap();
-    }
+    let mut prompt_file = tempfile::NamedTempFile::new().unwrap();
+    writeln!(prompt_file, "do the thing").unwrap();
 
     let ok = repo.cw_ok(&[
         "new",
         "prompt-file-test",
         "--no-term",
         "--prompt-file",
-        prompt_path.to_str().unwrap(),
+        prompt_file.path().to_str().unwrap(),
     ]);
-    let _ = std::fs::remove_file(&prompt_path);
     assert!(ok, "gw new --prompt-file should succeed");
 
     let list = repo.cw_stdout(&["list"]);
     assert!(list.contains("prompt-file-test"));
+}
+
+#[test]
+fn test_workflow_new_with_prompt_stdin() {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let repo = TestRepo::new();
+
+    let mut child = Command::new(TestRepo::cw_bin())
+        .args(["new", "prompt-stdin-test", "--no-term", "--prompt-stdin"])
+        .current_dir(repo.path())
+        .env("CW_LAUNCH_METHOD", "foreground")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn gw");
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"piped task description\n")
+        .unwrap();
+    let output = child.wait_with_output().expect("wait");
+    assert!(
+        output.status.success(),
+        "gw new --prompt-stdin failed: {}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let list = repo.cw_stdout(&["list"]);
+    assert!(list.contains("prompt-stdin-test"));
 }
 
 #[test]

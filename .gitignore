@@ -13,3 +13,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Stray rustc/proc-macro build artifacts (occasionally dropped in the repo root)
+/*.rlib
