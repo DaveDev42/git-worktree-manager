@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.33](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.32...v0.0.33) (2026-04-14)
+
+
+### Performance Improvements
+
+* use lockfile-only busy check in gw list ([7275a80](https://github.com/DaveDev42/git-worktree-manager/commit/7275a800b82c5a6f5c121fda7f80b4bacf80cb18))
+* use lockfile-only busy check in gw list ([3f76ca2](https://github.com/DaveDev42/git-worktree-manager/commit/3f76ca22a6481cf260234e6780cb906897a42fda))
+
 ## [0.0.32](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.31...v0.0.32) (2026-04-14)
 
 
