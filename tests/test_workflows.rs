@@ -202,6 +202,9 @@ fn test_workflow_new_with_prompt_stdin() {
         .unwrap()
         .write_all(b"piped task description\n")
         .unwrap();
+    // Close the write end so the child sees EOF; also avoids any potential
+    // deadlock if wait_with_output() ever reads a full pipe buffer.
+    drop(child.stdin.take());
     let output = child.wait_with_output().expect("wait");
     assert!(
         output.status.success(),

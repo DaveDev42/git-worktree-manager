@@ -55,9 +55,13 @@ gw new fix-auth --prompt "Fix the JWT token expiration bug in auth.rs"
 gw new fix-auth --prompt-file /tmp/task.md
 
 # Or pipe it from another command
-# (avoid combining with --term: the spawned terminal may inherit a closed stdin)
 generate-spec | gw new fix-auth --prompt-stdin
+```
 
+> **Note:** avoid combining `--prompt-stdin` with `--term` — the spawned
+> terminal may inherit a closed stdin and behave unpredictably.
+
+```bash
 # List all worktrees
 gw list
 

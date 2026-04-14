@@ -143,6 +143,7 @@ fn test_new_help() {
         .stdout(predicate::str::contains("--base"))
         .stdout(predicate::str::contains("--no-term"))
         .stdout(predicate::str::contains("--term"))
+        .stdout(predicate::str::contains("--prompt "))
         .stdout(predicate::str::contains("--prompt-file"))
         .stdout(predicate::str::contains("--prompt-stdin"));
 }

@@ -54,6 +54,18 @@ fn resolve_prompt_strips_crlf_trailing_newline() {
 }
 
 #[test]
+fn resolve_prompt_preserves_mid_content_crlf() {
+    let out = resolve_prompt(
+        Some("line1\r\nline2\r\n".to_string()),
+        None,
+        false,
+        || unreachable!(),
+    )
+    .unwrap();
+    assert_eq!(out.as_deref(), Some("line1\r\nline2"));
+}
+
+#[test]
 fn resolve_prompt_returns_none_for_empty_file() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("empty.txt");
