@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.0.32](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.31...v0.0.32) (2026-04-14)
+
+
+### Features
+
+* **cli:** add --prompt-file and --prompt-stdin to gw new ([30f8086](https://github.com/DaveDev42/git-worktree-manager/commit/30f80861c1fc53349d470d220cba0194be2a8722))
+* **cli:** add --prompt-file and --prompt-stdin to gw new ([0425c7a](https://github.com/DaveDev42/git-worktree-manager/commit/0425c7a25f567ed10fb6a348bb4287d5dda45423))
+* **cli:** resolve prompt from --prompt/--prompt-file/--prompt-stdin ([235fac2](https://github.com/DaveDev42/git-worktree-manager/commit/235fac24e0130410fe0340d268256631fe5dd548))
+
 ## [0.0.31](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.30...v0.0.31) (2026-04-13)
 
 
