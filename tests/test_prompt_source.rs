@@ -59,6 +59,42 @@ fn resolve_prompt_returns_none_for_empty_file() {
 }
 
 #[test]
+fn resolve_prompt_returns_none_for_empty_inline() {
+    let out = resolve_prompt(Some(String::new()), None, false, || unreachable!()).unwrap();
+    assert!(out.is_none(), "expected empty inline to yield None");
+}
+
+#[test]
+fn resolve_prompt_returns_none_for_whitespace_only_inline() {
+    let out = resolve_prompt(Some("   ".to_string()), None, false, || unreachable!()).unwrap();
+    assert!(
+        out.is_none(),
+        "expected whitespace-only inline to yield None"
+    );
+}
+
+#[test]
+fn resolve_prompt_returns_none_for_whitespace_only_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ws.txt");
+    std::fs::write(&path, "  \t\n").unwrap();
+    let out = resolve_prompt(None, Some(path.as_path()), false, || unreachable!()).unwrap();
+    assert!(out.is_none(), "expected whitespace-only file to yield None");
+}
+
+#[test]
+fn resolve_prompt_strips_multiple_trailing_newlines() {
+    let out = resolve_prompt(
+        Some("hello\n\n\n".to_string()),
+        None,
+        false,
+        || unreachable!(),
+    )
+    .unwrap();
+    assert_eq!(out.as_deref(), Some("hello"));
+}
+
+#[test]
 fn resolve_prompt_returns_none_for_whitespace_only_stdin() {
     let out = resolve_prompt(None, None, true, || Ok("   \n\t\n".to_string())).unwrap();
     assert!(

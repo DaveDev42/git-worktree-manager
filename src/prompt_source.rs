@@ -13,11 +13,11 @@ use crate::error::{CwError, Result};
 /// `stdin_reader` is injected so tests can drive the stdin path without touching
 /// the real stdin. In production `main` passes a closure that reads from `std::io::stdin()`.
 ///
-/// A single trailing `\n` (and optional `\r`) is stripped from the resolved
-/// string — most editors and heredocs append one, and the AI tool doesn't want it.
-/// If the resolved string is empty or whitespace-only after stripping, `None` is
-/// returned so downstream code behaves as if no prompt was given (avoids passing
-/// an empty argv entry like `claude ""`).
+/// Trailing newlines (`\n`, `\r\n`, or any mix) are stripped from the resolved
+/// string — editors and heredocs routinely append one or more, and the AI tool
+/// doesn't want them. If the resolved string is empty or whitespace-only after
+/// stripping, `None` is returned so downstream code behaves as if no prompt
+/// was given (avoids passing an empty argv entry like `claude ""`).
 pub fn resolve_prompt(
     inline: Option<String>,
     file: Option<&Path>,
@@ -43,8 +43,7 @@ pub fn resolve_prompt(
     };
 
     Ok(raw.and_then(|s| {
-        let trimmed = s.strip_suffix('\n').unwrap_or(&s);
-        let trimmed = trimmed.strip_suffix('\r').unwrap_or(trimmed);
+        let trimmed = s.trim_end_matches(['\n', '\r']);
         if trimmed.trim().is_empty() {
             None
         } else {

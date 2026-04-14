@@ -139,11 +139,12 @@ shell escaping issues with quotes, newlines, and special characters.
 **Recommended (use this by default):**
 ```bash
 # Write the full prompt to a temp file, then pass the path.
+# `trap` ensures the file is cleaned up even if `gw new` fails.
+trap 'rm -f /tmp/gw-prompt-$$.txt' EXIT
 cat > /tmp/gw-prompt-$$.txt <<'PROMPT'
 <task description — multi-line OK, quotes OK, no escaping needed>
 PROMPT
 gw new <branch-name> -T <terminal-method> --prompt-file /tmp/gw-prompt-$$.txt
-rm -f /tmp/gw-prompt-$$.txt
 ```
 
 **Short one-liner alternative:**
@@ -210,12 +211,12 @@ Three ways to supply the initial prompt (mutually exclusive):
 
 Example (recommended):
 ```bash
+trap 'rm -f /tmp/gw-prompt-$$.txt' EXIT
 cat > /tmp/gw-prompt-$$.txt <<'PROMPT'
 Fix JWT token expiration check in src/auth.rs.
 Make sure to cover the "leeway" edge case and add a unit test.
 PROMPT
 gw new fix-auth -T w-t --prompt-file /tmp/gw-prompt-$$.txt
-rm -f /tmp/gw-prompt-$$.txt
 ```
 
 Example (short form):
@@ -239,11 +240,12 @@ Use the method matching the user's terminal. If unsure, ask.
 
 ### Feature development
 ```bash
+trap 'rm -f /tmp/gw-prompt-$$.txt' EXIT
 cat > /tmp/gw-prompt-$$.txt <<'PROMPT'
 Implement feature X
 PROMPT
+# `-T` omitted — uses the default launcher from `gw config get launch.method`.
 gw new feature-x --prompt-file /tmp/gw-prompt-$$.txt
-rm -f /tmp/gw-prompt-$$.txt
 # ... work is done in the new worktree ...
 gw pr feature-x                    # create PR
 gw delete feature-x                # cleanup after merge
