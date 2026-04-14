@@ -411,6 +411,49 @@ pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
     out
 }
 
+/// Fast busy detection using only the session lockfile.
+///
+/// Unlike [`detect_busy`], this does not perform a system-wide process cwd
+/// scan (lsof on macOS, /proc walk on Linux). The cwd scan takes ~1.5s on
+/// typical macOS systems and dominates `gw list` latency, so read-only
+/// display paths use this variant.
+///
+/// This trades coverage for speed: worktrees entered via external `cd`
+/// without a `gw shell`/`gw start` session will not be flagged as busy.
+/// Commands that need strong busy guarantees (`gw delete`, `gw clean`)
+/// continue to use [`detect_busy`].
+///
+/// Like [`detect_busy`], this calls [`lockfile::read_and_clean_stale`]
+/// and may silently remove a stale `<worktree>/.git/gw-session.lock` as
+/// a self-healing side effect. `gw list` (the primary caller) therefore
+/// mutates lockfiles on every invocation, even though it is nominally
+/// read-only.
+pub fn detect_busy_lockfile_only(worktree: &Path) -> Vec<BusyInfo> {
+    // Skip self_siblings: it internally triggers cwd_scan (lsof / /proc walk)
+    // which is exactly what this fast path exists to avoid. Pipeline co-members
+    // of this gw invocation are short-lived CLI tools (e.g. `gw list | head`)
+    // that never call `gw shell`/`gw start`, so they cannot own a lockfile.
+    // Ancestor-only exclusion is sufficient in practice — and in the rare case
+    // where a true sibling (e.g. a backgrounded `gw start`) does own a
+    // lockfile, reporting its worktree as busy is correct, not a false positive.
+    let exclude_tree = self_process_tree();
+    let is_excluded = |pid: u32| exclude_tree.contains(&pid);
+    let mut out = Vec::new();
+
+    if let Some(entry) = lockfile::read_and_clean_stale(worktree) {
+        if !is_excluded(entry.pid) {
+            out.push(BusyInfo {
+                pid: entry.pid,
+                cmd: entry.cmd,
+                cwd: worktree.to_path_buf(),
+                source: BusySource::Lockfile,
+            });
+        }
+    }
+
+    out
+}
+
 /// Terminal multiplexers whose server process may have been launched from
 /// within a worktree but does not meaningfully "occupy" it — the real work
 /// happens in child shells / tools, which the cwd scan reports independently.
