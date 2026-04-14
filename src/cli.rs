@@ -5,6 +5,7 @@ pub mod completions;
 pub mod global;
 
 use clap::{Args, Parser, Subcommand, ValueHint};
+use std::path::PathBuf;
 
 /// Shared cache-bypass flag, flattened into subcommands that query PR status.
 #[derive(Args, Debug, Clone)]
@@ -73,6 +74,12 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Create new worktree for feature branch
+    #[command(group(
+        clap::ArgGroup::new("prompt_source")
+            .args(["prompt", "prompt_file", "prompt_stdin"])
+            .multiple(false)
+            .required(false)
+    ))]
     New {
         /// Branch name for the new worktree
         name: String,
@@ -100,6 +107,14 @@ pub enum Commands {
         /// Initial prompt to pass to the AI tool (starts interactive session with task)
         #[arg(long)]
         prompt: Option<String>,
+
+        /// Read the initial prompt from a file (recommended for multi-line prompts)
+        #[arg(long = "prompt-file", value_hint = ValueHint::FilePath)]
+        prompt_file: Option<PathBuf>,
+
+        /// Read the initial prompt from standard input
+        #[arg(long = "prompt-stdin")]
+        prompt_stdin: bool,
     },
 
     /// Create GitHub Pull Request from worktree

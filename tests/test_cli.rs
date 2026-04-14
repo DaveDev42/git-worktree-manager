@@ -1,5 +1,7 @@
 /// CLI integration tests — verify help, version, and basic arg parsing.
 use assert_cmd::Command;
+use clap::Parser;
+use git_worktree_manager::cli::{Cli, Commands};
 use predicates::prelude::*;
 
 fn cw() -> Command {
@@ -140,7 +142,10 @@ fn test_new_help() {
         .stdout(predicate::str::contains("--path"))
         .stdout(predicate::str::contains("--base"))
         .stdout(predicate::str::contains("--no-term"))
-        .stdout(predicate::str::contains("--term"));
+        .stdout(predicate::str::contains("--term"))
+        .stdout(predicate::str::contains("--prompt "))
+        .stdout(predicate::str::contains("--prompt-file"))
+        .stdout(predicate::str::contains("--prompt-stdin"));
 }
 
 #[test]
@@ -445,4 +450,97 @@ fn test_generate_completion_invalid() {
     cw().args(["--generate-completion", "tcsh"])
         .assert()
         .failure();
+}
+
+#[test]
+fn new_accepts_prompt_flag() {
+    let cli = Cli::try_parse_from(["gw", "new", "feat-x", "--prompt", "hello"]).expect("parses");
+    let Some(Commands::New {
+        prompt,
+        prompt_file,
+        prompt_stdin,
+        ..
+    }) = cli.command
+    else {
+        panic!("expected New variant");
+    };
+    assert_eq!(prompt.as_deref(), Some("hello"));
+    assert!(prompt_file.is_none());
+    assert!(!prompt_stdin);
+}
+
+#[test]
+fn new_accepts_prompt_file_flag() {
+    let cli = Cli::try_parse_from(["gw", "new", "feat-x", "--prompt-file", "/tmp/p.txt"])
+        .expect("parses");
+    let Some(Commands::New {
+        prompt,
+        prompt_file,
+        prompt_stdin,
+        ..
+    }) = cli.command
+    else {
+        panic!("expected New variant");
+    };
+    assert!(prompt.is_none());
+    assert_eq!(
+        prompt_file.as_deref().and_then(|p| p.to_str()),
+        Some("/tmp/p.txt")
+    );
+    assert!(!prompt_stdin);
+}
+
+#[test]
+fn new_accepts_prompt_stdin_flag() {
+    let cli = Cli::try_parse_from(["gw", "new", "feat-x", "--prompt-stdin"]).expect("parses");
+    let Some(Commands::New { prompt_stdin, .. }) = cli.command else {
+        panic!("expected New variant");
+    };
+    assert!(prompt_stdin);
+}
+
+#[test]
+fn new_rejects_conflicting_prompt_sources() {
+    let err = Cli::try_parse_from([
+        "gw",
+        "new",
+        "feat-x",
+        "--prompt",
+        "hi",
+        "--prompt-file",
+        "/tmp/p.txt",
+    ])
+    .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("cannot be used with") || msg.contains("conflict"),
+        "expected conflict error, got: {msg}"
+    );
+}
+
+#[test]
+fn new_rejects_prompt_and_stdin() {
+    let err = Cli::try_parse_from(["gw", "new", "feat-x", "--prompt", "hi", "--prompt-stdin"])
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("cannot be used with") || err.to_string().contains("conflict")
+    );
+}
+
+#[test]
+fn new_rejects_file_and_stdin() {
+    let err = Cli::try_parse_from([
+        "gw",
+        "new",
+        "feat-x",
+        "--prompt-file",
+        "/tmp/p.txt",
+        "--prompt-stdin",
+    ])
+    .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("cannot be used with") || msg.contains("conflict"),
+        "expected conflict error, got: {msg}"
+    );
 }

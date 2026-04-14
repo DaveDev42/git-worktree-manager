@@ -157,3 +157,82 @@ fn test_workflow_backup_create_list() {
         "Should list the backup"
     );
 }
+
+#[test]
+fn test_workflow_new_with_prompt_file() {
+    use std::io::Write;
+    let repo = TestRepo::new();
+
+    let mut prompt_file = tempfile::NamedTempFile::new().unwrap();
+    writeln!(prompt_file, "do the thing").unwrap();
+
+    let ok = repo.cw_ok(&[
+        "new",
+        "prompt-file-test",
+        "--no-term",
+        "--prompt-file",
+        prompt_file.path().to_str().unwrap(),
+    ]);
+    assert!(ok, "gw new --prompt-file should succeed");
+
+    let list = repo.cw_stdout(&["list"]);
+    assert!(list.contains("prompt-file-test"));
+}
+
+#[test]
+fn test_workflow_new_with_prompt_stdin() {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let repo = TestRepo::new();
+
+    let mut child = Command::new(TestRepo::cw_bin())
+        .args(["new", "prompt-stdin-test", "--no-term", "--prompt-stdin"])
+        .current_dir(repo.path())
+        .env("CW_LAUNCH_METHOD", "foreground")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn gw");
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"piped task description\n")
+        .unwrap();
+    // Close the write end so the child sees EOF; also avoids any potential
+    // deadlock if wait_with_output() ever reads a full pipe buffer.
+    drop(child.stdin.take());
+    let output = child.wait_with_output().expect("wait");
+    assert!(
+        output.status.success(),
+        "gw new --prompt-stdin failed: {}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let list = repo.cw_stdout(&["list"]);
+    assert!(list.contains("prompt-stdin-test"));
+}
+
+#[test]
+fn test_workflow_new_prompt_file_missing_fails_cleanly() {
+    let repo = TestRepo::new();
+
+    let ok = repo.cw_ok(&[
+        "new",
+        "no-worktree-created",
+        "--no-term",
+        "--prompt-file",
+        "/nonexistent/does/not/exist.txt",
+    ]);
+    assert!(!ok, "missing prompt file should fail the command");
+
+    let list = repo.cw_stdout(&["list"]);
+    assert!(
+        !list.contains("no-worktree-created"),
+        "worktree should NOT be created when prompt file is missing"
+    );
+}

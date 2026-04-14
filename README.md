@@ -48,9 +48,20 @@ gw new fix-auth
 # Create with a specific terminal launcher
 gw new fix-auth --term tmux
 
-# Create and pass an initial prompt to the AI tool
+# Create and pass an initial prompt to the AI tool (short one-liner)
 gw new fix-auth --prompt "Fix the JWT token expiration bug in auth.rs"
 
+# Or read the prompt from a file (recommended for multi-line / quoted content)
+gw new fix-auth --prompt-file /tmp/task.md
+
+# Or pipe it from another command
+generate-spec | gw new fix-auth --prompt-stdin
+```
+
+> **Note:** avoid combining `--prompt-stdin` with `--term` — the spawned
+> terminal may inherit a closed stdin and behave unpredictably.
+
+```bash
 # List all worktrees
 gw list
 

@@ -6,14 +6,17 @@ use git_worktree_manager::config;
 use git_worktree_manager::console as cwconsole;
 use git_worktree_manager::constants;
 use git_worktree_manager::cwshare_setup;
+use git_worktree_manager::error::Result;
 use git_worktree_manager::hooks;
 use git_worktree_manager::operations::{
     ai_tools, backup, clean, config_ops, diagnostics, display, git_ops, global_ops, helpers,
     path_cmd, setup_claude, shell, stash, worktree,
 };
+use git_worktree_manager::resolve_prompt;
 use git_worktree_manager::shell_functions;
 use git_worktree_manager::tui;
 use git_worktree_manager::update;
+use std::io::Read;
 
 fn main() {
     tui::install_panic_hook();
@@ -93,19 +96,32 @@ fn main() {
             term,
             bg: _,
             prompt,
+            prompt_file,
+            prompt_stdin,
         }) => {
-            // Prompt for .cwshare setup on first run
-            cwshare_setup::prompt_cwshare_setup();
+            (|| -> Result<()> {
+                // Resolve the prompt first so a missing file / bad stdin
+                // fails before any interactive side effects.
+                let resolved =
+                    resolve_prompt(prompt, prompt_file.as_deref(), prompt_stdin, || {
+                        let mut buf = String::new();
+                        std::io::stdin().read_to_string(&mut buf)?;
+                        Ok(buf)
+                    })?;
 
-            worktree::create_worktree(
-                &name,
-                base.as_deref(),
-                path.as_deref(),
-                term.as_deref(),
-                no_term,
-                prompt.as_deref(),
-            )
-            .map(|_| ())
+                // Prompt for .cwshare setup on first run.
+                cwshare_setup::prompt_cwshare_setup();
+
+                worktree::create_worktree(
+                    &name,
+                    base.as_deref(),
+                    path.as_deref(),
+                    term.as_deref(),
+                    no_term,
+                    resolved.as_deref(),
+                )?;
+                Ok(())
+            })()
         }
 
         Some(Commands::Pr {

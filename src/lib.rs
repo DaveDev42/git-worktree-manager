@@ -9,9 +9,12 @@ pub mod git;
 pub mod hooks;
 pub mod messages;
 pub mod operations;
+pub mod prompt_source;
 pub mod registry;
 pub mod session;
 pub mod shared_files;
 pub mod shell_functions;
 pub mod tui;
 pub mod update;
+
+pub use prompt_source::resolve_prompt;
