@@ -506,3 +506,21 @@ fn new_rejects_prompt_and_stdin() {
         err.to_string().contains("cannot be used with") || err.to_string().contains("conflict")
     );
 }
+
+#[test]
+fn new_rejects_file_and_stdin() {
+    let err = Cli::try_parse_from([
+        "gw",
+        "new",
+        "feat-x",
+        "--prompt-file",
+        "/tmp/p.txt",
+        "--prompt-stdin",
+    ])
+    .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("cannot be used with") || msg.contains("conflict"),
+        "expected conflict error, got: {msg}"
+    );
+}
