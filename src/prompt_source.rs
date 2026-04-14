@@ -15,6 +15,9 @@ use crate::error::{CwError, Result};
 ///
 /// A single trailing `\n` (and optional `\r`) is stripped from the resolved
 /// string — most editors and heredocs append one, and the AI tool doesn't want it.
+/// If the resolved string is empty or whitespace-only after stripping, `None` is
+/// returned so downstream code behaves as if no prompt was given (avoids passing
+/// an empty argv entry like `claude ""`).
 pub fn resolve_prompt(
     inline: Option<String>,
     file: Option<&Path>,
@@ -39,9 +42,13 @@ pub fn resolve_prompt(
         None
     };
 
-    Ok(raw.map(|s| {
+    Ok(raw.and_then(|s| {
         let trimmed = s.strip_suffix('\n').unwrap_or(&s);
         let trimmed = trimmed.strip_suffix('\r').unwrap_or(trimmed);
-        trimmed.to_string()
+        if trimmed.trim().is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
     }))
 }

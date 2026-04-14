@@ -450,6 +450,23 @@ fn test_generate_completion_invalid() {
 }
 
 #[test]
+fn new_accepts_prompt_flag() {
+    let cli = Cli::try_parse_from(["gw", "new", "feat-x", "--prompt", "hello"]).expect("parses");
+    let Some(Commands::New {
+        prompt,
+        prompt_file,
+        prompt_stdin,
+        ..
+    }) = cli.command
+    else {
+        panic!("expected New variant");
+    };
+    assert_eq!(prompt.as_deref(), Some("hello"));
+    assert!(prompt_file.is_none());
+    assert!(!prompt_stdin);
+}
+
+#[test]
 fn new_accepts_prompt_file_flag() {
     let cli = Cli::try_parse_from(["gw", "new", "feat-x", "--prompt-file", "/tmp/p.txt"])
         .expect("parses");

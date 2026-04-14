@@ -270,7 +270,10 @@ gw -g scan --dir ~/projects        # discover repositories
 ## Guidelines
 
 - Use descriptive branch names: `fix-auth`, `feat-login-page`, `refactor-api`
-- Specify base branch if not main/master: `gw new fix-auth --base develop -T w-t --prompt-file /tmp/gw-prompt-$$.txt`
+- Specify base branch if not main/master. Write the prompt to a file first (see the heredoc example above), then:
+  ```bash
+  gw new fix-auth --base develop -T w-t --prompt-file /tmp/gw-prompt-$$.txt
+  ```
 - One focused task per worktree
 - The delegated Claude Code instance works independently in its own worktree directory
 - You can delegate multiple tasks in parallel to different worktrees
@@ -302,7 +305,7 @@ Create new worktree for feature branch.
 - `--bg` — Launch AI tool in background
 - `--prompt <PROMPT>` — Initial prompt as a CLI string (single-line, best for short prompts)
 - `--prompt-file <PATH>` — Read initial prompt from a file (recommended for multi-line / quoted content)
-- `--prompt-stdin` — Read initial prompt from standard input (for piping)
+- `--prompt-stdin` — Read initial prompt from standard input (for piping). Avoid combining with `-T <terminal>` — the spawned terminal may inherit a closed stdin.
 
 Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be used per invocation.
 

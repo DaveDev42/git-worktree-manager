@@ -6,6 +6,7 @@ use git_worktree_manager::config;
 use git_worktree_manager::console as cwconsole;
 use git_worktree_manager::constants;
 use git_worktree_manager::cwshare_setup;
+use git_worktree_manager::error::Result;
 use git_worktree_manager::hooks;
 use git_worktree_manager::operations::{
     ai_tools, backup, clean, config_ops, diagnostics, display, git_ops, global_ops, helpers,
@@ -101,12 +102,13 @@ fn main() {
             // Prompt for .cwshare setup on first run
             cwshare_setup::prompt_cwshare_setup();
 
-            resolve_prompt(prompt, prompt_file.as_deref(), prompt_stdin, || {
-                let mut buf = String::new();
-                std::io::stdin().read_to_string(&mut buf)?;
-                Ok(buf)
-            })
-            .and_then(|resolved| {
+            (|| -> Result<()> {
+                let resolved =
+                    resolve_prompt(prompt, prompt_file.as_deref(), prompt_stdin, || {
+                        let mut buf = String::new();
+                        std::io::stdin().read_to_string(&mut buf)?;
+                        Ok(buf)
+                    })?;
                 worktree::create_worktree(
                     &name,
                     base.as_deref(),
@@ -114,9 +116,9 @@ fn main() {
                     term.as_deref(),
                     no_term,
                     resolved.as_deref(),
-                )
-                .map(|_| ())
-            })
+                )?;
+                Ok(())
+            })()
         }
 
         Some(Commands::Pr {
