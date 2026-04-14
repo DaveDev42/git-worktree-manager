@@ -34,7 +34,11 @@ fn resolve_prompt_returns_none_when_no_source() {
 fn resolve_prompt_errors_when_file_missing() {
     let p = PathBuf::from("/nonexistent/definitely/not/here.txt");
     let err = resolve_prompt(None, Some(&p), false, || unreachable!()).unwrap_err();
-    assert!(err.to_string().to_lowercase().contains("prompt"));
+    let msg = err.to_string();
+    assert!(
+        msg.contains("--prompt-file"),
+        "expected error message to mention --prompt-file, got: {msg}"
+    );
 }
 
 #[test]

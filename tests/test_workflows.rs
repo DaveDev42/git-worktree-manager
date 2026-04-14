@@ -157,3 +157,49 @@ fn test_workflow_backup_create_list() {
         "Should list the backup"
     );
 }
+
+#[test]
+fn test_workflow_new_with_prompt_file() {
+    use std::io::Write;
+    let repo = TestRepo::new();
+
+    let prompt_path =
+        std::env::temp_dir().join(format!("gw-test-prompt-{}.txt", std::process::id()));
+    {
+        let mut f = std::fs::File::create(&prompt_path).unwrap();
+        writeln!(f, "do the thing").unwrap();
+    }
+
+    let ok = repo.cw_ok(&[
+        "new",
+        "prompt-file-test",
+        "--no-term",
+        "--prompt-file",
+        prompt_path.to_str().unwrap(),
+    ]);
+    let _ = std::fs::remove_file(&prompt_path);
+    assert!(ok, "gw new --prompt-file should succeed");
+
+    let list = repo.cw_stdout(&["list"]);
+    assert!(list.contains("prompt-file-test"));
+}
+
+#[test]
+fn test_workflow_new_prompt_file_missing_fails_cleanly() {
+    let repo = TestRepo::new();
+
+    let ok = repo.cw_ok(&[
+        "new",
+        "no-worktree-created",
+        "--no-term",
+        "--prompt-file",
+        "/nonexistent/does/not/exist.txt",
+    ]);
+    assert!(!ok, "missing prompt file should fail the command");
+
+    let list = repo.cw_stdout(&["list"]);
+    assert!(
+        !list.contains("no-worktree-created"),
+        "worktree should NOT be created when prompt file is missing"
+    );
+}

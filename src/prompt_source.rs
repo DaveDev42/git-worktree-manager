@@ -13,9 +13,9 @@ use crate::error::{CwError, Result};
 /// `stdin_reader` is injected so tests can drive the stdin path without touching
 /// the real stdin. In production `main` passes a closure that reads from `std::io::stdin()`.
 ///
-/// Trailing newlines (`\n`, `\r\n`, or any mix) are stripped from the resolved
-/// string — editors and heredocs routinely append one or more, and the AI tool
-/// doesn't want them. If the resolved string is empty or whitespace-only after
+/// Trailing newline characters (`\r`, `\n`, or any mix thereof) are stripped
+/// from the end of the resolved string — editors and heredocs routinely append
+/// one or more, and the AI tool doesn't want them. If the resolved string is empty or whitespace-only after
 /// stripping, `None` is returned so downstream code behaves as if no prompt
 /// was given (avoids passing an empty argv entry like `claude ""`).
 pub fn resolve_prompt(

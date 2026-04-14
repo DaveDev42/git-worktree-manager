@@ -272,8 +272,12 @@ gw -g scan --dir ~/projects        # discover repositories
 ## Guidelines
 
 - Use descriptive branch names: `fix-auth`, `feat-login-page`, `refactor-api`
-- Specify base branch if not main/master. Write the prompt to a file first (see the heredoc example above), then:
+- Specify base branch if not main/master:
   ```bash
+  trap 'rm -f /tmp/gw-prompt-$$.txt' EXIT
+  cat > /tmp/gw-prompt-$$.txt <<'PROMPT'
+  <task description>
+  PROMPT
   gw new fix-auth --base develop -T w-t --prompt-file /tmp/gw-prompt-$$.txt
   ```
 - One focused task per worktree
