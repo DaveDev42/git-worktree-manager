@@ -422,11 +422,18 @@ pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
 /// without a `gw shell`/`gw start` session will not be flagged as busy.
 /// Commands that need strong busy guarantees (`gw delete`, `gw clean`)
 /// continue to use [`detect_busy`].
+///
+/// Like [`detect_busy`], this calls [`lockfile::read_and_clean_stale`]
+/// and may silently remove a stale `<worktree>/.git/gw-session.lock` as
+/// a self-healing side effect. `gw list` (the primary caller) therefore
+/// mutates lockfiles on every invocation, even though it is nominally
+/// read-only.
 pub fn detect_busy_lockfile_only(worktree: &Path) -> Vec<BusyInfo> {
     // Skip self_siblings: it internally triggers cwd_scan (lsof / /proc walk)
-    // which is exactly what this fast path exists to avoid. Lockfile PIDs are
-    // owned by long-lived editors/shells, not pipeline co-members of this gw
-    // invocation, so ancestor-only exclusion is sufficient in practice.
+    // which is exactly what this fast path exists to avoid. Pipeline co-members
+    // of this gw invocation are short-lived CLI tools (e.g. `gw list | head`)
+    // that never call `gw shell`/`gw start`, so they cannot own a lockfile.
+    // Ancestor-only exclusion is strictly sufficient here.
     let exclude_tree = self_process_tree();
     let is_excluded = |pid: u32| exclude_tree.contains(&pid);
     let mut out = Vec::new();

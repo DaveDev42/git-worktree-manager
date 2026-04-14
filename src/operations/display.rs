@@ -53,11 +53,14 @@ pub fn get_worktree_status(
 
     // Busy beats "active": another session (claude, shell, editor) holds this
     // worktree. The current process and its ancestors are excluded inside
-    // detect_busy so the caller's own shell does not self-report.
+    // detect_busy_lockfile_only so the caller's own shell does not self-report.
     //
     // Uses the lockfile-only fast path: the full cwd scan (lsof / /proc walk)
-    // takes ~1.5s on macOS and dominates `gw list` latency. Destructive
-    // commands (`gw delete`, `gw clean`) still use the full `detect_busy`.
+    // takes ~1.5s on macOS and dominates `gw list` latency. This narrows
+    // exclusion to ancestors only (no siblings) since the fast path must
+    // avoid `self_siblings`, which internally triggers the cwd scan.
+    // Destructive commands (`gw delete`, `gw clean`) still use the full
+    // `detect_busy`.
     if !crate::operations::busy::detect_busy_lockfile_only(path).is_empty() {
         return "busy".to_string();
     }
