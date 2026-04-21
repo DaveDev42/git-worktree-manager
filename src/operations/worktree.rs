@@ -493,21 +493,7 @@ pub fn sync_worktree(
                 }
                 _ => {
                     if ai_merge {
-                        let conflicts = git::git_command(
-                            &["diff", "--name-only", "--diff-filter=U"],
-                            Some(wt_path),
-                            false,
-                            true,
-                        )
-                        .ok()
-                        .and_then(|r| {
-                            if r.returncode == 0 && !r.stdout.trim().is_empty() {
-                                Some(r.stdout.trim().to_string())
-                            } else {
-                                None
-                            }
-                        });
-
+                        let conflicts = git::list_conflicted_files(wt_path);
                         let _ =
                             git::git_command(&["rebase", "--abort"], Some(wt_path), false, false);
 

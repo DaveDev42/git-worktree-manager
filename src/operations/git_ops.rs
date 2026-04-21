@@ -69,22 +69,7 @@ pub fn create_pr_worktree(
     match git::git_command(&["rebase", &rebase_target], Some(&cwd), false, true) {
         Ok(r) if r.returncode == 0 => {}
         _ => {
-            // Abort and report
-            let conflicts = git::git_command(
-                &["diff", "--name-only", "--diff-filter=U"],
-                Some(&cwd),
-                false,
-                true,
-            )
-            .ok()
-            .and_then(|r| {
-                if r.returncode == 0 && !r.stdout.trim().is_empty() {
-                    Some(r.stdout.trim().to_string())
-                } else {
-                    None
-                }
-            });
-
+            let conflicts = git::list_conflicted_files(&cwd);
             let _ = git::git_command(&["rebase", "--abort"], Some(&cwd), false, false);
 
             let conflict_vec = conflicts
@@ -307,22 +292,7 @@ pub fn merge_worktree(
             Ok(r) if r.returncode == 0 => {}
             _ => {
                 if ai_merge {
-                    // Try AI-assisted conflict resolution
-                    let conflicts = git::git_command(
-                        &["diff", "--name-only", "--diff-filter=U"],
-                        Some(&cwd),
-                        false,
-                        true,
-                    )
-                    .ok()
-                    .and_then(|r| {
-                        if r.returncode == 0 && !r.stdout.trim().is_empty() {
-                            Some(r.stdout.trim().to_string())
-                        } else {
-                            None
-                        }
-                    });
-
+                    let conflicts = git::list_conflicted_files(&cwd);
                     let _ = git::git_command(&["rebase", "--abort"], Some(&cwd), false, false);
 
                     let conflict_list = conflicts.as_deref().unwrap_or("(unknown)");
