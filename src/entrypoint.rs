@@ -33,6 +33,10 @@ pub fn run() {
         return;
     }
 
+    // Skip startup checks for internal commands (shell-completion helpers,
+    // cache refresh) — they are invoked by the shell on every keystroke, so
+    // paying for update-check / prompts would compound latency and risk
+    // recursive re-entry into the update flow.
     let is_internal = matches!(
         &cli.command,
         Some(
@@ -97,6 +101,9 @@ pub fn run() {
             prompt_file,
             prompt_stdin,
         }) => (|| -> Result<()> {
+            // Resolve the prompt first so a missing file or unreadable stdin
+            // fails before any interactive side effects (worktree creation,
+            // AI-tool launch) leave the tree in a half-configured state.
             let resolved = resolve_prompt(prompt, prompt_file.as_deref(), prompt_stdin, || {
                 let mut buf = String::new();
                 std::io::stdin().read_to_string(&mut buf)?;
