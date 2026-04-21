@@ -45,7 +45,10 @@ fn send_text(pane_id: &str, command: &str) -> Result<()> {
 
     wait_for_shell_ready(pane_id, timeout);
 
-    let input_text = format!("{}\n", command);
+    // Use CR, not LF: Windows PowerShell / PSReadLine treats CR as Enter and
+    // ignores a bare LF. On Unix, the PTY's `icrnl` setting maps CR→LF before
+    // the shell sees it, so bash/zsh accept CR too.
+    let input_text = format!("{}\r", command);
     let mut child = Command::new("wezterm")
         .args(["cli", "send-text", "--pane-id", pane_id, "--no-paste"])
         .stdin(std::process::Stdio::piped())
@@ -122,13 +125,17 @@ pub fn launch_tab_bg(path: &Path, command: &str, ai_tool_name: &str) -> Result<(
         ));
     }
 
-    // Find the currently active tab in the same window so we can restore focus.
-    // We use WEZTERM_PANE to identify which window we belong to, then look for
-    // the active tab in that window (which may differ from the calling tab if
-    // the user has switched tabs since opening this shell).
+    // Find the tab that owns $WEZTERM_PANE so we can restore focus to it.
+    // Older code tried to find "whichever tab is active in this window" via
+    // the JSON `is_active` field, but WezTerm on Windows reports `is_active`
+    // per-pane-within-tab (every sole-pane tab is marked active), so the
+    // search returned an arbitrary tab. Looking up the calling pane's tab
+    // directly is reliable on every platform, at the cost of losing the
+    // "user manually switched tabs between launching and spawn returning"
+    // edge case — an acceptable trade for correct default behavior.
     let current_pane = std::env::var("WEZTERM_PANE").unwrap_or_default();
     let original_tab_id = if !current_pane.is_empty() {
-        get_active_tab_in_same_window(&current_pane)
+        get_tab_for_pane(&current_pane)
     } else {
         None
     };
@@ -163,12 +170,8 @@ pub fn launch_tab_bg(path: &Path, command: &str, ai_tool_name: &str) -> Result<(
     Ok(())
 }
 
-/// Get the tab_id of the currently active tab in the same window as `pane_id`.
-///
-/// This finds the window that `pane_id` belongs to, then returns the tab_id
-/// of whichever tab is currently active in that window. This correctly handles
-/// the case where the user has switched to a different tab after launching gw.
-fn get_active_tab_in_same_window(pane_id: &str) -> Option<String> {
+/// Get the tab_id that owns `pane_id`, via `wezterm cli list --format json`.
+fn get_tab_for_pane(pane_id: &str) -> Option<String> {
     let output = Command::new("wezterm")
         .args(["cli", "list", "--format", "json"])
         .output()
@@ -179,31 +182,15 @@ fn get_active_tab_in_same_window(pane_id: &str) -> Option<String> {
     }
 
     let panes: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).ok()?;
-    find_active_tab_in_window(&panes, pane_id)
+    find_tab_for_pane(&panes, pane_id)
 }
 
-/// Pure function: find the active tab_id in the same window as `pane_id`.
-///
-/// Looks up which window owns `pane_id`, then finds the active pane in that
-/// window and returns its tab_id.
-fn find_active_tab_in_window(panes: &[serde_json::Value], pane_id: &str) -> Option<String> {
+/// Pure function: find the tab_id that owns `pane_id`.
+fn find_tab_for_pane(panes: &[serde_json::Value], pane_id: &str) -> Option<String> {
     let target: u64 = pane_id.parse().ok()?;
-
-    // Find which window the calling pane belongs to
-    let window_id = panes
-        .iter()
-        .find(|p| p["pane_id"].as_u64() == Some(target))
-        .and_then(|p| p["window_id"].as_u64())?;
-
-    // Find the active tab in that window.
-    // Note: `is_active` is per-pane, not per-tab. WezTerm marks exactly one pane
-    // per window as active (the focused pane in the active tab). Finding any
-    // active pane in our window gives us the correct tab_id.
     panes
         .iter()
-        .find(|p| {
-            p["window_id"].as_u64() == Some(window_id) && p["is_active"].as_bool() == Some(true)
-        })
+        .find(|p| p["pane_id"].as_u64() == Some(target))
         .and_then(|p| p["tab_id"].as_u64())
         .map(|t| t.to_string())
 }
@@ -245,55 +232,45 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn make_pane(window_id: u64, tab_id: u64, pane_id: u64, is_active: bool) -> serde_json::Value {
+    fn make_pane(tab_id: u64, pane_id: u64) -> serde_json::Value {
         json!({
-            "window_id": window_id,
             "tab_id": tab_id,
             "pane_id": pane_id,
-            "is_active": is_active,
         })
     }
 
     #[test]
-    fn returns_active_tab_in_same_window() {
-        let panes = vec![make_pane(1, 10, 100, false), make_pane(1, 11, 101, true)];
-        assert_eq!(find_active_tab_in_window(&panes, "100"), Some("11".into()));
-    }
-
-    #[test]
-    fn ignores_active_tab_in_different_window() {
-        let panes = vec![make_pane(1, 10, 100, false), make_pane(2, 20, 200, true)];
-        assert_eq!(find_active_tab_in_window(&panes, "100"), None);
+    fn returns_tab_for_matching_pane() {
+        let panes = vec![make_pane(10, 100), make_pane(11, 101)];
+        assert_eq!(find_tab_for_pane(&panes, "101"), Some("11".into()));
     }
 
     #[test]
     fn returns_none_for_unknown_pane() {
-        let panes = vec![make_pane(1, 10, 100, true)];
-        assert_eq!(find_active_tab_in_window(&panes, "999"), None);
+        let panes = vec![make_pane(10, 100)];
+        assert_eq!(find_tab_for_pane(&panes, "999"), None);
     }
 
     #[test]
     fn returns_none_for_invalid_pane_id() {
-        let panes = vec![make_pane(1, 10, 100, true)];
-        assert_eq!(find_active_tab_in_window(&panes, "not-a-number"), None);
-    }
-
-    #[test]
-    fn handles_multi_pane_active_tab() {
-        let panes = vec![make_pane(1, 10, 100, false), make_pane(1, 10, 101, true)];
-        assert_eq!(find_active_tab_in_window(&panes, "100"), Some("10".into()));
+        let panes = vec![make_pane(10, 100)];
+        assert_eq!(find_tab_for_pane(&panes, "not-a-number"), None);
     }
 
     #[test]
     fn returns_none_for_empty_pane_list() {
         let panes: Vec<serde_json::Value> = vec![];
-        assert_eq!(find_active_tab_in_window(&panes, "100"), None);
+        assert_eq!(find_tab_for_pane(&panes, "100"), None);
     }
 
     #[test]
-    fn returns_own_tab_when_caller_is_active() {
-        // Caller's pane being active is a harmless no-op restore.
-        let panes = vec![make_pane(1, 10, 100, true)];
-        assert_eq!(find_active_tab_in_window(&panes, "100"), Some("10".into()));
+    fn ignores_is_active_flag() {
+        // Windows WezTerm reports `is_active=true` on every sole-pane tab,
+        // so the lookup must not rely on that field.
+        let panes = vec![
+            json!({"tab_id": 0, "pane_id": 0, "is_active": true}),
+            json!({"tab_id": 9, "pane_id": 9, "is_active": true}),
+        ];
+        assert_eq!(find_tab_for_pane(&panes, "9"), Some("9".into()));
     }
 }
