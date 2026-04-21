@@ -502,7 +502,7 @@ dependencies = [
 
 [[package]]
 name = "git-worktree-manager"
-version = "0.0.33"
+version = "0.0.34"
 dependencies = [
  "assert_cmd",
  "clap",
