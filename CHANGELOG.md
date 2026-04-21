@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.35](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.34...v0.0.35) (2026-04-21)
+
+
+### Bug Fixes
+
+* **wezterm:** make w-t and w-t-b launchers work on Windows ([a6a6234](https://github.com/DaveDev42/git-worktree-manager/commit/a6a6234ced6f6a79f74f73ca354956f9f36f3e74))
+* **wezterm:** make w-t and w-t-b launchers work on Windows ([74995dd](https://github.com/DaveDev42/git-worktree-manager/commit/74995ddf35f140b6f6573d39cf4f2181624c6f9a))
+
 ## [0.0.34](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.33...v0.0.34) (2026-04-21)
 
 
