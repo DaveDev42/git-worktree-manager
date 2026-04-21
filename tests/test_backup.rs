@@ -97,3 +97,73 @@ fn test_backup_help() {
     assert!(stdout.contains("list"));
     assert!(stdout.contains("restore"));
 }
+
+/// Regression: `backup create` on the main worktree (no per-branch config
+/// recording a base_path) previously wrote metadata with `base_path: null`,
+/// which made `backup list` filter the entry out of the current-repo view.
+#[test]
+fn test_backup_list_includes_main_worktree_backup() {
+    let repo = TestRepo::new();
+
+    let output = repo.cw(&["backup", "create"]);
+    assert!(
+        output.status.success(),
+        "backup create failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = repo.cw_stdout(&["backup", "list"]);
+    assert!(
+        stdout.contains("main:"),
+        "expected 'main:' header in backup list, got:\n{}",
+        stdout
+    );
+}
+
+/// Regression: a branch name containing '/' (e.g. `feat/A`) previously
+/// created a nested `<backups>/feat/A/` layout, which broke
+/// `list_backups`'s per-branch `read_dir` iteration. The on-disk layout
+/// must be flat (`feat-A/`) while the display still shows the original
+/// `feat/A` taken from metadata.
+#[test]
+fn test_backup_with_slash_in_branch() {
+    let repo = TestRepo::new();
+    // The TestRepo::create_worktree helper assumes the default flattened
+    // path and asserts the directory exists; invoke `gw new` directly so
+    // the slash in the branch name is handled end-to-end by gw itself.
+    let output = repo.cw(&["new", "feat/A", "--no-term"]);
+    assert!(
+        output.status.success(),
+        "gw new feat/A failed: {}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let output = repo.cw(&["backup", "create", "feat/A"]);
+    assert!(
+        output.status.success(),
+        "backup create failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let backups_dir = git_worktree_manager::config::get_config_path()
+        .parent()
+        .expect("config path has parent")
+        .join("backups");
+    assert!(
+        backups_dir.join("feat-A").is_dir(),
+        "expected flattened 'feat-A' dir under {}",
+        backups_dir.display()
+    );
+    assert!(
+        !backups_dir.join("feat").join("A").exists(),
+        "nested 'feat/A' dir should not exist"
+    );
+
+    let stdout = repo.cw_stdout(&["backup", "list"]);
+    assert!(
+        stdout.contains("feat/A:"),
+        "backup list should show the original 'feat/A:' heading, got:\n{}",
+        stdout
+    );
+}
