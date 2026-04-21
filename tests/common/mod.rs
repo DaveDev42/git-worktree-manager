@@ -1,4 +1,10 @@
-/// Shared test helpers — creates temporary git repos for integration tests.
+//! Shared test helpers — creates temporary git repos for integration tests.
+//!
+//! Each integration test binary imports this module independently, so clippy
+//! sees any helper not used by *that specific binary* as dead. The helpers
+//! are collectively used across the suite; suppress the per-binary noise.
+#![allow(dead_code)]
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 

@@ -44,9 +44,7 @@ fn test_registry_serialization_roundtrip() {
 
 #[test]
 fn test_get_all_registered_repos() {
-    // Just verify it doesn't crash; result depends on user's actual registry
-    let repos = registry::get_all_registered_repos();
-    assert!(repos.len() >= 0);
+    let _repos = registry::get_all_registered_repos();
 }
 
 #[test]

@@ -396,6 +396,26 @@ pub fn fetch_and_rebase_target(base_branch: &str, repo: &Path, cwd: &Path) -> (b
     (fetch_ok, rebase_target)
 }
 
+/// Return the list of files with unresolved merge/rebase conflicts at `path`
+/// as a newline-joined string. `None` when there are no conflicts or the git
+/// call itself fails — callers treat both cases as "no diagnostic available".
+pub fn list_conflicted_files(path: &Path) -> Option<String> {
+    git_command(
+        &["diff", "--name-only", "--diff-filter=U"],
+        Some(path),
+        false,
+        true,
+    )
+    .ok()
+    .and_then(|r| {
+        if r.returncode == 0 && !r.stdout.trim().is_empty() {
+            Some(r.stdout.trim().to_string())
+        } else {
+            None
+        }
+    })
+}
+
 /// Check if a command is available in PATH.
 pub fn has_command(name: &str) -> bool {
     if let Ok(path_var) = std::env::var("PATH") {

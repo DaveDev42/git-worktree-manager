@@ -66,9 +66,7 @@ fn test_load_context_not_found() {
 
 #[test]
 fn test_list_sessions_returns_vec() {
-    let sessions = session::list_sessions();
-    // Just verify it returns without error; may or may not have entries
-    assert!(sessions.len() >= 0);
+    let _sessions = session::list_sessions();
 }
 
 #[test]

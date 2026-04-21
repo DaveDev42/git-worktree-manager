@@ -960,7 +960,7 @@ pub fn show_stats(no_cache: bool) -> Result<()> {
     // Top by commits
     println!("  {}", style("Most Active (by commits)").bold());
     let mut by_commits = data.iter().collect::<Vec<_>>();
-    by_commits.sort_by(|a, b| b.commit_count.cmp(&a.commit_count));
+    by_commits.sort_by_key(|b| std::cmp::Reverse(b.commit_count));
     let max_commits = by_commits
         .first()
         .map(|d| d.commit_count)

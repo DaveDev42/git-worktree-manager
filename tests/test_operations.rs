@@ -826,7 +826,7 @@ fn test_sync_nested_worktrees() {
 #[test]
 fn test_clean_no_criteria() {
     let repo = TestRepo::new();
-    let output = repo.cw(&["clean"]);
+    let _output = repo.cw(&["clean"]);
     let combined = repo.cw_combined(&["clean"]);
     assert!(
         combined.contains("criterion")
@@ -857,10 +857,8 @@ fn test_clean_merged_dry_run() {
 #[test]
 fn test_clean_merged() {
     let repo = TestRepo::new();
-    let wt = repo.create_worktree("clean-merged-test");
+    let _wt = repo.create_worktree("clean-merged-test");
 
-    // The worktree's branch is at same commit as main (just created), so it's "merged"
-    // Or we can merge it first, but let's just test the clean --merged flow
     let output = repo.cw(&["clean", "--merged"]);
     assert!(output.status.success());
 }

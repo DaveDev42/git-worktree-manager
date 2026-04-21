@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::config;
 use crate::constants::{
-    default_worktree_path, format_config_key, CONFIG_KEY_BASE_BRANCH, CONFIG_KEY_BASE_PATH,
+    default_worktree_path, format_config_key, sanitize_branch_name, CONFIG_KEY_BASE_BRANCH,
+    CONFIG_KEY_BASE_PATH,
 };
 use crate::error::{CwError, Result};
 use crate::git;
@@ -58,7 +59,11 @@ pub fn backup_worktree(branch: Option<&str>, all: bool) -> Result<()> {
     let mut backup_count = 0;
 
     for (branch_name, worktree_path) in &branches_to_backup {
-        let branch_backup_dir = backups_root.join(branch_name).join(&timestamp);
+        // Flatten slashes and other special chars so branches like "feat/A"
+        // don't create nested dirs that break read_dir iteration in list_backups.
+        let branch_backup_dir = backups_root
+            .join(sanitize_branch_name(branch_name))
+            .join(&timestamp);
         let _ = std::fs::create_dir_all(&branch_backup_dir);
 
         let bundle_file = branch_backup_dir.join("bundle.git");
@@ -85,11 +90,14 @@ pub fn backup_worktree(branch: Option<&str>, all: bool) -> Result<()> {
             }
         }
 
-        // Get metadata
+        // Get metadata. Fall back to the repo root when per-branch config is
+        // absent (e.g. backing up the main worktree) so list_backups can still
+        // attribute the backup to the current repo.
         let base_branch_key = format_config_key(CONFIG_KEY_BASE_BRANCH, branch_name);
         let base_path_key = format_config_key(CONFIG_KEY_BASE_PATH, branch_name);
         let base_branch = git::get_config(&base_branch_key, Some(&repo));
-        let base_path = git::get_config(&base_path_key, Some(&repo));
+        let base_path = git::get_config(&base_path_key, Some(&repo))
+            .or_else(|| Some(repo.to_string_lossy().to_string()));
 
         // Check for uncommitted changes
         let has_changes =
@@ -206,40 +214,6 @@ pub fn list_backups(branch: Option<&str>, all: bool) -> Result<()> {
     entries.sort_by_key(|e| e.file_name());
 
     for branch_dir in entries {
-        let branch_name = branch_dir.file_name().to_string_lossy().to_string();
-
-        if let Some(filter) = branch {
-            if branch_name != filter {
-                continue;
-            }
-        }
-
-        // Filter by current repo: check if any backup's base_path matches
-        if let Some(ref repo_root) = current_repo {
-            let matches_repo = std::fs::read_dir(branch_dir.path())
-                .ok()
-                .into_iter()
-                .flatten()
-                .flatten()
-                .any(|ts_dir| {
-                    let metadata_file = ts_dir.path().join("metadata.json");
-                    std::fs::read_to_string(&metadata_file)
-                        .ok()
-                        .and_then(|c| serde_json::from_str::<BackupMetadata>(&c).ok())
-                        .map(|m| {
-                            m.base_path
-                                .as_deref()
-                                .map(std::path::Path::new)
-                                .map(|p| p == repo_root)
-                                .unwrap_or(false)
-                        })
-                        .unwrap_or(false)
-                });
-            if !matches_repo {
-                continue;
-            }
-        }
-
         let mut timestamps: Vec<_> = std::fs::read_dir(branch_dir.path())
             .ok()
             .into_iter()
@@ -253,8 +227,40 @@ pub fn list_backups(branch: Option<&str>, all: bool) -> Result<()> {
             continue;
         }
 
+        // Prefer the original branch name from metadata over the sanitized
+        // directory name so `feat/A` shows up as "feat/A" rather than "feat-A".
+        let display_branch = timestamps
+            .iter()
+            .find_map(|ts_dir| {
+                std::fs::read_to_string(ts_dir.path().join("metadata.json"))
+                    .ok()
+                    .and_then(|c| serde_json::from_str::<BackupMetadata>(&c).ok())
+                    .map(|m| m.branch)
+            })
+            .unwrap_or_else(|| branch_dir.file_name().to_string_lossy().to_string());
+
+        if let Some(filter) = branch {
+            if display_branch != filter {
+                continue;
+            }
+        }
+
+        if let Some(ref repo_root) = current_repo {
+            let matches_repo = timestamps.iter().any(|ts_dir| {
+                std::fs::read_to_string(ts_dir.path().join("metadata.json"))
+                    .ok()
+                    .and_then(|c| serde_json::from_str::<BackupMetadata>(&c).ok())
+                    .and_then(|m| m.base_path)
+                    .map(|p| std::path::Path::new(&p) == repo_root)
+                    .unwrap_or(false)
+            });
+            if !matches_repo {
+                continue;
+            }
+        }
+
         found = true;
-        println!("{}:", style(&branch_name).green().bold());
+        println!("{}:", style(&display_branch).green().bold());
 
         for ts_dir in &timestamps {
             let metadata_file = ts_dir.path().join("metadata.json");
@@ -287,7 +293,7 @@ pub fn list_backups(branch: Option<&str>, all: bool) -> Result<()> {
 /// Restore worktree from backup.
 pub fn restore_worktree(branch: &str, path: Option<&str>, id: Option<&str>) -> Result<()> {
     let backups_dir = get_backups_dir();
-    let branch_backup_dir = backups_dir.join(branch);
+    let branch_backup_dir = backups_dir.join(sanitize_branch_name(branch));
 
     if !branch_backup_dir.exists() {
         return Err(CwError::Git(messages::backup_not_found(

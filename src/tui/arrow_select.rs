@@ -48,11 +48,13 @@ pub fn arrow_select(
 // ---------------------------------------------------------------------------
 
 /// Get terminal width from stderr, defaulting to 80.
+#[cfg(unix)]
 fn get_terminal_width() -> usize {
     console::Term::stderr().size().1 as usize
 }
 
 /// Write raw bytes to stderr (unbuffered).
+#[cfg(unix)]
 fn write_stderr(s: &str) {
     let stderr = std::io::stderr();
     let mut handle = stderr.lock();
@@ -61,6 +63,7 @@ fn write_stderr(s: &str) {
 }
 
 /// Strip ANSI escape sequences and return the visible length.
+#[cfg(any(unix, test))]
 fn visible_len(text: &str) -> usize {
     let mut len = 0;
     let bytes = text.as_bytes();
@@ -84,6 +87,7 @@ fn visible_len(text: &str) -> usize {
 }
 
 /// Truncate text to fit within `width` visible characters, preserving ANSI codes.
+#[cfg(any(unix, test))]
 fn truncate(text: &str, width: usize) -> String {
     if visible_len(text) <= width {
         return text.to_string();
@@ -121,6 +125,7 @@ fn truncate(text: &str, width: usize) -> String {
 // ---------------------------------------------------------------------------
 
 /// Render the selector list on stderr using ANSI escape codes.
+#[cfg(unix)]
 fn render(
     items: &[(String, String)],
     title: &str,
@@ -163,6 +168,7 @@ fn render(
 }
 
 /// Erase the rendered selector from stderr.
+#[cfg(unix)]
 fn cleanup(total_lines: usize) {
     // Restore to saved position
     write_stderr("\x1b[u");
@@ -177,6 +183,7 @@ fn cleanup(total_lines: usize) {
 // ---------------------------------------------------------------------------
 
 /// Recognized key events.
+#[cfg(unix)]
 #[derive(Debug, PartialEq)]
 enum Key {
     Up,
@@ -448,6 +455,7 @@ mod tests {
         assert_eq!(arrow_select(&[], "title", 0), None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_key_enum_equality() {
         assert_eq!(Key::Up, Key::Up);
@@ -457,8 +465,7 @@ mod tests {
 
     #[test]
     fn test_fallback_default_index_clamped() {
-        // arrow_select clamps default_index; test the logic directly
-        let items = vec![
+        let items = [
             ("a".to_string(), "val_a".to_string()),
             ("b".to_string(), "val_b".to_string()),
         ];

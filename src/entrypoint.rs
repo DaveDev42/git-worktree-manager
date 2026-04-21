@@ -1,34 +1,42 @@
+//! CLI entrypoint — shared between the `gw` and `cw` binaries.
+//!
+//! Both binary targets (`src/bin/gw.rs`, `src/bin/cw.rs`) delegate to
+//! [`run`]. Keeping the logic here avoids compiling the same source file
+//! twice, which triggered Cargo's "file present in multiple build targets"
+//! warning under the previous layout.
+
 use clap::Parser;
-use git_worktree_manager::cli::{
-    BackupAction, Cli, Commands, ConfigAction, HookAction, StashAction,
-};
-use git_worktree_manager::config;
-use git_worktree_manager::console as cwconsole;
-use git_worktree_manager::constants;
-use git_worktree_manager::cwshare_setup;
-use git_worktree_manager::error::Result;
-use git_worktree_manager::hooks;
-use git_worktree_manager::operations::{
+
+use crate::cli::{BackupAction, Cli, Commands, ConfigAction, HookAction, StashAction};
+use crate::config;
+use crate::console as cwconsole;
+use crate::constants;
+use crate::cwshare_setup;
+use crate::error::{CwError, Result};
+use crate::hooks;
+use crate::operations::{
     ai_tools, backup, clean, config_ops, diagnostics, display, git_ops, global_ops, helpers,
     path_cmd, setup_claude, shell, stash, worktree,
 };
-use git_worktree_manager::resolve_prompt;
-use git_worktree_manager::shell_functions;
-use git_worktree_manager::tui;
-use git_worktree_manager::update;
+use crate::resolve_prompt;
+use crate::shell_functions;
+use crate::tui;
+use crate::update;
 use std::io::Read;
 
-fn main() {
+pub fn run() {
     tui::install_panic_hook();
     let cli = Cli::parse();
 
-    // Handle --generate-completion before anything else
     if let Some(ref shell_name) = cli.generate_completion {
         generate_completions(shell_name);
         return;
     }
 
-    // Skip startup checks for internal commands (avoid recursion / unnecessary I/O)
+    // Skip startup checks for internal commands (shell-completion helpers,
+    // cache refresh) — they are invoked by the shell on every keystroke, so
+    // paying for update-check / prompts would compound latency and risk
+    // recursive re-entry into the update flow.
     let is_internal = matches!(
         &cli.command,
         Some(
@@ -40,23 +48,19 @@ fn main() {
         )
     );
 
-    // Auto-update check (instant from cache, background refresh)
     if !is_internal {
         update::check_for_update_if_needed();
     }
 
-    // One-time prompt for shell integration setup
     if !is_internal {
         config::prompt_shell_completion_setup();
     }
 
-    // Set global mode flag
     helpers::set_global_mode(cli.global);
 
     let result = match cli.command {
-        // Display commands
         Some(Commands::List { cache }) => {
-            let no_cache = cache.no_cache; // #21: bind once, used in both branches
+            let no_cache = cache.no_cache;
             if cli.global {
                 global_ops::global_list_worktrees(no_cache)
             } else {
@@ -73,7 +77,6 @@ fn main() {
             files,
         }) => display::diff_worktrees(&branch1, &branch2, summary, files),
 
-        // Config commands
         Some(Commands::Config { action }) => match action {
             ConfigAction::Show => config::show_config().map(|output| println!("{}", output)),
             ConfigAction::List => config::list_config(),
@@ -87,7 +90,6 @@ fn main() {
             ConfigAction::Reset => config::reset_config(),
         },
 
-        // Core workflow
         Some(Commands::New {
             name,
             path,
@@ -98,31 +100,28 @@ fn main() {
             prompt,
             prompt_file,
             prompt_stdin,
-        }) => {
-            (|| -> Result<()> {
-                // Resolve the prompt first so a missing file / bad stdin
-                // fails before any interactive side effects.
-                let resolved =
-                    resolve_prompt(prompt, prompt_file.as_deref(), prompt_stdin, || {
-                        let mut buf = String::new();
-                        std::io::stdin().read_to_string(&mut buf)?;
-                        Ok(buf)
-                    })?;
+        }) => (|| -> Result<()> {
+            // Resolve the prompt first so a missing file or unreadable stdin
+            // fails before any interactive side effects (worktree creation,
+            // AI-tool launch) leave the tree in a half-configured state.
+            let resolved = resolve_prompt(prompt, prompt_file.as_deref(), prompt_stdin, || {
+                let mut buf = String::new();
+                std::io::stdin().read_to_string(&mut buf)?;
+                Ok(buf)
+            })?;
 
-                // Prompt for .cwshare setup on first run.
-                cwshare_setup::prompt_cwshare_setup();
+            cwshare_setup::prompt_cwshare_setup();
 
-                worktree::create_worktree(
-                    &name,
-                    base.as_deref(),
-                    path.as_deref(),
-                    term.as_deref(),
-                    no_term,
-                    resolved.as_deref(),
-                )?;
-                Ok(())
-            })()
-        }
+            worktree::create_worktree(
+                &name,
+                base.as_deref(),
+                path.as_deref(),
+                term.as_deref(),
+                no_term,
+                resolved.as_deref(),
+            )?;
+            Ok(())
+        })(),
 
         Some(Commands::Pr {
             branch,
@@ -133,13 +132,7 @@ fn main() {
             worktree: is_worktree,
             by_branch,
         }) => {
-            let lookup_mode = if is_worktree {
-                Some("worktree")
-            } else if by_branch {
-                Some("branch")
-            } else {
-                None
-            };
+            let lookup_mode = resolve_lookup_mode(is_worktree, by_branch);
             git_ops::create_pr_worktree(
                 branch.as_deref(),
                 !no_push,
@@ -176,13 +169,7 @@ fn main() {
             worktree: is_worktree,
             by_branch,
         }) => {
-            let lookup_mode = if is_worktree {
-                Some("worktree")
-            } else if by_branch {
-                Some("branch")
-            } else {
-                None
-            };
+            let lookup_mode = resolve_lookup_mode(is_worktree, by_branch);
             ai_tools::resume_worktree(branch.as_deref(), term.as_deref(), lookup_mode)
         }
 
@@ -200,13 +187,7 @@ fn main() {
             worktree: is_worktree,
             branch: is_branch,
         }) => {
-            let lookup_mode = if is_worktree {
-                Some("worktree")
-            } else if is_branch {
-                Some("branch")
-            } else {
-                None
-            };
+            let lookup_mode = resolve_lookup_mode(is_worktree, is_branch);
             // Arg mapping for delete_worktree:
             //   force (git-force)       <- !no_force   (default true)
             //   allow_busy (busy gate)  <- force       (CLI --force flag)
@@ -244,13 +225,7 @@ fn main() {
             worktree: is_worktree,
             by_branch,
         }) => {
-            let lookup_mode = if is_worktree {
-                Some("worktree")
-            } else if by_branch {
-                Some("branch")
-            } else {
-                None
-            };
+            let lookup_mode = resolve_lookup_mode(is_worktree, by_branch);
             worktree::sync_worktree(branch.as_deref(), all, fetch_only, ai_merge, lookup_mode)
         }
 
@@ -262,13 +237,7 @@ fn main() {
             worktree: is_worktree,
             by_branch,
         }) => {
-            let lookup_mode = if is_worktree {
-                Some("worktree")
-            } else if by_branch {
-                Some("branch")
-            } else {
-                None
-            };
+            let lookup_mode = resolve_lookup_mode(is_worktree, by_branch);
             config_ops::change_base_branch(
                 &new_base,
                 branch.as_deref(),
@@ -278,7 +247,6 @@ fn main() {
             )
         }
 
-        // Backup subcommands
         Some(Commands::Backup { action }) => match action {
             BackupAction::Create {
                 branch,
@@ -291,7 +259,6 @@ fn main() {
             }
         },
 
-        // Stash subcommands
         Some(Commands::Stash { action }) => match action {
             StashAction::Save { message } => stash::stash_save(message.as_deref()),
             StashAction::List => stash::stash_list(),
@@ -301,24 +268,17 @@ fn main() {
             } => stash::stash_apply(&target_branch, &stash_ref),
         },
 
-        // Hook subcommands
         Some(Commands::Hook { action }) => match action {
             HookAction::Add {
                 event,
                 command,
                 id,
                 description,
-            } => {
-                let hook_id =
-                    hooks::add_hook(&event, &command, id.as_deref(), description.as_deref());
-                match hook_id {
-                    Ok(id) => {
-                        println!("* Added hook '{}' for {}", id, event);
-                        Ok(())
-                    }
-                    Err(e) => Err(e),
-                }
-            }
+            } => hooks::add_hook(&event, &command, id.as_deref(), description.as_deref()).map(
+                |hook_id| {
+                    println!("* Added hook '{}' for {}", hook_id, event);
+                },
+            ),
             HookAction::Remove { event, hook_id } => hooks::remove_hook(&event, &hook_id),
             HookAction::List { event } => {
                 list_hooks(event.as_deref());
@@ -333,19 +293,14 @@ fn main() {
             HookAction::Run { event, dry_run } => run_hooks_manual(&event, dry_run),
         },
 
-        // Export/Import
         Some(Commands::Export { output }) => config_ops::export_config(output.as_deref()),
         Some(Commands::Import { import_file, apply }) => {
             config_ops::import_config(&import_file, apply)
         }
 
-        // Global management
         Some(Commands::Scan { dir }) => global_ops::global_scan(dir.as_deref()),
-
         Some(Commands::Prune) => global_ops::global_prune(),
-
         Some(Commands::Doctor) => diagnostics::doctor(),
-
         Some(Commands::SetupClaude) => setup_claude::setup_claude(),
 
         Some(Commands::Upgrade) => {
@@ -358,7 +313,6 @@ fn main() {
             Ok(())
         }
 
-        // Internal commands
         Some(Commands::Path {
             branch,
             list_branches,
@@ -370,7 +324,7 @@ fn main() {
                 print!("{}", output);
                 Ok(())
             }
-            None => Err(git_worktree_manager::error::CwError::Config(format!(
+            None => Err(CwError::Config(format!(
                 "Unsupported shell: {}. Use bash, zsh, fish, or powershell.",
                 shell
             ))),
@@ -418,6 +372,16 @@ fn main() {
     }
 }
 
+fn resolve_lookup_mode(is_worktree: bool, is_branch: bool) -> Option<&'static str> {
+    if is_worktree {
+        Some("worktree")
+    } else if is_branch {
+        Some("branch")
+    } else {
+        None
+    }
+}
+
 fn generate_completions(shell_name: &str) {
     use clap::CommandFactory;
     use clap_complete::{generate, Shell};
@@ -451,23 +415,24 @@ fn list_hooks(event: Option<&str>) {
     let mut has_any = false;
     for evt in &events {
         let hook_list = hooks::get_hooks(evt, None);
-        if !hook_list.is_empty() || event.is_some() {
-            if !hook_list.is_empty() {
-                has_any = true;
-                println!("\n{}:", evt);
-                for h in &hook_list {
-                    let status = if h.enabled { "enabled" } else { "disabled" };
-                    let desc = if h.description.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" - {}", h.description)
-                    };
-                    println!("  {} [{}]: {}{}", h.id, status, h.command, desc);
-                }
-            } else if event.is_some() {
-                println!("\n{}:", evt);
-                println!("  (no hooks)");
+        if hook_list.is_empty() && event.is_none() {
+            continue;
+        }
+        if !hook_list.is_empty() {
+            has_any = true;
+            println!("\n{}:", evt);
+            for h in &hook_list {
+                let status = if h.enabled { "enabled" } else { "disabled" };
+                let desc = if h.description.is_empty() {
+                    String::new()
+                } else {
+                    format!(" - {}", h.description)
+                };
+                println!("  {} [{}]: {}{}", h.id, status, h.command, desc);
             }
+        } else {
+            println!("\n{}:", evt);
+            println!("  (no hooks)");
         }
     }
 
@@ -476,7 +441,7 @@ fn list_hooks(event: Option<&str>) {
     }
 }
 
-fn run_hooks_manual(event: &str, dry_run: bool) -> git_worktree_manager::error::Result<()> {
+fn run_hooks_manual(event: &str, dry_run: bool) -> Result<()> {
     let hook_list = hooks::get_hooks(event, None);
     if hook_list.is_empty() {
         println!("No hooks configured for {}", event);
@@ -515,11 +480,10 @@ fn run_hooks_manual(event: &str, dry_run: bool) -> git_worktree_manager::error::
 }
 
 fn shell_setup() {
-    // Detect shell
     let shell_env = std::env::var("SHELL").unwrap_or_default();
     let is_powershell = cfg!(target_os = "windows") || std::env::var("PSModulePath").is_ok();
 
-    let home = git_worktree_manager::constants::home_dir_or_fallback();
+    let home = constants::home_dir_or_fallback();
     let (shell_name, profile_path) = if shell_env.contains("zsh") {
         ("zsh", Some(home.join(".zshrc")))
     } else if shell_env.contains("bash") {
@@ -542,7 +506,6 @@ fn shell_setup() {
 
     println!("Detected shell: {}\n", shell_name);
 
-    // PowerShell: provide instructions instead of auto-install
     if shell_name == "powershell" {
         println!("To enable gw-cd in PowerShell, add the following to your $PROFILE:\n");
         println!("  gw _shell-function powershell | Out-String | Invoke-Expression\n");
@@ -558,7 +521,6 @@ fn shell_setup() {
         _ => format!("source <(gw _shell-function {})", shell_name),
     };
 
-    // Check if already installed
     if let Some(ref path) = profile_path {
         if path.exists() {
             if let Ok(content) = std::fs::read_to_string(path) {
@@ -569,7 +531,6 @@ fn shell_setup() {
                     );
                     println!("  Found in: {}\n", path.display());
 
-                    // Refresh any cached shell functions
                     refresh_shell_cache(shell_name);
 
                     println!("\nRestart your shell or run: source {}", path.display());
@@ -588,20 +549,15 @@ fn shell_setup() {
             .unwrap_or("your profile".to_string())
     );
 
-    match shell_name {
-        "zsh" => {
-            println!("\n  # git-worktree-manager shell integration (gw-cd + tab completion)");
-            println!("  {}\n", shell_function_line);
+    println!(
+        "\n  # git-worktree-manager shell integration{}",
+        if matches!(shell_name, "zsh" | "bash") {
+            " (gw-cd + tab completion)"
+        } else {
+            ""
         }
-        "bash" => {
-            println!("\n  # git-worktree-manager shell integration (gw-cd + tab completion)");
-            println!("  {}\n", shell_function_line);
-        }
-        _ => {
-            println!("\n  # git-worktree-manager shell integration");
-            println!("  {}\n", shell_function_line);
-        }
-    }
+    );
+    println!("  {}\n", shell_function_line);
 
     print!("Add to your shell profile? [Y/n]: ");
     use std::io::Write;
@@ -616,71 +572,58 @@ fn shell_setup() {
         return;
     }
 
-    if let Some(ref path) = profile_path {
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+    let Some(ref path) = profile_path else {
+        return;
+    };
+
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let comment_suffix = if matches!(shell_name, "zsh" | "bash") {
+        " (gw-cd + tab completion)"
+    } else {
+        ""
+    };
+    let append = format!(
+        "\n# git-worktree-manager shell integration{}\n{}\n",
+        comment_suffix, shell_function_line
+    );
+
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        Ok(mut f) => {
+            let _ = f.write_all(append.as_bytes());
+
+            if let Ok(mut cfg) = config::load_config() {
+                cfg.shell_completion.installed = true;
+                cfg.shell_completion.prompted = true;
+                let _ = config::save_config(&cfg);
+            }
+
+            println!("\n* Successfully added to {}", path.display());
+
+            refresh_shell_cache(shell_name);
+
+            println!("\nNext steps:");
+            println!("  1. Restart your shell or run: source {}", path.display());
+            println!("  2. Try directory navigation: gw-cd <branch-name>");
+            println!("  3. Try tab completion: gw <TAB> or gw new <TAB>");
         }
-
-        let append = match shell_name {
-            "zsh" => {
-                format!(
-                    "\n# git-worktree-manager shell integration (gw-cd + tab completion)\n{}\n",
-                    shell_function_line
-                )
-            }
-            "bash" => {
-                format!(
-                    "\n# git-worktree-manager shell integration (gw-cd + tab completion)\n{}\n",
-                    shell_function_line
-                )
-            }
-            _ => {
-                format!(
-                    "\n# git-worktree-manager shell integration\n{}\n",
-                    shell_function_line
-                )
-            }
-        };
-
-        match std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-        {
-            Ok(mut f) => {
-                use std::io::Write;
-                let _ = f.write_all(append.as_bytes());
-
-                // Mark shell completion as installed in config
-                if let Ok(mut cfg) = config::load_config() {
-                    cfg.shell_completion.installed = true;
-                    cfg.shell_completion.prompted = true;
-                    let _ = config::save_config(&cfg);
-                }
-
-                println!("\n* Successfully added to {}", path.display());
-
-                // Refresh any cached shell functions
-                refresh_shell_cache(shell_name);
-
-                println!("\nNext steps:");
-                println!("  1. Restart your shell or run: source {}", path.display());
-                println!("  2. Try directory navigation: gw-cd <branch-name>");
-                println!("  3. Try tab completion: gw <TAB> or gw new <TAB>");
-            }
-            Err(e) => {
-                println!("\nError: Failed to update {}: {}", path.display(), e);
-                println!("\nTo install manually, add the lines shown above to your profile");
-            }
+        Err(e) => {
+            println!("\nError: Failed to update {}: {}", path.display(), e);
+            println!("\nTo install manually, add the lines shown above to your profile");
         }
     }
 }
 
 /// Refresh cached shell function files to pick up new features.
 fn refresh_shell_cache(shell_name: &str) {
-    let home = git_worktree_manager::constants::home_dir_or_fallback();
+    let home = constants::home_dir_or_fallback();
 
-    // Common cache locations that users might set up
     let cache_paths = [
         home.join(".cache").join("gw-shell-function.zsh"),
         home.join(".cache").join("gw-shell-function.bash"),
@@ -689,39 +632,40 @@ fn refresh_shell_cache(shell_name: &str) {
 
     let mut refreshed = false;
     for cache_path in &cache_paths {
-        if cache_path.exists() {
-            // Determine the shell for this cache file
-            let cache_shell = cache_path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("");
-            if let Some(content) = git_worktree_manager::shell_functions::generate(cache_shell) {
-                if std::fs::write(cache_path, content).is_ok() {
-                    println!(
-                        "  {} {}",
-                        console::style("Refreshed cache:").dim(),
-                        cache_path.display()
-                    );
-                    refreshed = true;
-                }
+        if !cache_path.exists() {
+            continue;
+        }
+        let cache_shell = cache_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        if let Some(content) = shell_functions::generate(cache_shell) {
+            if std::fs::write(cache_path, content).is_ok() {
+                println!(
+                    "  {} {}",
+                    console::style("Refreshed cache:").dim(),
+                    cache_path.display()
+                );
+                refreshed = true;
             }
         }
     }
 
-    // Also regenerate for the current shell into the XDG cache dir
-    if !refreshed {
-        let cache_path = home
-            .join(".cache")
-            .join(format!("gw-shell-function.{}", shell_name));
-        if let Some(content) = git_worktree_manager::shell_functions::generate(shell_name) {
-            let _ = std::fs::create_dir_all(cache_path.parent().unwrap_or(&home));
-            if std::fs::write(&cache_path, &content).is_ok() {
-                println!(
-                    "  {} {}",
-                    console::style("Created cache:").dim(),
-                    cache_path.display()
-                );
-            }
+    if refreshed {
+        return;
+    }
+
+    let cache_path = home
+        .join(".cache")
+        .join(format!("gw-shell-function.{}", shell_name));
+    if let Some(content) = shell_functions::generate(shell_name) {
+        let _ = std::fs::create_dir_all(cache_path.parent().unwrap_or(&home));
+        if std::fs::write(&cache_path, &content).is_ok() {
+            println!(
+                "  {} {}",
+                console::style("Created cache:").dim(),
+                cache_path.display()
+            );
         }
     }
 }
