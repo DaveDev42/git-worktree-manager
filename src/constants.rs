@@ -415,15 +415,13 @@ mod tests {
     }
 
     #[test]
-    fn test_hook_events_not_empty() {
-        assert!(!HOOK_EVENTS.is_empty());
+    fn test_hook_events_contents() {
         assert!(HOOK_EVENTS.contains(&"worktree.post_create"));
         assert!(HOOK_EVENTS.contains(&"merge.pre"));
     }
 
     #[test]
-    fn test_preset_names_not_empty() {
-        assert!(!PRESET_NAMES.is_empty());
+    fn test_preset_names_contents() {
         assert!(PRESET_NAMES.contains(&"claude"));
         assert!(PRESET_NAMES.contains(&"codex"));
         assert!(PRESET_NAMES.contains(&"no-op"));

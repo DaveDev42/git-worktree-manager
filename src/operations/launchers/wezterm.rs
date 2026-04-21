@@ -208,72 +208,6 @@ fn find_active_tab_in_window(panes: &[serde_json::Value], pane_id: &str) -> Opti
         .map(|t| t.to_string())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn make_pane(window_id: u64, tab_id: u64, pane_id: u64, is_active: bool) -> serde_json::Value {
-        json!({
-            "window_id": window_id,
-            "tab_id": tab_id,
-            "pane_id": pane_id,
-            "is_active": is_active,
-        })
-    }
-
-    #[test]
-    fn returns_active_tab_in_same_window() {
-        // Window 1: Tab 10 (pane 100, caller), Tab 11 (pane 101, active)
-        let panes = vec![make_pane(1, 10, 100, false), make_pane(1, 11, 101, true)];
-        assert_eq!(find_active_tab_in_window(&panes, "100"), Some("11".into()));
-    }
-
-    #[test]
-    fn ignores_active_tab_in_different_window() {
-        // Window 1: Tab 10 (pane 100, not active)
-        // Window 2: Tab 20 (pane 200, active)
-        let panes = vec![make_pane(1, 10, 100, false), make_pane(2, 20, 200, true)];
-        // No active tab in window 1
-        assert_eq!(find_active_tab_in_window(&panes, "100"), None);
-    }
-
-    #[test]
-    fn returns_none_for_unknown_pane() {
-        let panes = vec![make_pane(1, 10, 100, true)];
-        assert_eq!(find_active_tab_in_window(&panes, "999"), None);
-    }
-
-    #[test]
-    fn returns_none_for_invalid_pane_id() {
-        let panes = vec![make_pane(1, 10, 100, true)];
-        assert_eq!(find_active_tab_in_window(&panes, "not-a-number"), None);
-    }
-
-    #[test]
-    fn handles_multi_pane_active_tab() {
-        // Window 1: Tab 10 has two panes, one active
-        let panes = vec![
-            make_pane(1, 10, 100, false), // caller pane, not focused
-            make_pane(1, 10, 101, true),  // focused pane in same tab
-        ];
-        assert_eq!(find_active_tab_in_window(&panes, "100"), Some("10".into()));
-    }
-
-    #[test]
-    fn returns_none_for_empty_pane_list() {
-        let panes: Vec<serde_json::Value> = vec![];
-        assert_eq!(find_active_tab_in_window(&panes, "100"), None);
-    }
-
-    #[test]
-    fn returns_own_tab_when_caller_is_active() {
-        // Caller's pane is the active one — harmless no-op restore
-        let panes = vec![make_pane(1, 10, 100, true)];
-        assert_eq!(find_active_tab_in_window(&panes, "100"), Some("10".into()));
-    }
-}
-
 /// Launch in WezTerm split pane.
 pub fn launch_pane(path: &Path, command: &str, ai_tool_name: &str, horizontal: bool) -> Result<()> {
     if !git::has_command("wezterm") {
@@ -304,4 +238,65 @@ pub fn launch_pane(path: &Path, command: &str, ai_tool_name: &str, horizontal: b
         pane_type
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn make_pane(window_id: u64, tab_id: u64, pane_id: u64, is_active: bool) -> serde_json::Value {
+        json!({
+            "window_id": window_id,
+            "tab_id": tab_id,
+            "pane_id": pane_id,
+            "is_active": is_active,
+        })
+    }
+
+    #[test]
+    fn returns_active_tab_in_same_window() {
+        let panes = vec![make_pane(1, 10, 100, false), make_pane(1, 11, 101, true)];
+        assert_eq!(find_active_tab_in_window(&panes, "100"), Some("11".into()));
+    }
+
+    #[test]
+    fn ignores_active_tab_in_different_window() {
+        let panes = vec![make_pane(1, 10, 100, false), make_pane(2, 20, 200, true)];
+        assert_eq!(find_active_tab_in_window(&panes, "100"), None);
+    }
+
+    #[test]
+    fn returns_none_for_unknown_pane() {
+        let panes = vec![make_pane(1, 10, 100, true)];
+        assert_eq!(find_active_tab_in_window(&panes, "999"), None);
+    }
+
+    #[test]
+    fn returns_none_for_invalid_pane_id() {
+        let panes = vec![make_pane(1, 10, 100, true)];
+        assert_eq!(find_active_tab_in_window(&panes, "not-a-number"), None);
+    }
+
+    #[test]
+    fn handles_multi_pane_active_tab() {
+        let panes = vec![
+            make_pane(1, 10, 100, false),
+            make_pane(1, 10, 101, true),
+        ];
+        assert_eq!(find_active_tab_in_window(&panes, "100"), Some("10".into()));
+    }
+
+    #[test]
+    fn returns_none_for_empty_pane_list() {
+        let panes: Vec<serde_json::Value> = vec![];
+        assert_eq!(find_active_tab_in_window(&panes, "100"), None);
+    }
+
+    #[test]
+    fn returns_own_tab_when_caller_is_active() {
+        // Caller's pane being active is a harmless no-op restore.
+        let panes = vec![make_pane(1, 10, 100, true)];
+        assert_eq!(find_active_tab_in_window(&panes, "100"), Some("10".into()));
+    }
 }

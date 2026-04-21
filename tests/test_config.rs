@@ -1,13 +1,8 @@
-/// Integration tests for configuration management.
-use tempfile::TempDir;
-
-/// Test config with isolated home directory to avoid polluting real config.
-fn with_isolated_config<F: FnOnce(&TempDir)>(f: F) {
-    let tmp = TempDir::new().unwrap();
-    // Note: Config functions use dirs::home_dir(), not easily overridden
-    // These tests verify the module's internal logic via library calls
-    f(&tmp);
-}
+//! Integration tests for configuration management.
+//!
+//! These tests exercise the library API directly. Config helpers resolve
+//! paths via `dirs::home_dir()` which these tests do not redirect, so each
+//! test must confine itself to behavior that does not read/write real state.
 
 #[test]
 fn test_default_config_values() {
