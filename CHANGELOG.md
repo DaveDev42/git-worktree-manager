@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.34](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.33...v0.0.34) (2026-04-21)
+
+
+### Bug Fixes
+
+* **backup:** show main-worktree backups and sanitize slash-in-branch ([9ea6c6e](https://github.com/DaveDev42/git-worktree-manager/commit/9ea6c6ea2885c5e8850ea72adf8fceee61d84fe5))
+
 ## [0.0.33](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.32...v0.0.33) (2026-04-14)
 
 
