@@ -280,10 +280,7 @@ mod tests {
 
     #[test]
     fn handles_multi_pane_active_tab() {
-        let panes = vec![
-            make_pane(1, 10, 100, false),
-            make_pane(1, 10, 101, true),
-        ];
+        let panes = vec![make_pane(1, 10, 100, false), make_pane(1, 10, 101, true)];
         assert_eq!(find_active_tab_in_window(&panes, "100"), Some("10".into()));
     }
 
