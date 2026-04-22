@@ -16,7 +16,7 @@ use crate::error::{CwError, Result};
 use crate::hooks;
 use crate::operations::{
     ai_tools, backup, clean, config_ops, diagnostics, display, git_ops, global_ops, helpers,
-    path_cmd, setup_claude, shell, stash, worktree,
+    path_cmd, setup_claude, shell, spawn_spec, stash, worktree,
 };
 use crate::resolve_prompt;
 use crate::shell_functions;
@@ -45,10 +45,12 @@ pub fn run() {
                 | Commands::TermValues
                 | Commands::PresetNames
                 | Commands::HookEvents
+                | Commands::SpawnAi { .. }
         )
     );
 
     if !is_internal {
+        crate::operations::spawn_spec::sweep_stale();
         update::check_for_update_if_needed();
     }
 
@@ -362,6 +364,8 @@ pub fn run() {
             }
             Ok(())
         }
+
+        Some(Commands::SpawnAi { spec }) => spawn_spec::execute(&spec),
 
         None => Ok(()),
     };
