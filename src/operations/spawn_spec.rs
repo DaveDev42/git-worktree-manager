@@ -74,8 +74,12 @@ pub fn materialize_in_dir(spec: &SpawnSpec, dir: &Path) -> Result<(String, PathB
 /// metacharacters, so double quotes are sufficient under both bash and cmd.
 fn quote_path_for_shell(path: &Path) -> String {
     let s = path.to_string_lossy();
+    // Backslash is NOT bare-safe: bash/zsh/tmux/wezterm interpret `\X` as an
+    // escape, which would corrupt Windows paths like C:\Users\...\Temp\...
+    // Any path containing `\` (or other unsafe chars) takes the quoted branch,
+    // which is fine under both bash and cmd because our filename is ASCII.
     let safe = s.chars().all(|c| {
-        c.is_ascii_alphanumeric() || matches!(c, '_' | '/' | '.' | '-' | ':' | '\\')
+        c.is_ascii_alphanumeric() || matches!(c, '_' | '/' | '.' | '-' | ':')
     });
     if safe {
         s.into_owned()
@@ -163,5 +167,22 @@ mod tests {
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "expected 0600, got {:o}", mode);
+    }
+
+    #[test]
+    fn quote_path_for_shell_quotes_windows_backslashes() {
+        use std::path::PathBuf;
+        let win = PathBuf::from(r"C:\Users\me\AppData\Local\Temp\gw-spawn-abcdef0123456789.json");
+        let out = super::quote_path_for_shell(&win);
+        // Must be quoted — bare would let bash interpret the backslashes.
+        assert!(out.starts_with('"') && out.ends_with('"'), "expected quoted, got {:?}", out);
+    }
+
+    #[test]
+    fn quote_path_for_shell_bare_for_unix_paths() {
+        use std::path::PathBuf;
+        let unix = PathBuf::from("/tmp/gw-spawn-abcdef0123456789.json");
+        let out = super::quote_path_for_shell(&unix);
+        assert!(!out.starts_with('"'), "expected bare, got {:?}", out);
     }
 }
