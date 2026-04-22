@@ -371,8 +371,10 @@ pub fn run() {
             // Pre-spawn failures (read/parse/chdir) exit 127 — the shell
             // "command not found / could not start" convention. Post-spawn
             // failures exit from inside `execute` directly, also with 127.
+            // Inner errors already carry the "spawn-ai:" prefix via their
+            // CwError::Other messages, so we print them verbatim.
             if let Err(e) = spawn_spec::execute(&spec) {
-                eprintln!("spawn-ai: {}", e);
+                eprintln!("{}", e);
                 std::process::exit(127);
             }
             Ok(())

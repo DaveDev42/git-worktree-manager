@@ -1,6 +1,17 @@
 //! End-to-end: `gw _spawn-ai <spec>` reads a spec and execvp's argv[0] with
-//! argv[1..] verbatim. We point argv[0] at a platform-appropriate echo helper
-//! and assert byte-for-byte prompt preservation.
+//! argv[1..] verbatim. We point argv[0] at `/bin/echo -n` and assert
+//! byte-for-byte prompt preservation.
+//!
+//! Unix-only: Windows has no stable byte-preserving echo helper in the base
+//! image (`cmd /c echo` applies its own argv tokenization that mangles `"`,
+//! `^`, `&`, multi-line content). The byte-preservation property we care
+//! about is a property of `spawn_spec::execute`, which is exercised thoroughly
+//! by the unit tests in `src/operations/spawn_spec.rs` on both platforms.
+//! Adding a Windows-specific helper binary would require a separate `[[bin]]`
+//! target or `examples/` fixture; not worth the build-graph complexity for
+//! a non-primary platform.
+
+#![cfg(unix)]
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -16,24 +27,8 @@ fn write_spec(dir: &TempDir, argv: Vec<String>, cwd: PathBuf) -> PathBuf {
     path
 }
 
-#[cfg(unix)]
-fn echo_program() -> String {
-    "/bin/echo".into()
-}
-
-#[cfg(windows)]
-fn echo_program() -> String {
-    "cmd".into()
-}
-
-#[cfg(unix)]
 fn build_echo_argv(prompt: &str) -> Vec<String> {
-    vec![echo_program(), "-n".into(), prompt.into()]
-}
-
-#[cfg(windows)]
-fn build_echo_argv(prompt: &str) -> Vec<String> {
-    vec![echo_program(), "/c".into(), "echo".into(), prompt.into()]
+    vec!["/bin/echo".into(), "-n".into(), prompt.into()]
 }
 
 fn killer_prompts() -> Vec<&'static str> {
@@ -71,12 +66,8 @@ fn spawn_ai_preserves_prompt_bytes_exactly() {
         // would panic loudly rather than silently lossy-converting.
         let stdout = std::str::from_utf8(&output.stdout)
             .unwrap_or_else(|e| panic!("stdout not valid UTF-8 for prompt {:?}: {}", prompt, e));
-        #[cfg(unix)]
-        let expected = prompt.to_string();
-        #[cfg(windows)]
-        let expected = format!("{}\r\n", prompt);
 
-        assert_eq!(stdout, expected, "mismatch for prompt: {:?}", prompt);
+        assert_eq!(stdout, prompt, "mismatch for prompt: {:?}", prompt);
 
         assert!(!spec_path.exists(), "spec file should be unlinked");
     }

@@ -281,4 +281,3 @@ fn generate_session_name(path: &Path) -> String {
         name
     }
 }
-

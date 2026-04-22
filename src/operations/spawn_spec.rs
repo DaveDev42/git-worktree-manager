@@ -79,9 +79,9 @@ fn quote_path_for_shell(path: &Path) -> String {
     // escape, which would corrupt Windows paths like C:\Users\...\Temp\...
     // Any path containing `\` (or other unsafe chars) takes the quoted branch,
     // which is fine under both bash and cmd because our filename is ASCII.
-    let safe = s.chars().all(|c| {
-        c.is_ascii_alphanumeric() || matches!(c, '_' | '/' | '.' | '-' | ':')
-    });
+    let safe = s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '/' | '.' | '-' | ':'));
     if safe {
         s.into_owned()
     } else {
@@ -90,17 +90,21 @@ fn quote_path_for_shell(path: &Path) -> String {
 }
 
 /// Parse a spec file, rejecting unsupported versions and empty argv.
+/// All errors are prefixed with `spawn-ai:` so the entrypoint can print
+/// them verbatim without duplicating the prefix.
 pub fn read_spec(path: &Path) -> Result<SpawnSpec> {
-    let bytes = fs::read(path)?;
-    let spec: SpawnSpec = serde_json::from_slice(&bytes)?;
+    let bytes = fs::read(path)
+        .map_err(|e| CwError::Other(format!("spawn-ai: read {} failed: {}", path.display(), e)))?;
+    let spec: SpawnSpec = serde_json::from_slice(&bytes)
+        .map_err(|e| CwError::Other(format!("spawn-ai: parse {} failed: {}", path.display(), e)))?;
     if spec.version != SPEC_VERSION {
         return Err(CwError::Other(format!(
-            "unsupported spawn spec version: {} (expected {})",
+            "spawn-ai: unsupported spawn spec version: {} (expected {})",
             spec.version, SPEC_VERSION
         )));
     }
     if spec.argv.is_empty() {
-        return Err(CwError::Other("spawn spec has empty argv".into()));
+        return Err(CwError::Other("spawn-ai: spawn spec has empty argv".into()));
     }
     Ok(spec)
 }
@@ -283,7 +287,11 @@ mod tests {
         let win = PathBuf::from(r"C:\Users\me\AppData\Local\Temp\gw-spawn-abcdef0123456789.json");
         let out = super::quote_path_for_shell(&win);
         // Must be quoted — bare would let bash interpret the backslashes.
-        assert!(out.starts_with('"') && out.ends_with('"'), "expected quoted, got {:?}", out);
+        assert!(
+            out.starts_with('"') && out.ends_with('"'),
+            "expected quoted, got {:?}",
+            out
+        );
     }
 
     #[test]
