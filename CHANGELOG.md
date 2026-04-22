@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.0.36](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.35...v0.0.36) (2026-04-22)
+
+
+### Features
+
+* **spawn_spec:** add 24h sweep_stale for crash-residue cleanup ([4516521](https://github.com/DaveDev42/git-worktree-manager/commit/451652144661d04b3916f3dd32903281e9be3637))
+* **spawn_spec:** implement execute reading spec and execvp-ing target ([865f766](https://github.com/DaveDev42/git-worktree-manager/commit/865f76604fae8f7aedea23ea72b4d89a639b6240))
+* **spawn_spec:** implement materialize writing 0600 tempfile ([6166cbb](https://github.com/DaveDev42/git-worktree-manager/commit/6166cbb712fe1f60c481ee199b10df11444bd0aa))
+* **spawn_spec:** scaffold SpawnSpec struct with round-trip test ([be10b65](https://github.com/DaveDev42/git-worktree-manager/commit/be10b659f05b512d1ad9f87b08fd4fe5e36c185c))
+
+
+### Bug Fixes
+
+* **ai-tools:** eliminate shell-escape failures via gw _spawn-ai wrapper ([567e129](https://github.com/DaveDev42/git-worktree-manager/commit/567e129ce678ed8c02cf6e61c95cbe3f9edbcfce))
+* **ai-tools:** route AI spawn through gw _spawn-ai wrapper ([b6ca8a2](https://github.com/DaveDev42/git-worktree-manager/commit/b6ca8a2f0e1845ca8a6542c7d5726a7fa29a252a))
+* **spawn_spec:** address review feedback (exit 127, TOCTOU, spec alignment) ([9faa657](https://github.com/DaveDev42/git-worktree-manager/commit/9faa65790be7369c61eb561df9439e2a80f2ced6))
+* **spawn_spec:** pass-2 polish and restrict integration test to Unix ([2f02adf](https://github.com/DaveDev42/git-worktree-manager/commit/2f02adfd84022a5a675edf410380c546f57db33d))
+* **spawn_spec:** quote paths containing backslashes to protect Windows temp paths ([fe83a48](https://github.com/DaveDev42/git-worktree-manager/commit/fe83a48e8716ce61ff686c6a9872d70a2ac2d51e))
+
+
+### Performance Improvements
+
+* **entrypoint:** skip startup scans for Path/ShellFunction completion helpers ([3c77661](https://github.com/DaveDev42/git-worktree-manager/commit/3c776610e93d6edcc6470143aafacf8726fce41f))
+
 ## [0.0.35](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.34...v0.0.35) (2026-04-21)
 
 
