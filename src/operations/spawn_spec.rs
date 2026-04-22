@@ -9,6 +9,7 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
@@ -149,6 +150,39 @@ pub fn execute(spec_path: &Path) -> Result<()> {
     }
 }
 
+/// Best-effort removal of stale `gw-spawn-*.json` temp files from the system
+/// temp directory. Intended to run once at `gw` startup. All errors are
+/// swallowed — this is a safety net, not a correctness mechanism.
+pub fn sweep_stale() {
+    sweep_stale_in(&std::env::temp_dir(), Duration::from_secs(24 * 3600));
+}
+
+fn sweep_stale_in(dir: &Path, max_age: Duration) {
+    let entries = match fs::read_dir(dir) {
+        Ok(it) => it,
+        Err(_) => return,
+    };
+    let now = SystemTime::now();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if !name_str.starts_with("gw-spawn-") || !name_str.ends_with(".json") {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let mtime = match metadata.modified() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if now.duration_since(mtime).unwrap_or_default() > max_age {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,5 +318,32 @@ mod tests {
         std::fs::write(&path, serde_json::to_vec(&spec).unwrap()).unwrap();
         let loaded = read_spec(&path).unwrap();
         assert_eq!(loaded, spec);
+    }
+
+    #[test]
+    fn sweep_stale_removes_old_spec_files_only() {
+        use std::time::{Duration, SystemTime};
+        let dir = tempfile::tempdir().unwrap();
+
+        // Old spec file — mtime far in the past.
+        let old = dir.path().join("gw-spawn-old.json");
+        std::fs::write(&old, "{}").unwrap();
+        let past = SystemTime::now() - Duration::from_secs(48 * 3600);
+        filetime::set_file_mtime(&old, filetime::FileTime::from_system_time(past)).unwrap();
+
+        // Recent spec file — should survive.
+        let recent = dir.path().join("gw-spawn-recent.json");
+        std::fs::write(&recent, "{}").unwrap();
+
+        // Unrelated file — should survive regardless of age.
+        let unrelated = dir.path().join("something-else.json");
+        std::fs::write(&unrelated, "{}").unwrap();
+        filetime::set_file_mtime(&unrelated, filetime::FileTime::from_system_time(past)).unwrap();
+
+        sweep_stale_in(dir.path(), Duration::from_secs(24 * 3600));
+
+        assert!(!old.exists(), "old gw-spawn file should be removed");
+        assert!(recent.exists(), "recent gw-spawn file should remain");
+        assert!(unrelated.exists(), "unrelated file should be untouched");
     }
 }
