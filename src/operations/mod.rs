@@ -15,5 +15,6 @@ pub mod path_cmd;
 pub mod pr_cache;
 pub mod setup_claude;
 pub mod shell;
+pub mod spawn_spec;
 pub mod stash;
 pub mod worktree;
