@@ -133,8 +133,7 @@ From the natural language input, determine:
 
 ### Step 2: Confirm and execute
 
-Prefer `--prompt-file` for anything beyond a single short line — it avoids all
-shell escaping issues with quotes, newlines, and special characters.
+All three prompt ingestion modes (`--prompt`, `--prompt-file`, `--prompt-stdin`) are equally safe from shell-escaping issues. Use `--prompt-file` for convenience when managing multi-line prompts in an editor or passing skill-generated files.
 
 **Recommended (use this by default):**
 ```bash
@@ -159,8 +158,7 @@ generate-spec | gw new <branch-name> --prompt-stdin
 
 Note: `--prompt-stdin` consumes the process's stdin. Avoid combining it with
 `-T <terminal-method>` — the spawned terminal may inherit a closed stdin and
-behave unpredictably. Prefer `--prompt-file` whenever you need a specific
-terminal launcher.
+behave unpredictably. Use `--prompt-file` if you need to specify a terminal launcher alongside the prompt.
 
 Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be given per invocation.
 
@@ -205,7 +203,7 @@ Three ways to supply the initial prompt (mutually exclusive):
 
 | Flag | When to use |
 |------|-------------|
-| `--prompt-file <path>` ⭐ | **Recommended.** Multi-line prompts, prompts with quotes/special chars, anything skill-generated. |
+| `--prompt-file <path>` ⭐ | Convenient for multi-line prompts, editor-managed content, or skill-generated files. |
 | `--prompt "<text>"` | Short single-line prompts only. |
 | `--prompt-stdin` | Piping from another command (`cmd \| gw new ... --prompt-stdin`). |
 
@@ -285,7 +283,7 @@ gw -g scan --dir ~/projects        # discover repositories
 - You can delegate multiple tasks in parallel to different worktrees
 - **Fire-and-forget**: Once a worktree task is spawned, you CANNOT stop it, send follow-up messages, or interact with it. The initial prompt is the ONLY instruction the delegated instance receives. Therefore:
   - Make the prompt comprehensive — include all requirements, constraints, and acceptance criteria upfront
-  - Use `--prompt-file` for anything non-trivial so escaping does not silently corrupt the instructions
+  - Use `--prompt-file` for complex or skill-generated prompts to manage them conveniently
   - If the user's request is vague or ambiguous, ask clarifying questions BEFORE spawning
   - Do NOT spawn a task assuming you can "correct course later" — you cannot
 
