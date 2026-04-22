@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::Result;
+use crate::error::{CwError, Result};
 
 pub const SPEC_VERSION: u32 = 1;
 
@@ -85,6 +85,67 @@ fn quote_path_for_shell(path: &Path) -> String {
         s.into_owned()
     } else {
         format!("\"{}\"", s)
+    }
+}
+
+/// Parse a spec file, rejecting unsupported versions and empty argv.
+pub fn read_spec(path: &Path) -> Result<SpawnSpec> {
+    let bytes = fs::read(path)?;
+    let spec: SpawnSpec = serde_json::from_slice(&bytes)?;
+    if spec.version != SPEC_VERSION {
+        return Err(CwError::Other(format!(
+            "unsupported spawn spec version: {} (expected {})",
+            spec.version, SPEC_VERSION
+        )));
+    }
+    if spec.argv.is_empty() {
+        return Err(CwError::Other("spawn spec has empty argv".into()));
+    }
+    Ok(spec)
+}
+
+/// Execute a spawn spec. On Unix, replaces the current process via execvp.
+/// On Windows, spawns a child and propagates its exit code. Never returns
+/// `Ok(())` on success on Unix (process is replaced); returns `Ok(())` only
+/// on Windows when the child exits successfully.
+pub fn execute(spec_path: &Path) -> Result<()> {
+    let spec = read_spec(spec_path)?;
+
+    if spec.self_unlink {
+        // Best-effort — proceed even if unlink fails (e.g. already gone).
+        let _ = fs::remove_file(spec_path);
+    }
+
+    std::env::set_current_dir(&spec.cwd).map_err(|e| {
+        CwError::Other(format!(
+            "spawn-ai: chdir to {} failed: {}",
+            spec.cwd.display(),
+            e
+        ))
+    })?;
+
+    let program = &spec.argv[0];
+    let args = &spec.argv[1..];
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let err = std::process::Command::new(program).args(args).exec();
+        // exec only returns on failure.
+        Err(CwError::Other(format!(
+            "spawn-ai: exec {} failed: {}",
+            program, err
+        )))
+    }
+
+    #[cfg(windows)]
+    {
+        let status = std::process::Command::new(program)
+            .args(args)
+            .status()
+            .map_err(|e| CwError::Other(format!("spawn-ai: spawn {} failed: {}", program, e)))?;
+        let code = status.code().unwrap_or(1);
+        std::process::exit(code);
     }
 }
 
@@ -184,5 +245,44 @@ mod tests {
         let unix = PathBuf::from("/tmp/gw-spawn-abcdef0123456789.json");
         let out = super::quote_path_for_shell(&unix);
         assert!(!out.starts_with('"'), "expected bare, got {:?}", out);
+    }
+
+    #[test]
+    fn read_spec_rejects_wrong_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.json");
+        std::fs::write(
+            &path,
+            r#"{"version":999,"argv":["x"],"cwd":"/","self_unlink":false}"#,
+        )
+        .unwrap();
+        let err = read_spec(&path).unwrap_err();
+        assert!(format!("{err}").contains("unsupported spawn spec version"));
+    }
+
+    #[test]
+    fn read_spec_rejects_empty_argv() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("empty.json");
+        std::fs::write(
+            &path,
+            r#"{"version":1,"argv":[],"cwd":"/","self_unlink":false}"#,
+        )
+        .unwrap();
+        let err = read_spec(&path).unwrap_err();
+        assert!(format!("{err}").contains("empty argv"));
+    }
+
+    #[test]
+    fn read_spec_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = SpawnSpec::new(
+            vec!["/bin/echo".into(), "hi".into()],
+            dir.path().to_path_buf(),
+        );
+        let path = dir.path().join("ok.json");
+        std::fs::write(&path, serde_json::to_vec(&spec).unwrap()).unwrap();
+        let loaded = read_spec(&path).unwrap();
+        assert_eq!(loaded, spec);
     }
 }
