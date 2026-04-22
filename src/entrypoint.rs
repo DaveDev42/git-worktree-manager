@@ -45,6 +45,8 @@ pub fn run() {
                 | Commands::TermValues
                 | Commands::PresetNames
                 | Commands::HookEvents
+                | Commands::Path { .. }
+                | Commands::ShellFunction { .. }
                 | Commands::SpawnAi { .. }
         )
     );
