@@ -1,3 +1,4 @@
+#![cfg(unix)]
 //! End-to-end: `gw _spawn-ai <spec>` reads a spec and execvp's argv[0] with
 //! argv[1..] verbatim. We point argv[0] at `/bin/echo -n` and assert
 //! byte-for-byte prompt preservation.
@@ -10,8 +11,6 @@
 //! Adding a Windows-specific helper binary would require a separate `[[bin]]`
 //! target or `examples/` fixture; not worth the build-graph complexity for
 //! a non-primary platform.
-
-#![cfg(unix)]
 
 use std::path::PathBuf;
 use std::process::Command;
