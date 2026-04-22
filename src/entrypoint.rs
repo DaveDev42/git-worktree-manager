@@ -16,7 +16,7 @@ use crate::error::{CwError, Result};
 use crate::hooks;
 use crate::operations::{
     ai_tools, backup, clean, config_ops, diagnostics, display, git_ops, global_ops, helpers,
-    path_cmd, setup_claude, shell, stash, worktree,
+    path_cmd, setup_claude, shell, spawn_spec, stash, worktree,
 };
 use crate::resolve_prompt;
 use crate::shell_functions;
@@ -45,10 +45,14 @@ pub fn run() {
                 | Commands::TermValues
                 | Commands::PresetNames
                 | Commands::HookEvents
+                | Commands::Path { .. }
+                | Commands::ShellFunction { .. }
+                | Commands::SpawnAi { .. }
         )
     );
 
     if !is_internal {
+        crate::operations::spawn_spec::sweep_stale();
         update::check_for_update_if_needed();
     }
 
@@ -359,6 +363,19 @@ pub fn run() {
         Some(Commands::HookEvents) => {
             for evt in constants::HOOK_EVENTS {
                 println!("{}", evt);
+            }
+            Ok(())
+        }
+
+        Some(Commands::SpawnAi { spec }) => {
+            // Pre-spawn failures (read/parse/chdir) exit 127 — the shell
+            // "command not found / could not start" convention. Post-spawn
+            // failures exit from inside `execute` directly, also with 127.
+            // Inner errors already carry the "spawn-ai:" prefix via their
+            // CwError::Other messages, so we print them verbatim.
+            if let Err(e) = spawn_spec::execute(&spec) {
+                eprintln!("{}", e);
+                std::process::exit(127);
             }
             Ok(())
         }

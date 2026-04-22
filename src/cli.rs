@@ -461,6 +461,14 @@ pub enum Commands {
     /// List hook event names (for tab completion)
     #[command(name = "_hook-events", hide = true)]
     HookEvents,
+
+    /// [Internal] Execute an AI tool spawn spec file
+    #[command(name = "_spawn-ai", hide = true)]
+    SpawnAi {
+        /// Path to the JSON spawn spec
+        #[arg(value_hint = ValueHint::FilePath)]
+        spec: PathBuf,
+    },
 }
 
 #[derive(Subcommand, Debug)]

@@ -19,6 +19,7 @@ use crate::session;
 
 use super::helpers::{build_hook_context, resolve_worktree_target};
 use super::launchers;
+use super::spawn_spec::{self, SpawnSpec};
 
 /// Launch AI coding assistant in the specified directory.
 pub fn launch_ai_tool(
@@ -51,9 +52,9 @@ pub fn launch_ai_tool(
         return Ok(());
     }
 
-    let ai_tool_name = &ai_cmd_parts[0];
+    let ai_tool_name = ai_cmd_parts[0].clone();
 
-    if !git::has_command(ai_tool_name) {
+    if !git::has_command(&ai_tool_name) {
         println!(
             "{} {} not detected. Install it or update config with 'cw config set ai-tool <tool>'.\n",
             style("!").yellow(),
@@ -62,14 +63,20 @@ pub fn launch_ai_tool(
         return Ok(());
     }
 
-    // Build shell command string
-    let cmd = shell_quote_join(&ai_cmd_parts);
+    // Build a shell-safe wrapper line: the launcher shell only parses
+    // `exec gw _spawn-ai <path>`; the raw argv (including user prompt) is in
+    // a 0600 temp file that `_spawn-ai` reads and execvp's.
+    let spec = SpawnSpec::new(ai_cmd_parts, path.to_path_buf());
+    // The spec file is cleaned up by `spawn_spec::execute` after read; the 24h
+    // `sweep_stale` at startup is the safety net for crashes between those points.
+    let (cmd, _) = spawn_spec::materialize(&spec)?;
 
     // Dispatch to launcher. Foreground blocks on the AI process, so an RAII
     // lockfile spans the full session. Other launchers detach to a terminal
     // emulator / multiplexer and return immediately, so a lock acquired here
     // would be released before the AI session really starts — for those we
     // rely on process-cwd scanning in `busy::detect_busy` instead.
+    let ai_tool_name = ai_tool_name.as_str();
     match method {
         LaunchMethod::Foreground => {
             println!(
@@ -273,19 +280,4 @@ fn generate_session_name(path: &Path) -> String {
     } else {
         name
     }
-}
-
-/// Shell-quote and join command parts.
-fn shell_quote_join(parts: &[String]) -> String {
-    parts
-        .iter()
-        .map(|p| {
-            if p.contains(char::is_whitespace) || p.contains('\'') || p.contains('"') {
-                format!("'{}'", p.replace('\'', "'\\''"))
-            } else {
-                p.clone()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
 }
