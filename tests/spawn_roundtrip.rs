@@ -67,7 +67,10 @@ fn spawn_ai_preserves_prompt_bytes_exactly() {
             String::from_utf8_lossy(&output.stderr)
         );
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        // Strict UTF-8 decode: if the binary ever corrupted bytes, `from_utf8`
+        // would panic loudly rather than silently lossy-converting.
+        let stdout = std::str::from_utf8(&output.stdout)
+            .unwrap_or_else(|e| panic!("stdout not valid UTF-8 for prompt {:?}: {}", prompt, e));
         #[cfg(unix)]
         let expected = prompt.to_string();
         #[cfg(windows)]

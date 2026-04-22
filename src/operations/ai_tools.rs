@@ -67,7 +67,9 @@ pub fn launch_ai_tool(
     // `exec gw _spawn-ai <path>`; the raw argv (including user prompt) is in
     // a 0600 temp file that `_spawn-ai` reads and execvp's.
     let spec = SpawnSpec::new(ai_cmd_parts, path.to_path_buf());
-    let (cmd, _spec_path) = spawn_spec::materialize(&spec)?;
+    // The spec file is cleaned up by `spawn_spec::execute` after read; the 24h
+    // `sweep_stale` at startup is the safety net for crashes between those points.
+    let (cmd, _) = spawn_spec::materialize(&spec)?;
 
     // Dispatch to launcher. Foreground blocks on the AI process, so an RAII
     // lockfile spans the full session. Other launchers detach to a terminal

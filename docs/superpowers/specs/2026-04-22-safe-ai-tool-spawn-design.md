@@ -89,25 +89,24 @@ The spec file contains the real argv verbatim. `gw _spawn-ai` reads the file, un
 ```json
 {
   "version": 1,
-  "argv": ["<absolute path to AI tool>", "<flag>", "...", "<raw prompt>"],
+  "argv": ["<AI tool command name or path>", "<flag>", "...", "<raw prompt>"],
   "cwd": "<absolute path to worktree>",
   "self_unlink": true
 }
 ```
 
 - `version` — pinned at 1; future additions (env, stdin redirect) bump this.
-- `argv[0]` — resolved to absolute path by `materialize()` via a `which`-style lookup at spec-write time. The pane shell's `PATH` is irrelevant.
+- `argv[0]` — the configured AI tool command (e.g. `claude`) as supplied by `config::get_ai_tool_command`. `execute()` invokes `execvp`, which resolves the name against the PATH of the `gw _spawn-ai` process. In practice that PATH is inherited from the pane shell that ran `exec gw _spawn-ai <path>`, which is the same environment the tool would have used pre-change — so discovery semantics are unchanged. We deliberately do not pre-resolve to an absolute path: it would couple spec-write time to AI tool install location and complicate container/remote dev setups where the tool resolves only within the pane environment.
 - `argv[1..]` — flags and the raw user prompt, byte-for-byte. No escaping layer touches them.
 - `cwd` — absolute worktree path. `execute()` `chdir`s here before `execvp`, defending against pane/shell cwd drift and send-text race conditions.
 - `self_unlink` — always `true` in v1. `execute()` unlinks the spec file immediately after read, before `execvp`.
 
 ### Tmp file creation
 
-- Path: `std::env::temp_dir().join(format!("gw-spawn-{}.json", uuid_v4_hex))`.
-- Permissions (Unix): `OpenOptions::new().write(true).create_new(true).mode(0o600)`.
-  - `create_new` fails on collision (defensive; v4 UUID collision is astronomical).
-  - `0o600` means prompt content, which may include tokens or secrets, is readable only by the invoking user.
-- Windows: `create_new` only; rely on default user-profile ACL on `%TEMP%`.
+- Path: `std::env::temp_dir()` via `tempfile::Builder` with prefix `gw-spawn-`, suffix `.json`, and 16 random bytes, producing `gw-spawn-<32 lowercase hex>.json`.
+- `tempfile::Builder::tempfile_in` uses `O_CREAT|O_EXCL` + mode `0o600` on Unix in one atomic step; collision with an attacker-planted file is not possible.
+- Permissions: `0o600` on Unix means prompt content, which may include tokens or secrets, is readable only by the invoking user.
+- Windows: relies on default user-profile ACL on `%TEMP%`.
 - Filename charset: lowercase hex + `-` + `.` only. The resulting path contains no characters that require shell quoting.
 
 ### The returned shell line
@@ -166,7 +165,7 @@ In practice a spec file outliving its spawn requires `gw _spawn-ai` to crash bet
 - `materialize()` shell line matches `^exec gw _spawn-ai (\S+|"[^"$\\]+")$`.
 - Unix: generated file is mode `0o600`.
 - `create_new` rejects duplicate path (simulate by pre-creating the target).
-- `argv[0]` absolute-path resolution: shim a fake binary on `PATH`, assert spec records its full path.
+- `quote_path_for_shell`: paths containing `\` are double-quoted (Windows temp paths); pure ASCII Unix paths are emitted bare.
 
 ### Integration (`tests/spawn_roundtrip.rs`, new)
 

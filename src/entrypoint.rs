@@ -367,7 +367,16 @@ pub fn run() {
             Ok(())
         }
 
-        Some(Commands::SpawnAi { spec }) => spawn_spec::execute(&spec),
+        Some(Commands::SpawnAi { spec }) => {
+            // Pre-spawn failures (read/parse/chdir) exit 127 — the shell
+            // "command not found / could not start" convention. Post-spawn
+            // failures exit from inside `execute` directly, also with 127.
+            if let Err(e) = spawn_spec::execute(&spec) {
+                eprintln!("spawn-ai: {}", e);
+                std::process::exit(127);
+            }
+            Ok(())
+        }
 
         None => Ok(()),
     };

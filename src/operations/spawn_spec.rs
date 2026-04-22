@@ -105,10 +105,15 @@ pub fn read_spec(path: &Path) -> Result<SpawnSpec> {
     Ok(spec)
 }
 
-/// Execute a spawn spec. On Unix, replaces the current process via execvp.
-/// On Windows, spawns a child and propagates its exit code. Never returns
-/// `Ok(())` on success on Unix (process is replaced); returns `Ok(())` only
-/// on Windows when the child exits successfully.
+/// Execute a spawn spec. Never returns to the caller:
+/// - Unix: `execvp` replaces the current process. On exec failure we print a
+///   diagnostic to stderr and `exit(127)` ("command not found" convention).
+/// - Windows: spawns a child, waits, and exits with the child's code. Spawn
+///   failures also exit 127.
+///
+/// The `Result<()>` return type exists only so the caller can surface
+/// pre-spawn errors (spec read, parse, chdir) through the normal error path;
+/// once `execvp`/spawn is attempted, the process exits directly.
 pub fn execute(spec_path: &Path) -> Result<()> {
     let spec = read_spec(spec_path)?;
 
@@ -133,18 +138,21 @@ pub fn execute(spec_path: &Path) -> Result<()> {
         use std::os::unix::process::CommandExt;
         let err = std::process::Command::new(program).args(args).exec();
         // exec only returns on failure.
-        Err(CwError::Other(format!(
-            "spawn-ai: exec {} failed: {}",
-            program, err
-        )))
+        eprintln!("spawn-ai: exec {} failed: {}", program, err);
+        std::process::exit(127);
     }
 
     #[cfg(windows)]
     {
-        let status = std::process::Command::new(program)
-            .args(args)
-            .status()
-            .map_err(|e| CwError::Other(format!("spawn-ai: spawn {} failed: {}", program, e)))?;
+        // Exit directly with the child's code to mirror Unix execvp semantics
+        // as closely as we can on Windows (no true process replacement).
+        let status = match std::process::Command::new(program).args(args).status() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("spawn-ai: spawn {} failed: {}", program, e);
+                std::process::exit(127);
+            }
+        };
         let code = status.code().unwrap_or(1);
         std::process::exit(code);
     }
@@ -169,10 +177,15 @@ fn sweep_stale_in(dir: &Path, max_age: Duration) {
         if !name_str.starts_with("gw-spawn-") || !name_str.ends_with(".json") {
             continue;
         }
-        let metadata = match entry.metadata() {
+        // symlink_metadata + is_file narrows the TOCTOU window: we refuse to
+        // follow symlinks or delete directories that happen to match the name.
+        let metadata = match fs::symlink_metadata(entry.path()) {
             Ok(m) => m,
             Err(_) => continue,
         };
+        if !metadata.is_file() {
+            continue;
+        }
         let mtime = match metadata.modified() {
             Ok(t) => t,
             Err(_) => continue,
