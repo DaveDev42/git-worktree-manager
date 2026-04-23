@@ -6,9 +6,14 @@
 //! command. `execute` reads the spec, unlinks it, chdir's, and execvp's the
 //! real tool — the pane shell only ever parses ASCII.
 //!
-//! The emitted line intentionally does NOT use `exec`: we want the launching
-//! shell (zsh/bash/etc.) to survive the AI tool's exit so the terminal
-//! tab/pane keeps its prompt instead of closing immediately.
+//! The emitted line intentionally does NOT use `exec` so that when it is
+//! fed into an already-running interactive shell (e.g. `wezterm cli
+//! send-text`, iTerm AppleScript `write text`, `tmux send-keys` into a
+//! session pane), the shell survives the AI tool's exit and keeps the
+//! tab/pane open at its prompt. Launchers that run the line as the pane's
+//! sole process via `bash -lc <line>` (tmux-window, tmux-pane-*, zellij-*)
+//! are unaffected either way: their pane still closes when the AI tool
+//! exits because the `bash -lc` invocation has nothing else to do.
 
 use std::fs;
 use std::io::Write;
@@ -252,6 +257,10 @@ mod tests {
         // terminal tab/pane stays open (e.g. WezTerm tab keeps the zsh prompt
         // after claude quits).
         assert!(shell_line.starts_with("gw _spawn-ai "));
+        // Strictly redundant with the prefix check above, but kept as a
+        // self-documenting guard: if someone ever changes the emitted prefix
+        // string in the future, the `exec` ban is load-bearing for tab
+        // lifetime and must not silently regress.
         assert!(
             !shell_line.starts_with("exec "),
             "shell_line must not use exec: {:?}",
