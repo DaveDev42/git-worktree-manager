@@ -1,5 +1,10 @@
 # Safe AI Tool Spawn — Implementation Plan
 
+> **Note (post-merge, 2026-04-23):** The emitted shell line is
+> `gw _spawn-ai <path>` (no `exec` prefix). The original `exec`-prefixed
+> form described below was changed so the launching shell survives the AI
+> tool's exit and the terminal tab stays open. See PR #94.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Eliminate shell-escape failures when launching AI tools (Claude, Codex) with user prompts that contain quotes, `$`, backticks, backslashes, newlines, or non-ASCII by routing every launcher through a `gw _spawn-ai <spec-file>` self-exec wrapper.

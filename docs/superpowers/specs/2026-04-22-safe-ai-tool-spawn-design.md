@@ -1,5 +1,10 @@
 # Safe AI Tool Spawn — Escape-Free Launcher Prompt Injection
 
+> **Note (post-merge, 2026-04-23):** The emitted shell line is
+> `gw _spawn-ai <path>` (no `exec` prefix). The original `exec`-prefixed
+> form described below was changed so the launching shell survives the AI
+> tool's exit and the terminal tab stays open. See PR #94.
+
 **Status:** Draft
 **Date:** 2026-04-22
 **Related:** Recurring failures when launching Claude Code via `gw new -T w-t-b` (and other launchers) with prompts that contain shell metacharacters (quotes, `$`, backticks, backslashes, multi-line content, non-ASCII).
