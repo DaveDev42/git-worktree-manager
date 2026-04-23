@@ -14,31 +14,46 @@ use crate::git;
 use crate::operations::busy::{self, BusyInfo};
 use crate::operations::worktree::{self, DeleteFlags};
 
-/// Open the multi-select TUI to let the user choose which feature worktrees
-/// to delete. Returns the selected branch names in the order listed.
+/// Result of the interactive multi-select flow.
 ///
-/// Empty return means "nothing to do" — either there were no feature
-/// worktrees, the user confirmed with zero selections, or the user
-/// cancelled. The caller treats all three identically.
-fn interactive_select(main_repo: &Path) -> Result<Vec<String>> {
+/// - `Selected(v)` — user confirmed with at least one pick; `v` is non-empty.
+/// - `Nothing` — no feature worktrees, or user confirmed with zero selections.
+///   Nothing-to-do is not an error; the orchestrator exits 0.
+/// - `Cancelled` — user pressed Esc / q / Ctrl-C. Orchestrator exits 1.
+enum InteractiveOutcome {
+    Selected(Vec<String>),
+    Nothing,
+    Cancelled,
+}
+
+/// Open the multi-select TUI to let the user choose which feature worktrees
+/// to delete. Distinguishes Selected / Nothing / Cancelled so the caller can
+/// map each to the exit code the spec requires.
+fn interactive_select(main_repo: &Path) -> Result<InteractiveOutcome> {
     let feature_worktrees = git::get_feature_worktrees(Some(main_repo))?;
     if feature_worktrees.is_empty() {
         eprintln!("No feature worktrees to delete.");
-        return Ok(Vec::new());
+        return Ok(InteractiveOutcome::Nothing);
     }
     let labels: Vec<String> = feature_worktrees
         .iter()
         .map(|(branch, path)| format!("{:<30} {}", branch, path.display()))
         .collect();
-    let chosen = crate::tui::multi_select::multi_select(&labels, "Select worktrees to delete:");
-    match chosen {
-        Some(indices) => Ok(indices
-            .into_iter()
-            .map(|i| feature_worktrees[i].0.clone())
-            .collect()),
+    match crate::tui::multi_select::multi_select(&labels, "Select worktrees to delete:") {
+        Some(indices) if indices.is_empty() => {
+            eprintln!("Nothing selected.");
+            Ok(InteractiveOutcome::Nothing)
+        }
+        Some(indices) => {
+            let selected: Vec<String> = indices
+                .into_iter()
+                .map(|i| feature_worktrees[i].0.clone())
+                .collect();
+            Ok(InteractiveOutcome::Selected(selected))
+        }
         None => {
             eprintln!("Cancelled.");
-            Ok(Vec::new())
+            Ok(InteractiveOutcome::Cancelled)
         }
     }
 }
@@ -392,11 +407,11 @@ pub fn delete_worktrees(
             "clap should have rejected -i with positionals"
         );
         let main_repo = git::get_main_repo_root(None)?;
-        let selected = interactive_select(&main_repo)?;
-        if selected.is_empty() {
-            return Ok(1); // cancelled or nothing selected
+        match interactive_select(&main_repo)? {
+            InteractiveOutcome::Selected(v) => v,
+            InteractiveOutcome::Nothing => return Ok(0),
+            InteractiveOutcome::Cancelled => return Ok(1),
         }
-        selected
     } else if inputs.is_empty() {
         // Legacy path: delegate to the single-target shim and return its exit
         // code. Keeps the "no-args inside a worktree deletes current" behavior
