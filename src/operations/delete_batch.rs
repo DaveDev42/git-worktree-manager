@@ -14,6 +14,35 @@ use crate::git;
 use crate::operations::busy::{self, BusyInfo};
 use crate::operations::worktree::{self, DeleteFlags};
 
+/// Open the multi-select TUI to let the user choose which feature worktrees
+/// to delete. Returns the selected branch names in the order listed.
+///
+/// Empty return means "nothing to do" — either there were no feature
+/// worktrees, the user confirmed with zero selections, or the user
+/// cancelled. The caller treats all three identically.
+fn interactive_select(main_repo: &Path) -> Result<Vec<String>> {
+    let feature_worktrees = git::get_feature_worktrees(Some(main_repo))?;
+    if feature_worktrees.is_empty() {
+        eprintln!("No feature worktrees to delete.");
+        return Ok(Vec::new());
+    }
+    let labels: Vec<String> = feature_worktrees
+        .iter()
+        .map(|(branch, path)| format!("{:<30} {}", branch, path.display()))
+        .collect();
+    let chosen = crate::tui::multi_select::multi_select(&labels, "Select worktrees to delete:");
+    match chosen {
+        Some(indices) => Ok(indices
+            .into_iter()
+            .map(|i| feature_worktrees[i].0.clone())
+            .collect()),
+        None => {
+            eprintln!("Cancelled.");
+            Ok(Vec::new())
+        }
+    }
+}
+
 /// Resolved worktree target (path + optional branch).
 #[derive(Debug, Clone)]
 pub struct Resolved {
@@ -358,10 +387,16 @@ pub fn delete_worktrees(
 ) -> Result<i32> {
     // 1) Decide the initial input set.
     let initial_inputs: Vec<String> = if interactive {
-        // Filled in by Task 6 (TUI). Until then, reject explicitly.
-        return Err(CwError::Other(
-            "--interactive is not yet wired; coming in the next task".into(),
-        ));
+        debug_assert!(
+            inputs.is_empty(),
+            "clap should have rejected -i with positionals"
+        );
+        let main_repo = git::get_main_repo_root(None)?;
+        let selected = interactive_select(&main_repo)?;
+        if selected.is_empty() {
+            return Ok(1); // cancelled or nothing selected
+        }
+        selected
     } else if inputs.is_empty() {
         // Legacy path: delegate to the single-target shim and return its exit
         // code. Keeps the "no-args inside a worktree deletes current" behavior

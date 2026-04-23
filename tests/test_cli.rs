@@ -180,6 +180,14 @@ fn test_delete_help() {
 }
 
 #[test]
+fn test_delete_interactive_help_mentions_multiselect() {
+    cw().args(["delete", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--interactive"));
+}
+
+#[test]
 fn test_sync_help() {
     cw().args(["sync", "--help"])
         .assert()
