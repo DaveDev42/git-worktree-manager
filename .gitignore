@@ -16,3 +16,8 @@ Thumbs.db
 
 # Stray rustc/proc-macro build artifacts (occasionally dropped in the repo root)
 /*.rlib
+
+# Claude Code local runtime artifacts (keep .claude/settings.json tracked)
+.claude/*.lock
+.claude/tasks/
+.claude/settings.local.json
