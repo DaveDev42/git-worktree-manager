@@ -20,7 +20,7 @@ dirs = "6"
 flate2 = "1"
 pathdiff = "0.2"
 rayon = "1.12"
-ratatui = "0.28"
+ratatui = "0.30"
 regex = "1"
 self-replace = "1.5"
 serde = { version = "1", features = ["derive"] }
