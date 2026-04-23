@@ -211,6 +211,18 @@ gw hook disable worktree.post_create <hook-id>
 
 Hook context is passed via `CW_*` environment variables.
 
+## Notes
+
+### Behavior change in `gw delete`
+
+Since the multi-target `gw delete` change ([#100](https://github.com/DaveDev42/git-worktree-manager/pull/100)), single-target failures now exit with code `2` instead of `1`. This aligns with the new batch contract:
+
+- `0` — full success, `--dry-run`, or interactive (`-i`) with no eligible worktrees / nothing selected
+- `1` — user cancelled
+- `2` — any target failed or was skipped (not found, busy, remove error)
+
+Scripts treating exit code `1` as "delete failed" should switch to `!= 0` or specifically handle `2`. See `gw delete --help` for the full contract.
+
 ## License
 
 BSD-3-Clause
