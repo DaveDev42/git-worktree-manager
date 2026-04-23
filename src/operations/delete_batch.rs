@@ -252,17 +252,17 @@ fn execute_all(entries: Vec<PlanEntry>, flags: DeleteFlags) -> Result<Vec<ItemRe
                     }
                 }
             }
-            PlanEntry::Busy { .. } => {
-                // skip notice → stdout (not an error, just an informational decision)
+            PlanEntry::Busy { info, .. } => {
+                // Summary line → stdout.
                 println!("{} Skipped {} (busy)", style("~").yellow(), label);
-                // Also mirror an error-level hint to stderr: busy skips
-                // translate to a non-zero exit, so scripts watching stderr
-                // should see *something*. Keeps parity with the legacy
-                // single-target flow that errored with "in use" here.
+                // Error mirror → stderr. Required so non-TTY `gw delete`
+                // against a busy worktree emits a stderr hint matching the
+                // legacy single-target flow (see tests/busy_detection.rs).
                 eprintln!(
-                    "{} worktree '{}' is in use; re-run with --force to override",
+                    "{} worktree '{}' is in use by {} process(es); re-run with --force to override",
                     style("error:").red().bold(),
-                    label
+                    label,
+                    info.len()
                 );
                 results.push(ItemResult::Skipped {
                     label,
@@ -301,31 +301,40 @@ fn print_results(results: &[ItemResult]) {
 }
 
 fn exit_code_from(results: &[ItemResult]) -> i32 {
-    for r in results {
-        match r {
-            ItemResult::Failed { .. } => return 2,
-            ItemResult::Skipped { .. } => return 2,
-            _ => {}
-        }
+    let any_bad = results
+        .iter()
+        .any(|r| matches!(r, ItemResult::Failed { .. } | ItemResult::Skipped { .. }));
+    if any_bad {
+        2
+    } else {
+        0
     }
-    0
 }
 
 /// If cwd lives inside any Ready/Busy target path, chdir to the main repo
 /// root. Prevents the current `gw` process from being flagged as a busy holder
 /// of the worktree it is being asked to remove.
+///
+/// Canonicalize failures on either side are treated as "skip this comparison"
+/// rather than falling back to the raw path. On filesystems with symlinked
+/// tempdirs (e.g. `/var` -> `/private/var` on macOS) an asymmetric fallback
+/// could mis-classify and leave cwd in the target.
 fn move_cwd_out_of_targets(entries: &[PlanEntry]) {
     let Ok(cwd) = std::env::current_dir() else {
         return;
     };
-    let cwd_canon = cwd.canonicalize().unwrap_or(cwd);
+    let Ok(cwd_canon) = cwd.canonicalize() else {
+        return;
+    };
     for e in entries {
         let path = match e {
             PlanEntry::Ready(r) => &r.path,
             PlanEntry::Busy { resolved, .. } => &resolved.path,
             PlanEntry::Unresolved { .. } => continue,
         };
-        let wt_canon = path.canonicalize().unwrap_or_else(|_| path.clone());
+        let Ok(wt_canon) = path.canonicalize() else {
+            continue;
+        };
         if cwd_canon.starts_with(&wt_canon) {
             if let Ok(main_repo) = git::get_main_repo_root(None) {
                 let _ = std::env::set_current_dir(&main_repo);
