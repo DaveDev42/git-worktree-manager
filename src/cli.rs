@@ -211,10 +211,29 @@ pub enum Commands {
         cache: CacheControl,
     },
 
-    /// Delete a worktree
+    /// Delete one or more worktrees.
+    ///
+    /// With no arguments: deletes the current worktree (must be inside one).
+    /// With one or more positional targets: deletes each of them; flags apply
+    /// to every target.
+    /// With `-i`: opens a multi-select UI.
+    ///
+    /// Exits 0 on full success, 1 if the user cancelled at the confirmation
+    /// prompt or in the interactive UI, 2 if any target could not be deleted
+    /// (not found, busy, or an error).
     Delete {
-        /// Branch name or path of worktree to delete (default: current worktree)
-        target: Option<String>,
+        /// Branch names or paths of worktrees to delete.
+        /// If empty and --interactive is not set, deletes the current worktree.
+        #[arg(conflicts_with = "interactive")]
+        targets: Vec<String>,
+
+        /// Interactive multi-select UI (mutually exclusive with positional targets)
+        #[arg(short, long, conflicts_with = "targets")]
+        interactive: bool,
+
+        /// Show what would be deleted without deleting
+        #[arg(long)]
+        dry_run: bool,
 
         /// Keep the branch (only remove worktree)
         #[arg(short = 'k', long)]
@@ -233,11 +252,11 @@ pub enum Commands {
         #[arg(long)]
         no_force: bool,
 
-        /// Resolve target as worktree name (instead of branch)
+        /// Resolve targets as worktree names (instead of branches)
         #[arg(short, long)]
         worktree: bool,
 
-        /// Resolve target as branch name (instead of worktree)
+        /// Resolve targets as branch names (instead of worktrees)
         #[arg(short, long, conflicts_with = "worktree")]
         branch: bool,
     },

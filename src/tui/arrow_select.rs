@@ -49,13 +49,13 @@ pub fn arrow_select(
 
 /// Get terminal width from stderr, defaulting to 80.
 #[cfg(unix)]
-fn get_terminal_width() -> usize {
+pub(crate) fn get_terminal_width() -> usize {
     console::Term::stderr().size().1 as usize
 }
 
 /// Write raw bytes to stderr (unbuffered).
 #[cfg(unix)]
-fn write_stderr(s: &str) {
+pub(crate) fn write_stderr(s: &str) {
     let stderr = std::io::stderr();
     let mut handle = stderr.lock();
     let _ = handle.write_all(s.as_bytes());
@@ -64,7 +64,7 @@ fn write_stderr(s: &str) {
 
 /// Strip ANSI escape sequences and return the visible length.
 #[cfg(any(unix, test))]
-fn visible_len(text: &str) -> usize {
+pub(crate) fn visible_len(text: &str) -> usize {
     let mut len = 0;
     let bytes = text.as_bytes();
     let mut i = 0;
@@ -88,7 +88,7 @@ fn visible_len(text: &str) -> usize {
 
 /// Truncate text to fit within `width` visible characters, preserving ANSI codes.
 #[cfg(any(unix, test))]
-fn truncate(text: &str, width: usize) -> String {
+pub(crate) fn truncate(text: &str, width: usize) -> String {
     if visible_len(text) <= width {
         return text.to_string();
     }
@@ -169,7 +169,7 @@ fn render(
 
 /// Erase the rendered selector from stderr.
 #[cfg(unix)]
-fn cleanup(total_lines: usize) {
+pub(crate) fn cleanup(total_lines: usize) {
     // Restore to saved position
     write_stderr("\x1b[u");
     for _ in 0..total_lines + 2 {
@@ -185,20 +185,21 @@ fn cleanup(total_lines: usize) {
 /// Recognized key events.
 #[cfg(unix)]
 #[derive(Debug, PartialEq)]
-enum Key {
+pub(crate) enum Key {
     Up,
     Down,
     Enter,
     Escape,
     CtrlC,
     Quit,
+    Space,
     Number(u8),
     Unknown,
 }
 
 /// Read a single keypress from the given file descriptor (Unix).
 #[cfg(unix)]
-fn read_key(fd: std::os::unix::io::RawFd) -> Result<Key, std::io::Error> {
+pub(crate) fn read_key(fd: std::os::unix::io::RawFd) -> Result<Key, std::io::Error> {
     let mut buf = [0u8; 1];
     let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, 1) };
     if n <= 0 {
@@ -244,6 +245,7 @@ fn read_key(fd: std::os::unix::io::RawFd) -> Result<Key, std::io::Error> {
         b'\r' | b'\n' => Ok(Key::Enter),
         0x03 => Ok(Key::CtrlC),
         b'q' => Ok(Key::Quit),
+        b' ' => Ok(Key::Space),
         c @ b'1'..=b'9' => Ok(Key::Number(c - b'0')),
         _ => Ok(Key::Unknown),
     }
@@ -339,7 +341,7 @@ fn arrow_select_unix(
                         return Some(items[idx].1.clone());
                     }
                 }
-                Key::Unknown => {}
+                _ => {}
             }
         }
     })();

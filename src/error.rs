@@ -45,6 +45,12 @@ pub enum CwError {
     /// Generic error with message.
     #[error("{0}")]
     Other(String),
+
+    /// Terminate the process with a specific non-zero exit code without
+    /// printing an error message. Used when the orchestrator has already
+    /// produced a summary.
+    #[error("")]
+    ExitCode(i32),
 }
 
 pub type Result<T> = std::result::Result<T, CwError>;

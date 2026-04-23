@@ -183,7 +183,9 @@ pub fn run() {
         }
 
         Some(Commands::Delete {
-            target,
+            targets,
+            interactive,
+            dry_run,
             keep_branch,
             delete_remote,
             force,
@@ -192,17 +194,23 @@ pub fn run() {
             branch: is_branch,
         }) => {
             let lookup_mode = resolve_lookup_mode(is_worktree, is_branch);
-            // Arg mapping for delete_worktree:
-            //   force (git-force)       <- !no_force   (default true)
-            //   allow_busy (busy gate)  <- force       (CLI --force flag)
-            worktree::delete_worktree(
-                target.as_deref(),
+            let flags = crate::operations::worktree::DeleteFlags {
                 keep_branch,
                 delete_remote,
-                !no_force,
-                force,
+                git_force: !no_force,
+                allow_busy: force,
+            };
+            match crate::operations::delete_batch::delete_worktrees(
+                targets,
+                interactive,
+                dry_run,
+                flags,
                 lookup_mode,
-            )
+            ) {
+                Ok(0) => Ok(()),
+                Ok(code) => Err(crate::error::CwError::ExitCode(code)),
+                Err(e) => Err(e),
+            }
         }
 
         Some(Commands::Clean {
@@ -384,6 +392,13 @@ pub fn run() {
     };
 
     if let Err(e) = result {
+        // ExitCode carries a specific exit status from callers that have
+        // already produced their own user-facing output (e.g. the multi-target
+        // delete orchestrator). Exit silently with that code instead of the
+        // generic "Error: …" print.
+        if let CwError::ExitCode(code) = e {
+            std::process::exit(code);
+        }
         cwconsole::print_error(&format!("Error: {}", e));
         std::process::exit(1);
     }
