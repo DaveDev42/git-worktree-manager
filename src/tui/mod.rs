@@ -1,8 +1,9 @@
 //! TUI rendering layer built on ratatui + crossterm.
 //!
 //! Houses:
-//! - `arrow_select`: raw-mode arrow-key selector (pre-existing)
-//! - `list_view`:   Inline Viewport renderer for `gw list` (new)
+//! - `arrow_select`: raw-mode arrow-key single-select
+//! - `multi_select`: raw-mode arrow + space multi-select (for `gw delete -i`)
+//! - `list_view`:   Inline Viewport renderer for `gw list`
 //! - `style`:       shared ratatui `Style` palette mirroring `crate::console`
 //!
 //! Simple commands with pure text output continue to use `crate::console`.
