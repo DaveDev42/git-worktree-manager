@@ -37,21 +37,7 @@ fn multi_select_unix(items: &[String], title: &str) -> Option<Option<Vec<usize>>
     let stdin = std::io::stdin();
     let fd = stdin.as_raw_fd();
 
-    // Save original terminal attributes
-    let mut old_termios: libc::termios = unsafe { std::mem::zeroed() };
-    if unsafe { libc::tcgetattr(fd, &mut old_termios) } != 0 {
-        return None;
-    }
-
-    // Enter raw mode
-    let mut raw = old_termios;
-    unsafe { libc::cfmakeraw(&mut raw) };
-    if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &raw) } != 0 {
-        return None;
-    }
-
-    // Hide cursor
-    write_stderr("\x1b[?25l");
+    let _guard = super::raw_mode::RawModeGuard::enter(fd, true)?;
 
     let mut cursor = 0usize;
     let mut checked: Vec<bool> = vec![false; items.len()];
@@ -91,12 +77,9 @@ fn multi_select_unix(items: &[String], title: &str) -> Option<Option<Vec<usize>>
         }
     };
 
-    // Cleanup: show cursor, restore termios, clear our drawn lines
-    write_stderr("\x1b[?25h");
+    // Clear our drawn lines on the happy path. Terminal mode + cursor are
+    // handled by `_guard` going out of scope.
     super::arrow_select::cleanup(total_lines);
-    unsafe {
-        libc::tcsetattr(fd, libc::TCSANOW, &old_termios);
-    }
 
     Some(result)
 }

@@ -12,6 +12,7 @@
 pub mod arrow_select;
 pub mod list_view;
 pub mod multi_select;
+pub mod raw_mode;
 pub mod style;
 
 // Re-export for backwards-compatible call sites that use `crate::tui::arrow_select(...)`.
