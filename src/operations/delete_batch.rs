@@ -137,7 +137,8 @@ fn count(entries: &[PlanEntry]) -> PlanCounts {
     c
 }
 
-/// Print the batch summary to stderr. Used both for dry-run and real runs.
+/// Print the batch summary. Goes to stdout to match the convention used by
+/// `gw clean` (summary/progress → stdout, errors/prompts → stderr).
 pub fn print_summary(entries: &[PlanEntry], dry_run: bool) {
     let counts = count(entries);
     let header = if dry_run {
@@ -150,12 +151,12 @@ pub fn print_summary(entries: &[PlanEntry], dry_run: bool) {
         };
         format!("Deleting {} worktree(s){}:", counts.ready, busy_note)
     };
-    eprintln!("\n{}", style(header).yellow().bold());
+    println!("\n{}", style(header).yellow().bold());
     for e in entries {
         match e {
             PlanEntry::Ready(r) => {
                 let label = r.branch.as_deref().unwrap_or(&r.input);
-                eprintln!("  {:<30} {}", label, r.path.display());
+                println!("  {:<30} {}", label, r.path.display());
             }
             PlanEntry::Busy { resolved, info } => {
                 let label = resolved.branch.as_deref().unwrap_or(&resolved.input);
@@ -163,17 +164,21 @@ pub fn print_summary(entries: &[PlanEntry], dry_run: bool) {
                     .first()
                     .map(|b| format!("PID {} {}", b.pid, b.cmd))
                     .unwrap_or_default();
-                eprintln!("  {:<30} (busy: {})  [skip]", label, detail);
+                println!("  {:<30} (busy: {})  [skip]", label, detail);
             }
             PlanEntry::Unresolved { input, reason } => {
-                eprintln!("  {:<30} [{}] [skip]", input, reason);
+                println!("  {:<30} [{}] [skip]", input, reason);
             }
         }
     }
-    eprintln!(
-        "Total: {} planned, {} not found, {} busy\n",
+    println!(
+        "Total: {} planned, {} not found, {} busy",
         counts.ready, counts.unresolved, counts.busy
     );
+    if dry_run {
+        println!("(dry-run; nothing deleted)");
+    }
+    println!();
 }
 
 /// Ask for a single y/N confirmation on the whole batch. Only invoked when
