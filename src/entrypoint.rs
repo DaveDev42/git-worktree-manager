@@ -183,7 +183,9 @@ pub fn run() {
         }
 
         Some(Commands::Delete {
-            target,
+            targets,
+            interactive: _,
+            dry_run: _,
             keep_branch,
             delete_remote,
             force,
@@ -192,11 +194,10 @@ pub fn run() {
             branch: is_branch,
         }) => {
             let lookup_mode = resolve_lookup_mode(is_worktree, is_branch);
-            // Arg mapping for delete_worktree:
-            //   force (git-force)       <- !no_force   (default true)
-            //   allow_busy (busy gate)  <- force       (CLI --force flag)
+            let single = targets.into_iter().next();
+            // Temporary single-target shim; replaced by Task 2 orchestrator.
             worktree::delete_worktree(
-                target.as_deref(),
+                single.as_deref(),
                 keep_branch,
                 delete_remote,
                 !no_force,

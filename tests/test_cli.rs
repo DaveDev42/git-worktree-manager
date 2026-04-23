@@ -208,6 +208,69 @@ fn test_resume_help() {
 }
 
 #[test]
+fn test_delete_accepts_multiple_targets() {
+    use clap::Parser;
+    use git_worktree_manager::cli::{Cli, Commands};
+    let cli = Cli::try_parse_from(["gw", "delete", "feat/a", "feat/b", "feat/c"]).expect("parses");
+    let Some(Commands::Delete {
+        targets,
+        interactive,
+        dry_run,
+        ..
+    }) = cli.command
+    else {
+        panic!("expected Delete, got {:?}", cli.command);
+    };
+    assert_eq!(targets, vec!["feat/a", "feat/b", "feat/c"]);
+    assert!(!interactive);
+    assert!(!dry_run);
+}
+
+#[test]
+fn test_delete_interactive_flag_parses() {
+    use clap::Parser;
+    use git_worktree_manager::cli::{Cli, Commands};
+    let cli = Cli::try_parse_from(["gw", "delete", "-i"]).expect("parses");
+    let Some(Commands::Delete {
+        targets,
+        interactive,
+        ..
+    }) = cli.command
+    else {
+        panic!("expected Delete");
+    };
+    assert!(targets.is_empty());
+    assert!(interactive);
+}
+
+#[test]
+fn test_delete_dry_run_flag_parses() {
+    use clap::Parser;
+    use git_worktree_manager::cli::{Cli, Commands};
+    let cli = Cli::try_parse_from(["gw", "delete", "a", "--dry-run"]).expect("parses");
+    let Some(Commands::Delete {
+        targets, dry_run, ..
+    }) = cli.command
+    else {
+        panic!("expected Delete");
+    };
+    assert_eq!(targets, vec!["a"]);
+    assert!(dry_run);
+}
+
+#[test]
+fn test_delete_interactive_conflicts_with_positional() {
+    use clap::Parser;
+    use git_worktree_manager::cli::Cli;
+    let err = Cli::try_parse_from(["gw", "delete", "-i", "a"]).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("cannot be used") || msg.contains("conflict"),
+        "expected conflict error, got: {msg}"
+    );
+}
+
+#[test]
 fn test_change_base_help() {
     cw().args(["change-base", "--help"])
         .assert()
