@@ -4,6 +4,7 @@ pub mod backup;
 pub mod busy;
 pub mod clean;
 pub mod config_ops;
+pub mod delete_batch;
 pub mod diagnostics;
 pub mod display;
 pub mod git_ops;
