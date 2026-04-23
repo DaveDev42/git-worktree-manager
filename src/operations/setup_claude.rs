@@ -269,6 +269,11 @@ gw -g scan --dir ~/projects        # discover repositories
 
 ## Guidelines
 
+- Before running any `gw` subcommand that reads the current worktree (`gw status`, `gw list`, `gw delete` without an explicit target, etc.), make sure the shell's cwd still exists. If another session or an earlier `gw delete`/`gw clean` removed the worktree, the shell holds a stale pwd and commands behave unexpectedly. Quick guard:
+  ```bash
+  [ -d "$(pwd -P 2>/dev/null)" ] || { echo "FATAL: cwd missing (worktree likely deleted). Abort."; exit 1; }
+  ```
+  `gw new` does not need this guard (it creates a fresh worktree elsewhere); the guard matters for in-worktree commands.
 - Use descriptive branch names: `fix-auth`, `feat-login-page`, `refactor-api`
 - Specify base branch if not main/master:
   ```bash

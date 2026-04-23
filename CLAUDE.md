@@ -87,3 +87,22 @@ Same git config metadata keys and session storage paths.
 - Git operations: `std::process::Command`, not libgit2
 - Zero clippy warnings policy
 - Fully synchronous (no async runtime)
+
+## Pre-Release Checklist
+
+릴리스를 만드는 커밋 (또는 `release-please` 자동 생성 PR을 merge하기 전) 직전에 확인:
+
+```bash
+cargo clippy --all-targets --all-features -- -D warnings   # 0 warnings 강제
+cargo test --all-targets                                    # 전체 target (bin/lib/tests/examples)
+cargo fmt --check                                           # format drift 없음
+cargo build --release                                       # target/release/gw 생성
+ls -l target/release/gw                                     # binary size regression 확인 (~1.9MB 기준)
+```
+
+이 체크리스트는 CI가 대부분 커버하지만, **clippy는 `--all-targets --all-features` 조합일 때만** 다음 정도 drift가 잡힌다:
+- `#[cfg(test)]` 블록 안의 lint
+- feature-gated 코드 (`--all-features`가 없으면 skip)
+- test/examples/benches target의 warning
+
+cross-platform smoke test가 필요한 변경 (new syscall, path 처리, external process invocation) 은 CI `test` job의 Linux/macOS/Windows matrix를 반드시 통과시킨 뒤 release 한다. Windows-specific 실패는 로컬에서 재현하기 어려우므로 CI 결과에 의존할 것.
