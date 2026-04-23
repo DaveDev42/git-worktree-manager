@@ -202,6 +202,10 @@ pub fn create_worktree(
 }
 
 /// Outcome of attempting to delete a single worktree.
+///
+/// `delete_one` itself returns only `Deleted` or `Failed` today; `Skipped` is
+/// carried for the batch orchestrator, which may classify an entry as skipped
+/// before `delete_one` would even be called (see `delete_batch::PlanEntry`).
 #[derive(Debug)]
 pub enum DeletionOutcome {
     Deleted {
