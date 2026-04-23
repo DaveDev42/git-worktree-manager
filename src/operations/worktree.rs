@@ -201,6 +201,158 @@ pub fn create_worktree(
     Ok(worktree_path)
 }
 
+/// Outcome of attempting to delete a single worktree.
+#[derive(Debug)]
+pub enum DeletionOutcome {
+    Deleted {
+        branch: Option<String>,
+        path: PathBuf,
+    },
+    Skipped {
+        reason: String,
+    },
+    Failed {
+        error: CwError,
+    },
+}
+
+/// Flags that apply uniformly to every target in a batch.
+#[derive(Debug, Clone, Copy)]
+pub struct DeleteFlags {
+    pub keep_branch: bool,
+    pub delete_remote: bool,
+    /// Passes through to `git worktree remove --force` (historical semantic).
+    pub git_force: bool,
+    /// Bypass the busy-detection gate.
+    pub allow_busy: bool,
+}
+
+/// Per-target deletion. Assumes the caller has already resolved the target
+/// and decided to proceed (no summary, no batch confirmation, no busy prompt
+/// — the orchestrator handles those).
+///
+/// Returns an outcome describing what happened. Never prints a batch summary;
+/// individual progress lines are acceptable.
+pub(crate) fn delete_one(
+    worktree_path: &Path,
+    branch_name: Option<&str>,
+    main_repo: &Path,
+    flags: DeleteFlags,
+) -> DeletionOutcome {
+    // Safety: never delete the main worktree.
+    let wt_resolved = git::canonicalize_or(worktree_path);
+    let main_resolved = git::canonicalize_or(main_repo);
+    if wt_resolved == main_resolved {
+        return DeletionOutcome::Failed {
+            error: CwError::Git(messages::cannot_delete_main_worktree()),
+        };
+    }
+
+    // If cwd is inside worktree, move to main_repo before deletion.
+    if let Ok(cwd) = std::env::current_dir() {
+        let cwd_canon = cwd.canonicalize().unwrap_or(cwd);
+        let wt_canon = worktree_path
+            .canonicalize()
+            .unwrap_or_else(|_| worktree_path.to_path_buf());
+        if cwd_canon.starts_with(&wt_canon) {
+            let _ = std::env::set_current_dir(main_repo);
+        }
+    }
+
+    // Pre-delete hook
+    let base_branch = branch_name
+        .and_then(|b| {
+            let key = format_config_key(CONFIG_KEY_BASE_BRANCH, b);
+            git::get_config(&key, Some(main_repo))
+        })
+        .unwrap_or_default();
+
+    let mut hook_ctx = build_hook_context(
+        branch_name.unwrap_or(""),
+        &base_branch,
+        worktree_path,
+        main_repo,
+        "worktree.pre_delete",
+        "delete",
+    );
+    if let Err(e) = hooks::run_hooks(
+        "worktree.pre_delete",
+        &hook_ctx,
+        Some(main_repo),
+        Some(main_repo),
+    ) {
+        return DeletionOutcome::Failed { error: e };
+    }
+
+    // Remove worktree
+    println!(
+        "{}",
+        style(messages::removing_worktree(worktree_path)).yellow()
+    );
+    if let Err(e) = git::remove_worktree_safe(worktree_path, main_repo, flags.git_force) {
+        return DeletionOutcome::Failed { error: e };
+    }
+    println!("{} Worktree removed\n", style("*").green().bold());
+
+    // Delete branch + metadata + optional remote push
+    if let Some(branch) = branch_name {
+        if !flags.keep_branch {
+            println!(
+                "{}",
+                style(messages::deleting_local_branch(branch)).yellow()
+            );
+            let _ = git::git_command(&["branch", "-D", branch], Some(main_repo), false, false);
+
+            let bb_key = format_config_key(CONFIG_KEY_BASE_BRANCH, branch);
+            let bp_key = format_config_key(CONFIG_KEY_BASE_PATH, branch);
+            let ib_key = format_config_key(CONFIG_KEY_INTENDED_BRANCH, branch);
+            git::unset_config(&bb_key, Some(main_repo));
+            git::unset_config(&bp_key, Some(main_repo));
+            git::unset_config(&ib_key, Some(main_repo));
+
+            println!(
+                "{} Local branch and metadata removed\n",
+                style("*").green().bold()
+            );
+
+            if flags.delete_remote {
+                println!(
+                    "{}",
+                    style(messages::deleting_remote_branch(branch)).yellow()
+                );
+                match git::git_command(
+                    &["push", "origin", &format!(":{}", branch)],
+                    Some(main_repo),
+                    false,
+                    true,
+                ) {
+                    Ok(r) if r.returncode == 0 => {
+                        println!("{} Remote branch deleted\n", style("*").green().bold());
+                    }
+                    _ => {
+                        println!("{} Remote branch deletion failed\n", style("!").yellow());
+                    }
+                }
+            }
+        }
+    }
+
+    // Post-delete hook
+    hook_ctx.insert("event".into(), "worktree.post_delete".into());
+    let _ = hooks::run_hooks(
+        "worktree.post_delete",
+        &hook_ctx,
+        Some(main_repo),
+        Some(main_repo),
+    );
+    let _ = registry::update_last_seen(main_repo);
+
+    DeletionOutcome::Deleted {
+        branch: branch_name.map(str::to_string),
+        path: worktree_path.to_path_buf(),
+    }
+}
+
 /// Delete a worktree by branch name, worktree directory name, or path.
 ///
 /// # Parameters
@@ -226,16 +378,18 @@ pub fn delete_worktree(
     let main_repo = git::get_main_repo_root(None)?;
     let (worktree_path, branch_name) = resolve_delete_target(target, &main_repo, lookup_mode)?;
 
-    // Safety: don't delete main repo
+    // Main-repo safety guard (mirrors delete_one, but we want the error
+    // surfaced up before prompting).
     let wt_resolved = git::canonicalize_or(&worktree_path);
     let main_resolved = git::canonicalize_or(&main_repo);
     if wt_resolved == main_resolved {
         return Err(CwError::Git(messages::cannot_delete_main_worktree()));
     }
 
-    // If cwd is inside worktree, change to main repo. Canonicalize both
-    // sides so /var vs /private/var (macOS) and other symlink skew do not
-    // hide the match.
+    // If cwd is inside worktree, change to main repo *before* busy detection
+    // so the current process itself doesn't register as a busy holder.
+    // Canonicalize both sides so /var vs /private/var (macOS) and other
+    // symlink skew do not hide the match.
     if let Ok(cwd) = std::env::current_dir() {
         let cwd_canon = cwd.canonicalize().unwrap_or(cwd);
         let wt_canon = worktree_path
@@ -246,11 +400,7 @@ pub fn delete_worktree(
         }
     }
 
-    // Busy-detection gate: block deletion if worktree is in use, unless the
-    // caller explicitly opted in via `allow_busy` (wired to the explicit
-    // `--force` CLI flag — note that the `force` parameter here carries the
-    // historical git-force semantic and defaults to true, so we use a
-    // dedicated flag for the busy override).
+    // Legacy single-target busy prompt (unchanged behavior).
     let busy = crate::operations::busy::detect_busy(&worktree_path);
     if !busy.is_empty() && !allow_busy {
         let branch_display = branch_name.clone().unwrap_or_else(|| {
@@ -289,94 +439,18 @@ pub fn delete_worktree(
         }
     }
 
-    // Pre-delete hooks
-    let base_branch = branch_name
-        .as_deref()
-        .and_then(|b| {
-            let key = format_config_key(CONFIG_KEY_BASE_BRANCH, b);
-            git::get_config(&key, Some(&main_repo))
-        })
-        .unwrap_or_default();
+    let flags = DeleteFlags {
+        keep_branch,
+        delete_remote,
+        git_force: force,
+        allow_busy: true, // already gated above
+    };
 
-    let mut hook_ctx = build_hook_context(
-        &branch_name.clone().unwrap_or_default(),
-        &base_branch,
-        &worktree_path,
-        &main_repo,
-        "worktree.pre_delete",
-        "delete",
-    );
-    hooks::run_hooks(
-        "worktree.pre_delete",
-        &hook_ctx,
-        Some(&main_repo),
-        Some(&main_repo),
-    )?;
-
-    // Remove worktree
-    println!(
-        "{}",
-        style(messages::removing_worktree(&worktree_path)).yellow()
-    );
-    git::remove_worktree_safe(&worktree_path, &main_repo, force)?;
-    println!("{} Worktree removed\n", style("*").green().bold());
-
-    // Delete branch
-    if let Some(ref branch) = branch_name {
-        if !keep_branch {
-            println!(
-                "{}",
-                style(messages::deleting_local_branch(branch)).yellow()
-            );
-            let _ = git::git_command(&["branch", "-D", branch], Some(&main_repo), false, false);
-
-            // Remove metadata
-            let bb_key = format_config_key(CONFIG_KEY_BASE_BRANCH, branch);
-            let bp_key = format_config_key(CONFIG_KEY_BASE_PATH, branch);
-            let ib_key = format_config_key(CONFIG_KEY_INTENDED_BRANCH, branch);
-            git::unset_config(&bb_key, Some(&main_repo));
-            git::unset_config(&bp_key, Some(&main_repo));
-            git::unset_config(&ib_key, Some(&main_repo));
-
-            println!(
-                "{} Local branch and metadata removed\n",
-                style("*").green().bold()
-            );
-
-            // Delete remote branch
-            if delete_remote {
-                println!(
-                    "{}",
-                    style(messages::deleting_remote_branch(branch)).yellow()
-                );
-                match git::git_command(
-                    &["push", "origin", &format!(":{}", branch)],
-                    Some(&main_repo),
-                    false,
-                    true,
-                ) {
-                    Ok(r) if r.returncode == 0 => {
-                        println!("{} Remote branch deleted\n", style("*").green().bold());
-                    }
-                    _ => {
-                        println!("{} Remote branch deletion failed\n", style("!").yellow());
-                    }
-                }
-            }
-        }
+    match delete_one(&worktree_path, branch_name.as_deref(), &main_repo, flags) {
+        DeletionOutcome::Deleted { .. } => Ok(()),
+        DeletionOutcome::Skipped { reason } => Err(CwError::Other(reason)),
+        DeletionOutcome::Failed { error } => Err(error),
     }
-
-    // Post-delete hooks
-    hook_ctx.insert("event".into(), "worktree.post_delete".into());
-    let _ = hooks::run_hooks(
-        "worktree.post_delete",
-        &hook_ctx,
-        Some(&main_repo),
-        Some(&main_repo),
-    );
-    let _ = registry::update_last_seen(&main_repo);
-
-    Ok(())
 }
 
 /// Resolve delete target to (worktree_path, branch_name).
