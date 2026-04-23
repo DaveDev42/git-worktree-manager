@@ -211,6 +211,18 @@ gw hook disable worktree.post_create <hook-id>
 
 Hook context is passed via `CW_*` environment variables.
 
+## Notes
+
+### Behavior change in `gw delete` (0.0.38+)
+
+Single-target failures now exit with code `2` instead of `1`. This aligns with the new batch contract:
+
+- `0` — full success, `--dry-run`, or interactive (`-i`) with nothing selected
+- `1` — user cancelled
+- `2` — any target failed or was skipped (not found, busy, remove error)
+
+Scripts pinning exit code `1` for "target not found" should be updated. See `gw delete --help` for the full contract.
+
 ## License
 
 BSD-3-Clause
