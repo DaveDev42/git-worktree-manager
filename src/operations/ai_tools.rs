@@ -64,8 +64,10 @@ pub fn launch_ai_tool(
     }
 
     // Build a shell-safe wrapper line: the launcher shell only parses
-    // `exec gw _spawn-ai <path>`; the raw argv (including user prompt) is in
-    // a 0600 temp file that `_spawn-ai` reads and execvp's.
+    // `gw _spawn-ai <path>`; the raw argv (including user prompt) is in a
+    // 0600 temp file that `_spawn-ai` reads and execvp's. We intentionally
+    // run this as a child (no `exec`) so the launching shell stays alive
+    // after the AI tool exits and keeps the terminal tab open.
     let spec = SpawnSpec::new(ai_cmd_parts, path.to_path_buf());
     // The spec file is cleaned up by `spawn_spec::execute` after read; the 24h
     // `sweep_stale` at startup is the safety net for crashes between those points.

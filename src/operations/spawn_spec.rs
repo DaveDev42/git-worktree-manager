@@ -2,9 +2,13 @@
 //!
 //! Prompts with quotes/$/backticks/newlines break when re-quoted through
 //! AppleScript/wezterm/tmux send-text layers. Instead, `materialize` writes
-//! argv+cwd to a temp file and returns `exec gw _spawn-ai <path>` as the
-//! launcher command. `execute` reads the spec, unlinks it, chdir's, and
-//! execvp's the real tool — the pane shell only ever parses ASCII.
+//! argv+cwd to a temp file and returns `gw _spawn-ai <path>` as the launcher
+//! command. `execute` reads the spec, unlinks it, chdir's, and execvp's the
+//! real tool — the pane shell only ever parses ASCII.
+//!
+//! The emitted line intentionally does NOT use `exec`: we want the launching
+//! shell (zsh/bash/etc.) to survive the AI tool's exit so the terminal
+//! tab/pane keeps its prompt instead of closing immediately.
 
 use std::fs;
 use std::io::Write;
@@ -64,7 +68,7 @@ pub fn materialize_in_dir(spec: &SpawnSpec, dir: &Path) -> Result<(String, PathB
     // it after reading, and the 24h sweep handles crash residue.
     let (_file, path) = named.keep().map_err(|e| e.error)?;
 
-    let shell_line = format!("exec gw _spawn-ai {}", quote_path_for_shell(&path));
+    let shell_line = format!("gw _spawn-ai {}", quote_path_for_shell(&path));
     Ok((shell_line, path))
 }
 
@@ -236,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn materialize_writes_spec_and_returns_exec_line() {
+    fn materialize_writes_spec_and_returns_shell_line() {
         let dir = tempfile::tempdir().unwrap();
         let spec = SpawnSpec::new(
             vec!["/bin/echo".into(), "hello \"world\"".into()],
@@ -244,7 +248,15 @@ mod tests {
         );
         let (shell_line, spec_path) = materialize_in_dir(&spec, dir.path()).unwrap();
 
-        assert!(shell_line.starts_with("exec gw _spawn-ai "));
+        // No `exec` — the shell must survive after the AI tool exits so the
+        // terminal tab/pane stays open (e.g. WezTerm tab keeps the zsh prompt
+        // after claude quits).
+        assert!(shell_line.starts_with("gw _spawn-ai "));
+        assert!(
+            !shell_line.starts_with("exec "),
+            "shell_line must not use exec: {:?}",
+            shell_line
+        );
         assert!(spec_path.exists());
 
         let loaded: SpawnSpec =
@@ -258,10 +270,10 @@ mod tests {
         let spec = SpawnSpec::new(vec!["/bin/true".into()], dir.path().into());
         let (line, _path) = materialize_in_dir(&spec, dir.path()).unwrap();
 
-        // "exec gw _spawn-ai " + path. path must contain only safe chars OR
+        // "gw _spawn-ai " + path. path must contain only safe chars OR
         // be wrapped in double quotes. Temp dir in tests may have unsafe chars;
         // we only assert the emitted line is one of those two shapes.
-        let tail = line.strip_prefix("exec gw _spawn-ai ").unwrap();
+        let tail = line.strip_prefix("gw _spawn-ai ").unwrap();
         let quoted = tail.starts_with('"') && tail.ends_with('"');
         let bare_safe = tail
             .chars()
