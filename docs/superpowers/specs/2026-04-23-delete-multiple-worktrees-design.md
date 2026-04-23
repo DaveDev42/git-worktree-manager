@@ -172,9 +172,11 @@ Single-target output is unchanged.
 - Each row shows branch/worktree name, path, relative age, and a busy badge
   when applicable.
 - Space toggles selection; Enter confirms; Esc/q cancels.
-- Prefer reusing the selection widget that currently powers `clean -i`. If it
-  is not cleanly separable, extract a small shared multi-select component under
-  `src/tui/` so both commands share it.
+- Today `clean -i` uses a plain line-based "type space-separated names" prompt,
+  not a TUI widget. `src/tui/arrow_select.rs` provides a single-select arrow
+  menu. A multi-select arrow/checkbox widget does not yet exist and will be
+  added under `src/tui/` for `delete -i`. Later, `clean -i` can be migrated to
+  the new widget (not in scope here).
 - After Enter, the selected set flows through the same resolve → plan → summary
   → confirm → execute pipeline as positional input. This keeps one code path
   for the dangerous part (execution).
@@ -206,8 +208,11 @@ Single-target output is unchanged.
     `Delete anyway? (y/N)` semantics. This guarantees backward compatibility
     for the common `gw delete` workflow inside a worktree.
 - `src/operations/busy.rs` — no change. Reuse `detect_busy()`.
-- `src/tui/` — expose `select_worktrees_interactive(repo) -> Result<Vec<Selected>>`.
-  Refactor only as much as needed to share the widget with `clean -i`.
+- `src/tui/` — add a new multi-select widget (arrow keys to move, space to
+  toggle, Enter to confirm, Esc/q to cancel) and expose
+  `select_worktrees_interactive(repo) -> Result<Vec<Selected>>` on top of it.
+  Follow the existing `arrow_select_unix` raw-mode pattern. Fall back to a
+  line-based prompt in non-Unix / non-TTY environments.
 
 ### Data types (sketch)
 
