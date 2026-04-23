@@ -149,14 +149,15 @@ impl ListApp {
 /// On return, `app.rows` contains final statuses. The viewport exits via
 /// `drop(terminal)` which leaves the final frame in the scrollback.
 ///
-/// Returns `std::io::Result<()>`. In `display.rs`, the `#[from]` impl on
-/// `CwError::Io` converts this to `crate::error::Result` via `From` — no
-/// manual mapping is needed at the call site.
+/// Returns `Result<(), B::Error>`. For `CrosstermBackend`, `B::Error = io::Error`,
+/// and `display.rs` converts it to `crate::error::Result` via the `#[from]` impl on
+/// `CwError::Io`. For `TestBackend`, `B::Error = Infallible`, and tests use
+/// `.expect(...)` to unwrap.
 pub fn run<B: ratatui::backend::Backend>(
     terminal: &mut ratatui::Terminal<B>,
     app: &mut ListApp,
     rx: mpsc::Receiver<(usize, String)>,
-) -> std::io::Result<()> {
+) -> Result<(), B::Error> {
     terminal.draw(|f| app.render(f))?;
 
     // Spec called for `recv_timeout(50ms)` for periodic refresh; we use blocking

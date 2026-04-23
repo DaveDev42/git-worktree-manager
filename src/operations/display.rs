@@ -348,7 +348,7 @@ fn render_rows_progressive(
     };
     let mut guard = TerminalGuard::new(terminal);
     // Note: no test exercises a panicking Terminal::with_options. The double-restore
-    // path (panic hook + TerminalGuard::Drop) is documented safe in ratatui 0.28.
+    // path (panic hook + TerminalGuard::Drop) is documented safe in ratatui.
 
     // Producer: parallel per-worktree status computation on a dedicated OS
     // thread; rayon parallelism is used within that thread.
