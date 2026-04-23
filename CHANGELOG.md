@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.37](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.36...v0.0.37) (2026-04-23)
+
+
+### Bug Fixes
+
+* **spawn_spec:** drop exec so launching shell survives AI exit ([90a8c24](https://github.com/DaveDev42/git-worktree-manager/commit/90a8c24a8ba53f8049418dbcf52ef8c198ea8e22))
+* **spawn_spec:** drop exec so launching shell survives AI exit ([05845f3](https://github.com/DaveDev42/git-worktree-manager/commit/05845f360f13340d375779ebc68b7f4df807bde8))
+
 ## [0.0.36](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.35...v0.0.36) (2026-04-22)
 
 
