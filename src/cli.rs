@@ -211,7 +211,16 @@ pub enum Commands {
         cache: CacheControl,
     },
 
-    /// Delete one or more worktrees
+    /// Delete one or more worktrees.
+    ///
+    /// With no arguments: deletes the current worktree (must be inside one).
+    /// With one or more positional targets: deletes each of them; flags apply
+    /// to every target.
+    /// With `-i`: opens a multi-select UI.
+    ///
+    /// Exits 0 on full success, 1 if the user cancelled at the confirmation
+    /// prompt or in the interactive UI, 2 if any target could not be deleted
+    /// (not found, busy, or an error).
     Delete {
         /// Branch names or paths of worktrees to delete.
         /// If empty and --interactive is not set, deletes the current worktree.

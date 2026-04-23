@@ -84,7 +84,7 @@ gw merge
 | `gw shell [branch]` | Open shell in worktree |
 | `gw pr [branch]` | Create GitHub PR |
 | `gw merge [branch]` | Rebase + merge + cleanup |
-| `gw delete <target>` | Remove worktree |
+| `gw delete [target...]` | Remove one or more worktrees (use `-i` for multi-select, `--dry-run` to preview) |
 | `gw list` | List all worktrees |
 | `gw status` | Show current worktree info |
 | `gw tree` | Visual tree display |
