@@ -37,7 +37,7 @@ cargo binstall git-worktree-manager
 
 </details>
 
-After installing, run `gw upgrade` at any time to update to the latest version (self-replacing binary). Homebrew users should use `brew upgrade git-worktree-manager` instead.
+After installing, run `gw upgrade` at any time to update to the latest version (self-replacing binary). Pass `--yes` to skip the prompt — required in non-TTY environments (CI, nested processes). Homebrew users should use `brew upgrade git-worktree-manager` instead.
 
 ## Quick Start
 

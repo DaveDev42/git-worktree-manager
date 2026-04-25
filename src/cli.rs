@@ -437,7 +437,11 @@ pub enum Commands {
     },
 
     /// Check for updates / upgrade
-    Upgrade,
+    Upgrade {
+        /// Skip the confirmation prompt; required for non-TTY environments.
+        #[arg(short, long)]
+        yes: bool,
+    },
 
     /// Install Claude Code skill for worktree task delegation
     #[command(name = "setup-claude")]
