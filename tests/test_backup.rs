@@ -8,7 +8,13 @@ use common::TestRepo;
 fn test_backup_list_runs() {
     let repo = TestRepo::new();
     let output = repo.cw(&["backup", "list"]);
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "backup list failed: status={:?}\n--- stdout ---\n{}\n--- stderr ---\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
     // May show "No backups" or existing backups from other tests
 }
 
@@ -91,7 +97,13 @@ fn test_backup_list_filter_by_branch() {
 fn test_backup_help() {
     let repo = TestRepo::new();
     let output = repo.cw(&["backup", "--help"]);
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "backup --help failed: status={:?}\n--- stdout ---\n{}\n--- stderr ---\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("create"));
     assert!(stdout.contains("list"));
