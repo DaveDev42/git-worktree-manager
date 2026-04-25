@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.0.38](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.37...v0.0.38) (2026-04-25)
+
+
+### Features
+
+* **busy:** detect_busy_tiered combines Claude session + lockfile (Hard) and scan (Soft) ([45d5f9c](https://github.com/DaveDev42/git-worktree-manager/commit/45d5f9c40dd3520ffafb465b4a779171e59662cb))
+* **busy:** refusal message renderer for tiered busy model ([3d717db](https://github.com/DaveDev42/git-worktree-manager/commit/3d717db227054878a045611aa96980f3053970a9))
+* **claude_session:** find_active_sessions with threshold + cwd filter ([aef7172](https://github.com/DaveDev42/git-worktree-manager/commit/aef7172d4d9848ac45c0759f789dff7a16a12f0b))
+* **claude_session:** newest_event_timestamp / cwd jsonl tail parsers ([7b74c8e](https://github.com/DaveDev42/git-worktree-manager/commit/7b74c8e4379e7885cba812e9af4e047fe1fcd825))
+* **claude_session:** path encoding for ~/.claude/projects/ lookup ([dbcc655](https://github.com/DaveDev42/git-worktree-manager/commit/dbcc655ed7363a4203ed8b31a9042884955622ef))
+* **cli:** accept multiple delete targets and -i/--dry-run flags ([320a472](https://github.com/DaveDev42/git-worktree-manager/commit/320a472ffbef195c49b1bcb50831413c64640ce7))
+* **delete_batch:** add plan types and resolver ([ef2e834](https://github.com/DaveDev42/git-worktree-manager/commit/ef2e8343efdd9177946dcf6de83abb266d431d85))
+* **delete_batch:** add summary printer and batch confirmation ([908ca1d](https://github.com/DaveDev42/git-worktree-manager/commit/908ca1dc28dde40ef2362029de0c1a83bd313489))
+* **delete:** multi-target support with -i and --dry-run ([6713359](https://github.com/DaveDev42/git-worktree-manager/commit/6713359e4aea19de098e1b7638e093d63a54c53e))
+* **delete:** orchestrate multi-target delete with dry-run and batch confirm ([d186c5a](https://github.com/DaveDev42/git-worktree-manager/commit/d186c5a87fe4e70ac68521d8a46d089a22abd01d))
+* **delete:** tiered refusal in batch + clean paths ([a247dd8](https://github.com/DaveDev42/git-worktree-manager/commit/a247dd8b6994df406ebb1f2ff35706eb28356472))
+* **delete:** tiered refusal messages, drop interactive y/N prompt ([e3f41ba](https://github.com/DaveDev42/git-worktree-manager/commit/e3f41ba2a5a9340506cf6bfdf67175edcc7b09e0))
+* **doctor:** --session-start --quiet single-line hook-friendly mode ([0deecda](https://github.com/DaveDev42/git-worktree-manager/commit/0deecda364131e5cd4deff2a45cfac563e2f9f83))
+* **doctor:** detect plugin install + suggest upgrade from legacy skill ([2f031e9](https://github.com/DaveDev42/git-worktree-manager/commit/2f031e9efd3672cbe1d09a4360943181aa0bbcce))
+* **guard:** hook helper to block risky bash in unhealthy cwd ([1d17d58](https://github.com/DaveDev42/git-worktree-manager/commit/1d17d584140a09e7268ead58359bbb49d6c9b051))
+* gw plugin + worktree-health skill + tiered in-use detection ([513645d](https://github.com/DaveDev42/git-worktree-manager/commit/513645d0b0d5e9b859eac70ce681fbcb3c332b44))
+* **setup_claude:** manage skill body — guidance + rulebook + hook catalog ([89b7490](https://github.com/DaveDev42/git-worktree-manager/commit/89b7490989d17bc1f42a6ebb979884978f8b3dfa))
+* **setup_claude:** migrate existing skill body into delegate skill ([94bfe0f](https://github.com/DaveDev42/git-worktree-manager/commit/94bfe0fb5fe64cd1425225fc010e9ec04537082b))
+* **tui:** add multi-select widget and wire gw delete -i ([b4b37f1](https://github.com/DaveDev42/git-worktree-manager/commit/b4b37f1585046c251ef7de6d03698dca116730da))
+
+
+### Bug Fixes
+
+* **delete_batch:** distinguish Nothing-selected from Cancelled in -i flow ([de39b00](https://github.com/DaveDev42/git-worktree-manager/commit/de39b009699efc93d7ecb08b304842f8b289687a))
+* **delete_batch:** route summary to stdout and add dry-run trailer ([ca85db6](https://github.com/DaveDev42/git-worktree-manager/commit/ca85db6f752ffbbae7421dcd75e32e72cd92a6ba))
+* **deps:** bump ratatui 0.28.1 → 0.30.0 and migrate TUI code ([c1d3035](https://github.com/DaveDev42/git-worktree-manager/commit/c1d3035aa1766002a84c26375746cf5e8a1a02fa))
+* **deps:** bump ratatui to 0.30 ([befe0e7](https://github.com/DaveDev42/git-worktree-manager/commit/befe0e785e476966753e045b0ec26223b061c066))
+* **setup_claude:** add setup_claude_under(home) so tests can install hermetically on Windows ([44f1bc1](https://github.com/DaveDev42/git-worktree-manager/commit/44f1bc1a261577fbbc41f2f62fcf3eec5ec1e747))
+* **windows:** run main on 8 MiB stack thread to avoid clap parser overflow ([6c9613e](https://github.com/DaveDev42/git-worktree-manager/commit/6c9613ec4aa3f79d4b17e6d3850730f8c295056d))
+
 ## [0.0.37](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.36...v0.0.37) (2026-04-23)
 
 
