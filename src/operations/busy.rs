@@ -16,10 +16,21 @@ use std::sync::OnceLock;
 
 use super::lockfile;
 
+/// Tier of a busy signal — controls refusal *strength* in `gw delete`.
+/// Hard signals (active Claude session, explicit lockfile) refuse with a
+/// strong message. Soft signals (process cwd scan) refuse with a warning.
+/// Both tiers are overridable by the same `--force` flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BusyTier {
+    Hard,
+    Soft,
+}
+
 /// Signal source that flagged a process as busy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BusySource {
     Lockfile,
+    ClaudeSession,
     ProcessScan,
 }
 
@@ -30,9 +41,15 @@ pub struct BusyInfo {
     pub cmd: String,
     /// For lockfile sources, this is the worktree path (the process's
     /// actual cwd is unknown). For process-scan sources, this is the
-    /// process's canonicalized cwd.
+    /// process's canonicalized cwd. For ClaudeSession, this is the worktree.
     pub cwd: PathBuf,
     pub source: BusySource,
+    pub tier: BusyTier,
+    /// Whether the process has a controlling TTY (interactive hint).
+    /// `None` if not determined (e.g. on Windows or for ClaudeSession).
+    pub tty: Option<bool>,
+    /// Approximate seconds since the process started, if known.
+    pub started_secs_ago: Option<u64>,
 }
 
 /// Cached self-process-tree for the lifetime of this `gw` invocation.
@@ -394,6 +411,9 @@ pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
                 cmd: entry.cmd,
                 cwd: worktree.to_path_buf(),
                 source: BusySource::Lockfile,
+                tier: BusyTier::Hard,
+                tty: None,
+                started_secs_ago: None,
             });
         }
     }
@@ -447,6 +467,9 @@ pub fn detect_busy_lockfile_only(worktree: &Path) -> Vec<BusyInfo> {
                 cmd: entry.cmd,
                 cwd: worktree.to_path_buf(),
                 source: BusySource::Lockfile,
+                tier: BusyTier::Hard,
+                tty: None,
+                started_secs_ago: None,
             });
         }
     }
@@ -490,6 +513,9 @@ fn scan_cwd(worktree: &Path) -> Vec<BusyInfo> {
                 cmd: cmd.clone(),
                 cwd: cwd.clone(),
                 source: BusySource::ProcessScan,
+                tier: BusyTier::Soft,
+                tty: None,
+                started_secs_ago: None,
             });
         }
     }

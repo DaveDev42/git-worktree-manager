@@ -74,6 +74,22 @@ mod unix_only {
     }
 
     #[test]
+    fn busy_info_includes_tier_field() {
+        use git_worktree_manager::operations::busy::{BusyInfo, BusySource, BusyTier};
+        use std::path::PathBuf;
+        let info = BusyInfo {
+            pid: 1,
+            cmd: "x".into(),
+            cwd: PathBuf::from("/tmp"),
+            source: BusySource::Lockfile,
+            tier: BusyTier::Hard,
+            tty: None,
+            started_secs_ago: None,
+        };
+        assert_eq!(info.tier, BusyTier::Hard);
+    }
+
+    #[test]
     fn gw_delete_rejects_busy_worktree_when_not_tty() {
         use assert_cmd::Command;
         use std::process::{Command as StdCommand, Stdio};
