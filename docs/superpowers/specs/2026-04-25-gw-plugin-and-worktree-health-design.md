@@ -112,7 +112,7 @@ Refinements to `busy.rs`:
 
 - Keep: self-process-tree exclusion, sibling exclusion, multiplexer-server exclusion.
 - Add: TTY-presence flag per process (interactive vs background hint), process start time (so output can label "started 30s ago" — likely short-lived).
-- Remove: `is_suspicious_cmd` heuristic name-based filter. With Soft tier no longer carrying refusal precision, the maintenance cost of an evolving deny-list is not justified.
+- ~~Remove: `is_suspicious_cmd` heuristic name-based filter.~~ **Correction during implementation:** investigation found `is_suspicious_cmd` is not a deny-list filter for refusals (as this section originally assumed) but a macOS-specific name-recovery fallback that calls `ps -o comm=` when `lsof` returns a version-string-shaped command name (e.g. `2.1.104`, `v1.2.3`). It is load-bearing for diagnostic display quality on macOS and was retained as-is.
 - Cross-platform: macOS `lsof` and Linux `/proc` walks are kept as best-effort. On Windows, the Soft section is omitted entirely (Hard tier still works, decision quality unaffected).
 
 Estimated code change: `busy.rs` 623 lines → ~230 lines (decision logic ~80, diagnostics ~150).
