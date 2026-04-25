@@ -7,6 +7,8 @@ use std::path::PathBuf;
 
 fn run_install_with_home(home: &std::path::Path) {
     std::env::set_var("HOME", home);
+    // dirs::home_dir() reads USERPROFILE on Windows, not HOME.
+    std::env::set_var("USERPROFILE", home);
     git_worktree_manager::operations::setup_claude::setup_claude().unwrap();
 }
 
