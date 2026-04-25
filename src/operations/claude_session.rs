@@ -70,6 +70,65 @@ pub fn newest_event_timestamp(path: &Path) -> Option<DateTime<Utc>> {
     latest
 }
 
+/// Information about one active Claude Code session in a worktree.
+#[derive(Debug, Clone)]
+pub struct ActiveSession {
+    /// jsonl filename without extension (matches Claude session UUID).
+    pub session_id: String,
+    /// Wall-clock time of the most recent event with a `timestamp` field.
+    pub last_activity: DateTime<Utc>,
+}
+
+/// Return all sessions in `project_dir` whose newest event timestamp is
+/// within `threshold` of now AND whose newest event `cwd` (if present)
+/// matches `worktree`. Missing/unreadable directories return an empty vec
+/// — the caller treats this as "Claude not in use here."
+pub fn find_active_sessions(
+    project_dir: &Path,
+    worktree: &Path,
+    threshold: chrono::Duration,
+) -> Vec<ActiveSession> {
+    let entries = match std::fs::read_dir(project_dir) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    let now = Utc::now();
+    let wt_canon = worktree
+        .canonicalize()
+        .unwrap_or_else(|_| worktree.to_path_buf());
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let Some(ts) = newest_event_timestamp(&path) else {
+            continue;
+        };
+        if (now - ts) > threshold {
+            continue;
+        }
+        if let Some(reported_cwd) = newest_event_cwd(&path) {
+            let reported_canon = reported_cwd
+                .canonicalize()
+                .unwrap_or(reported_cwd);
+            if reported_canon != wt_canon {
+                continue;
+            }
+        }
+        let id = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        out.push(ActiveSession {
+            session_id: id,
+            last_activity: ts,
+        });
+    }
+    out
+}
+
 /// Companion: extract the `cwd` field from the same newest event. Used in
 /// Task 4 for path-encoding-collision defense. Returns `None` if not present.
 pub fn newest_event_cwd(path: &Path) -> Option<PathBuf> {

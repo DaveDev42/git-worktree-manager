@@ -57,3 +57,57 @@ fn newest_event_timestamp_returns_none_for_metadata_only() {
     writeln!(f, r#"{{"type":"last-prompt","lastPrompt":"x","sessionId":"s"}}"#).unwrap();
     assert!(git_worktree_manager::operations::claude_session::newest_event_timestamp(&p).is_none());
 }
+
+use chrono::{Duration, Utc};
+
+fn write_session_jsonl(dir: &Path, name: &str, ts: chrono::DateTime<Utc>, cwd: &str) {
+    let p = dir.join(name);
+    let line = format!(
+        r#"{{"type":"assistant","timestamp":"{}","cwd":"{}"}}"#,
+        ts.to_rfc3339(),
+        cwd,
+    );
+    std::fs::write(p, format!("{}\n", line)).unwrap();
+}
+
+#[test]
+fn find_active_sessions_returns_sessions_within_threshold() {
+    use git_worktree_manager::operations::claude_session::find_active_sessions;
+    let proj = tempfile::tempdir().unwrap();
+    let wt_dir = tempfile::tempdir().unwrap(); // real existing dir so canonicalize succeeds
+    let wt = wt_dir.path();
+    let now = Utc::now();
+    write_session_jsonl(proj.path(), "fresh.jsonl", now - Duration::minutes(2),
+        wt.canonicalize().unwrap().to_str().unwrap());
+    write_session_jsonl(proj.path(), "stale.jsonl", now - Duration::minutes(30),
+        wt.canonicalize().unwrap().to_str().unwrap());
+
+    let mut found = find_active_sessions(proj.path(), wt, Duration::minutes(10));
+    found.sort_by(|a, b| a.session_id.cmp(&b.session_id));
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].session_id, "fresh");
+}
+
+#[test]
+fn find_active_sessions_filters_by_cwd() {
+    use git_worktree_manager::operations::claude_session::find_active_sessions;
+    let proj = tempfile::tempdir().unwrap();
+    let wanted_dir = tempfile::tempdir().unwrap();
+    let other_dir = tempfile::tempdir().unwrap();
+    let now = Utc::now();
+    write_session_jsonl(proj.path(), "wrong.jsonl", now,
+        other_dir.path().canonicalize().unwrap().to_str().unwrap());
+    let found = find_active_sessions(proj.path(), wanted_dir.path(), Duration::minutes(10));
+    assert!(found.is_empty(), "session for a different cwd should not match");
+}
+
+#[test]
+fn find_active_sessions_handles_missing_dir() {
+    use git_worktree_manager::operations::claude_session::find_active_sessions;
+    let found = find_active_sessions(
+        Path::new("/nonexistent/dir/xyz"),
+        Path::new("/tmp/x"),
+        Duration::minutes(10),
+    );
+    assert!(found.is_empty());
+}
