@@ -78,12 +78,15 @@ use chrono::{Duration, Utc};
 
 fn write_session_jsonl(dir: &Path, name: &str, ts: chrono::DateTime<Utc>, cwd: &str) {
     let p = dir.join(name);
-    let line = format!(
-        r#"{{"type":"assistant","timestamp":"{}","cwd":"{}"}}"#,
-        ts.to_rfc3339(),
-        cwd,
-    );
-    std::fs::write(p, format!("{}\n", line)).unwrap();
+    // Build via serde_json to JSON-escape cwd correctly on Windows
+    // (paths contain backslashes that would be invalid JSON escapes
+    // if interpolated raw).
+    let obj = serde_json::json!({
+        "type": "assistant",
+        "timestamp": ts.to_rfc3339(),
+        "cwd": cwd,
+    });
+    std::fs::write(p, format!("{}\n", obj)).unwrap();
 }
 
 #[test]
