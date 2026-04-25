@@ -427,7 +427,14 @@ pub enum Commands {
     Prune,
 
     /// Run diagnostics
-    Doctor,
+    Doctor {
+        /// Hook-friendly mode: emit a single-line summary and exit 0.
+        #[arg(long)]
+        session_start: bool,
+        /// Suppress informational chatter; keep only the summary.
+        #[arg(long)]
+        quiet: bool,
+    },
 
     /// Check for updates / upgrade
     Upgrade,

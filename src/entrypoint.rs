@@ -312,7 +312,7 @@ pub fn run() {
 
         Some(Commands::Scan { dir }) => global_ops::global_scan(dir.as_deref()),
         Some(Commands::Prune) => global_ops::global_prune(),
-        Some(Commands::Doctor) => diagnostics::doctor(),
+        Some(Commands::Doctor { session_start, quiet }) => diagnostics::doctor(session_start, quiet),
         Some(Commands::SetupClaude) => setup_claude::setup_claude(),
 
         Some(Commands::Upgrade) => {
