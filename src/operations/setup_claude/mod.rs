@@ -4,7 +4,7 @@
 //! two skills (`delegate`, `manage`). Removes legacy single-skill installs
 //! at `~/.claude/skills/gw/` and `~/.claude/skills/gw-delegate/`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use console::style;
 
@@ -18,27 +18,27 @@ mod skill_manage;
 
 const PLUGIN_NAME: &str = "gw";
 
-fn plugin_dir() -> PathBuf {
-    home_dir_or_fallback()
-        .join(".claude")
-        .join("plugins")
-        .join(PLUGIN_NAME)
+fn plugin_dir_under(home: &Path) -> PathBuf {
+    home.join(".claude").join("plugins").join(PLUGIN_NAME)
 }
 
-fn manifest_path() -> PathBuf {
-    plugin_dir().join("plugin.json")
+fn manifest_path_under(home: &Path) -> PathBuf {
+    plugin_dir_under(home).join("plugin.json")
 }
-fn delegate_skill_path() -> PathBuf {
-    plugin_dir()
+fn delegate_skill_path_under(home: &Path) -> PathBuf {
+    plugin_dir_under(home)
         .join("skills")
         .join("delegate")
         .join("SKILL.md")
 }
-fn manage_skill_path() -> PathBuf {
-    plugin_dir().join("skills").join("manage").join("SKILL.md")
+fn manage_skill_path_under(home: &Path) -> PathBuf {
+    plugin_dir_under(home)
+        .join("skills")
+        .join("manage")
+        .join("SKILL.md")
 }
-fn manage_reference_path() -> PathBuf {
-    plugin_dir()
+fn manage_reference_path_under(home: &Path) -> PathBuf {
+    plugin_dir_under(home)
         .join("skills")
         .join("manage")
         .join("references")
@@ -47,7 +47,7 @@ fn manage_reference_path() -> PathBuf {
 
 /// True if the plugin manifest exists at the canonical path.
 pub fn is_plugin_installed() -> bool {
-    manifest_path().exists()
+    manifest_path_under(&home_dir_or_fallback()).exists()
 }
 
 #[doc(hidden)]
@@ -84,12 +84,20 @@ fn write_if_changed(
 }
 
 pub fn setup_claude() -> Result<()> {
-    legacy::remove_legacy_installs();
+    setup_claude_under(&home_dir_or_fallback())
+}
 
-    let manifest = manifest_path();
-    let delegate = delegate_skill_path();
-    let manage = manage_skill_path();
-    let reference = manage_reference_path();
+/// Test-friendly variant: install into an arbitrary `home` root. Avoids
+/// reliance on platform env-var lookup (e.g. dirs::home_dir reads
+/// USERPROFILE on Windows via SHGetKnownFolderPath, which ignores
+/// process-set env vars).
+pub fn setup_claude_under(home: &Path) -> Result<()> {
+    legacy::remove_legacy_installs_under(home);
+
+    let manifest = manifest_path_under(home);
+    let delegate = delegate_skill_path_under(home);
+    let manage = manage_skill_path_under(home);
+    let reference = manage_reference_path_under(home);
 
     let mut any_changed = false;
     any_changed |= write_if_changed(&manifest, manifest::content())?;
@@ -97,16 +105,17 @@ pub fn setup_claude() -> Result<()> {
     any_changed |= write_if_changed(&manage, skill_manage::content())?;
     any_changed |= write_if_changed(&reference, skill_manage::reference_content())?;
 
+    let location = plugin_dir_under(home);
     if !any_changed {
         println!("{} gw plugin already up to date.\n", style("*").green());
-        println!("  Location: {}", style(plugin_dir().display()).dim());
+        println!("  Location: {}", style(location.display()).dim());
         return Ok(());
     }
 
     println!(
         "{} gw plugin installed at {}.\n",
         style("*").green().bold(),
-        style(plugin_dir().display()).dim()
+        style(location.display()).dim()
     );
     println!(
         "  Use {} in Claude Code to delegate tasks to worktrees.",

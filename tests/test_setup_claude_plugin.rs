@@ -1,19 +1,14 @@
-//! Plugin install layout / idempotency tests. Each test overrides $HOME
-//! via env to keep them hermetic. Marked #[serial] because env vars are
-//! process-global and would race across parallel-test workers.
+//! Plugin install layout / idempotency tests. Each test installs into a
+//! tempdir via `setup_claude_under(&Path)` to stay hermetic without
+//! mutating process-global env vars.
 
-use serial_test::serial;
 use std::path::PathBuf;
 
 fn run_install_with_home(home: &std::path::Path) {
-    std::env::set_var("HOME", home);
-    // dirs::home_dir() reads USERPROFILE on Windows, not HOME.
-    std::env::set_var("USERPROFILE", home);
-    git_worktree_manager::operations::setup_claude::setup_claude().unwrap();
+    git_worktree_manager::operations::setup_claude::setup_claude_under(home).unwrap();
 }
 
 #[test]
-#[serial]
 fn install_creates_manifest_and_two_skills() {
     let home = tempfile::tempdir().unwrap();
     run_install_with_home(home.path());
@@ -39,7 +34,6 @@ fn install_creates_manifest_and_two_skills() {
 }
 
 #[test]
-#[serial]
 fn install_is_idempotent() {
     let home = tempfile::tempdir().unwrap();
     run_install_with_home(home.path());
@@ -57,7 +51,6 @@ fn install_is_idempotent() {
 }
 
 #[test]
-#[serial]
 fn install_removes_legacy_skill_dir() {
     let home = tempfile::tempdir().unwrap();
     let legacy = home.path().join(".claude/skills/gw");
