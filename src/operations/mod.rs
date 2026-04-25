@@ -2,6 +2,7 @@
 pub mod ai_tools;
 pub mod backup;
 pub mod busy;
+pub mod claude_session;
 pub mod clean;
 pub mod config_ops;
 pub mod delete_batch;
