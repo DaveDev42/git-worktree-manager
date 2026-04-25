@@ -39,6 +39,12 @@ fn manage_reference_path() -> PathBuf {
 /// True if the plugin manifest exists at the canonical path.
 pub fn is_plugin_installed() -> bool { manifest_path().exists() }
 
+#[doc(hidden)]
+pub fn manage_skill_content_for_test() -> &'static str { skill_manage::content() }
+
+#[doc(hidden)]
+pub fn manage_reference_content_for_test() -> &'static str { skill_manage::reference_content() }
+
 /// Backward-compatible alias used by `gw doctor`. Returns true if either the
 /// new plugin OR a legacy skill install is present.
 pub fn is_skill_installed() -> bool {

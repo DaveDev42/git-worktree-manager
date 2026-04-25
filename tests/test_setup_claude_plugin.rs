@@ -55,6 +55,30 @@ fn install_removes_legacy_skill_dir() {
     assert!(!legacy.exists(), "legacy skill directory must be removed");
 }
 
+#[test]
+fn manage_skill_contains_required_sections() {
+    let body = git_worktree_manager::operations::setup_claude::manage_skill_content_for_test();
+    assert!(body.contains("name: manage"), "frontmatter name");
+    assert!(body.contains("Worktree-Health Rulebook"), "rulebook section");
+    assert!(body.contains("Recommended-Hooks Catalog"), "hooks catalog section");
+    assert!(body.contains("Rule: Stale cwd"), "rule 1 header");
+    assert!(body.contains("Rule: Wrong-base branching"), "rule 2 header");
+    assert!(body.contains("Rule: Sibling worktree drift"), "rule 3 header");
+    assert!(body.contains("Rule: Test/lint convention gap"), "rule 4 header");
+    assert!(body.contains("Hook 1") && body.contains("SessionStart"), "hook 1");
+    assert!(body.contains("Hook 2") && body.contains("PreToolUse"), "hook 2");
+    assert!(body.contains("Hook 3") && body.contains("Stop"), "hook 3");
+}
+
+#[test]
+fn manage_reference_contains_command_table() {
+    let body = git_worktree_manager::operations::setup_claude::manage_reference_content_for_test();
+    assert!(body.contains("gw new"));
+    assert!(body.contains("gw delete"));
+    assert!(body.contains("gw clean"));
+    assert!(body.len() > 1000, "reference content should be substantial");
+}
+
 #[allow(dead_code)]
 fn _suppress_unused() -> PathBuf {
     PathBuf::new()
