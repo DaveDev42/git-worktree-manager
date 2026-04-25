@@ -317,7 +317,7 @@ The implementation plan should treat these as three loosely-coupled work units t
 ### Unit 1 — In-use detection refinement (CLI only)
 
 - New `claude_session.rs` module: encoding, jsonl tail parse, threshold check.
-- Refactor `busy.rs`: demote process scan to soft tier, remove `is_suspicious_cmd`, add TTY/start-time fields, retain self/sibling/multiplexer exclusions.
+- Refactor `busy.rs`: demote process scan to soft tier, add TTY/start-time fields, retain self/sibling/multiplexer exclusions. (`is_suspicious_cmd` was originally listed for removal here; see correction in the "Refinements to `busy.rs`" subsection above — it's a macOS name-recovery fallback, not a deny-list, and was retained.)
 - Update `gw delete` and `gw clean` to consume the new tiered API and emit refusal messages per shapes above.
 - Tests: integration test cases for each tier and combination; unit tests for jsonl encoding and tail parse.
 
