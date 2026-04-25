@@ -293,16 +293,26 @@ fn check_claude_integration() {
             "   {} Claude Code not detected (optional)",
             style("-").dim()
         );
+    } else if setup_claude::is_plugin_installed() {
+        println!("   {} gw plugin installed", style("*").green());
     } else if setup_claude::is_skill_installed() {
-        println!("   {} Claude Code skill installed", style("*").green());
-    } else {
+        // Legacy skill-only install. Suggest the upgrade.
         println!(
-            "   {} Claude Code detected but delegation skill not installed",
+            "   {} Legacy gw skill installed (pre-plugin layout)",
             style("!").yellow()
         );
         println!(
             "   {}",
-            style("Tip: Run 'gw setup-claude' to enable task delegation via Claude Code").dim()
+            style("Tip: Re-run 'gw setup-claude' to upgrade from skill to plugin").dim()
+        );
+    } else {
+        println!(
+            "   {} Claude Code detected but gw plugin not installed",
+            style("!").yellow()
+        );
+        println!(
+            "   {}",
+            style("Tip: Run 'gw setup-claude' to install the gw plugin for Claude Code").dim()
         );
     }
     println!();
