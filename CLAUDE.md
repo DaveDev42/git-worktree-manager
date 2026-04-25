@@ -69,16 +69,28 @@ Same git config metadata keys and session storage paths.
 
 ## Git & Release
 
-- PR merge method: **merge commit** (`--merge`). Do not use squash or rebase merge.
+- PR merge method: **squash merge** (`--squash`). Merge commits and rebase merges are disabled at the repo level.
+- The squash commit uses **PR title as commit subject** and **PR body as commit body** (GitHub repo setting).
 - Release process: [release-please](https://github.com/googleapis/release-please) automates versioning via conventional commits
 - Commit messages: conventional commits (`feat:`, `fix:`, `perf:`, `chore:`, etc.)
+
+### Branch Protection (`main`)
+
+`main` is protected with the following rules — keep these in mind when scripting git operations:
+
+- Required status check: **`ci-gate`** must pass (and branch must be up-to-date with `main` — `strict: true`).
+- **Linear history required** — only squash or rebase merges; merge commits will be rejected.
+- Force push and branch deletion are disabled.
+- Unresolved PR conversations block merging.
+- Admin enforcement is **off** so release-please automation keeps working; do not push directly to `main` regardless.
 
 ### Commit & Release Convention
 
 - **Default to patch version bumps.** Unless the user explicitly asks for a major or minor bump, every change (including API-breaking ones in 0.x) must ship as a patch release.
 - **Never use `feat!`, `fix!`, or a `BREAKING CHANGE:` footer** in PR titles, merge-commit messages, or commit messages. These escalate release-please to major bumps automatically (e.g. 0.x → 1.0.0). Use plain `feat:` / `fix:` / `refactor:` / `chore:` instead, and describe breaking changes in the PR body and migration notes rather than the commit prefix.
 - **Manual major/minor bump**: when a major/minor release is explicitly requested, push a commit to `main` with a `Release-As: x.y.z` footer, or temporarily set `release-as` in `release-please-config.json` via a chore PR, then remove it in a follow-up chore PR after the release ships.
-- Since this repo uses merge commits (not squash), every commit on the PR branch is visible to release-please; make sure no commit on the branch uses the banned prefixes.
+- Since this repo squash-merges, **only the PR title** lands on `main` as the conventional commit that release-please reads. Always write the PR title as a valid conventional commit (`type: subject`) — branch commits are discarded on merge and do not feed release-please.
+- The same banned-prefix rule applies to **PR titles**: never start a PR title with `feat!`, `fix!`, or include `BREAKING CHANGE:` in the squash subject/body.
 
 ## Code Conventions
 
@@ -89,6 +101,8 @@ Same git config metadata keys and session storage paths.
 - Fully synchronous (no async runtime)
 
 ## Pre-Release Checklist
+
+**중요: 아래 명령들은 옵션 그대로 사용. `--all-targets --all-features` 조합 누락 시 drift가 검출되지 않는다.**
 
 릴리스를 만드는 커밋 (또는 `release-please` 자동 생성 PR을 merge하기 전) 직전에 확인:
 
