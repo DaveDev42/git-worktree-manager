@@ -11,6 +11,7 @@ pub mod diagnostics;
 pub mod display;
 pub mod git_ops;
 pub mod global_ops;
+pub mod guard;
 pub mod helpers;
 pub mod launchers;
 pub mod lockfile;

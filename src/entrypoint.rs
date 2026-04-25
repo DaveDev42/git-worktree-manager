@@ -15,8 +15,8 @@ use crate::cwshare_setup;
 use crate::error::{CwError, Result};
 use crate::hooks;
 use crate::operations::{
-    ai_tools, backup, clean, config_ops, diagnostics, display, git_ops, global_ops, helpers,
-    path_cmd, setup_claude, shell, spawn_spec, stash, worktree,
+    ai_tools, backup, clean, config_ops, diagnostics, display, git_ops, global_ops, guard,
+    helpers, path_cmd, setup_claude, shell, spawn_spec, stash, worktree,
 };
 use crate::resolve_prompt;
 use crate::shell_functions;
@@ -48,6 +48,7 @@ pub fn run() {
                 | Commands::Path { .. }
                 | Commands::ShellFunction { .. }
                 | Commands::SpawnAi { .. }
+                | Commands::Guard { .. }
         )
     );
 
@@ -313,6 +314,7 @@ pub fn run() {
         Some(Commands::Scan { dir }) => global_ops::global_scan(dir.as_deref()),
         Some(Commands::Prune) => global_ops::global_prune(),
         Some(Commands::Doctor { session_start, quiet }) => diagnostics::doctor(session_start, quiet),
+        Some(Commands::Guard { tool_input }) => guard::run(&tool_input),
         Some(Commands::SetupClaude) => setup_claude::setup_claude(),
 
         Some(Commands::Upgrade) => {
