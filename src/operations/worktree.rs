@@ -412,9 +412,7 @@ pub fn delete_worktree(
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| worktree_path.to_string_lossy().to_string())
         });
-        let msg = crate::operations::busy_messages::render_refusal(
-            &branch_display, &hard, &soft,
-        );
+        let msg = crate::operations::busy_messages::render_refusal(&branch_display, &hard, &soft);
         eprint!("{}", msg);
         return Err(CwError::Other(format!(
             "worktree '{}' is in use; re-run with --force to override",

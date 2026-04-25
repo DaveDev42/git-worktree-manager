@@ -8,9 +8,17 @@ fn fmt_age(secs: u64) -> String {
     if secs < 60 {
         format!("{}s ago", secs)
     } else if secs < 3600 {
-        format!("{} minute{} ago", secs / 60, if secs / 60 == 1 { "" } else { "s" })
+        format!(
+            "{} minute{} ago",
+            secs / 60,
+            if secs / 60 == 1 { "" } else { "s" }
+        )
     } else {
-        format!("{} hour{} ago", secs / 3600, if secs / 3600 == 1 { "" } else { "s" })
+        format!(
+            "{} hour{} ago",
+            secs / 3600,
+            if secs / 3600 == 1 { "" } else { "s" }
+        )
     }
 }
 
@@ -29,10 +37,7 @@ fn render_hard_section(out: &mut String, hard: &[BusyInfo]) {
                 }
             }
             BusySource::Lockfile => {
-                out.push_str(&format!(
-                    "  Lockfile holder: PID {} ({})\n",
-                    h.pid, h.cmd
-                ));
+                out.push_str(&format!("  Lockfile holder: PID {} ({})\n", h.pid, h.cmd));
             }
             BusySource::ProcessScan => {
                 // Should not appear in hard tier; render defensively.

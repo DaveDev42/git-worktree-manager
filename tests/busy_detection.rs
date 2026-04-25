@@ -107,17 +107,31 @@ mod unix_only {
         std::fs::create_dir_all(&git_dir).unwrap();
         let mut child = Command::new("sleep")
             .arg("30")
-            .stdout(Stdio::null()).stderr(Stdio::null())
-            .spawn().expect("spawn sleep");
-        let entry = LockEntry { version: LOCK_VERSION, pid: child.id(), started_at: 0, cmd: "claude".into() };
-        std::fs::write(git_dir.join("gw-session.lock"), serde_json::to_string(&entry).unwrap()).unwrap();
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn sleep");
+        let entry = LockEntry {
+            version: LOCK_VERSION,
+            pid: child.id(),
+            started_at: 0,
+            cmd: "claude".into(),
+        };
+        std::fs::write(
+            git_dir.join("gw-session.lock"),
+            serde_json::to_string(&entry).unwrap(),
+        )
+        .unwrap();
 
         let (hard, soft) = detect_busy_tiered(dir.path());
         let _ = child.kill();
         let _ = child.wait();
         assert!(!hard.is_empty(), "lockfile should appear as hard");
         let msg = render_refusal("feature-x", &hard, &soft);
-        assert!(msg.contains("Cannot delete"), "expected hard-tier refusal phrasing, got: {msg}");
+        assert!(
+            msg.contains("Cannot delete"),
+            "expected hard-tier refusal phrasing, got: {msg}"
+        );
     }
 
     #[test]

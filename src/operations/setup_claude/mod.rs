@@ -25,9 +25,18 @@ fn plugin_dir() -> PathBuf {
         .join(PLUGIN_NAME)
 }
 
-fn manifest_path() -> PathBuf { plugin_dir().join("plugin.json") }
-fn delegate_skill_path() -> PathBuf { plugin_dir().join("skills").join("delegate").join("SKILL.md") }
-fn manage_skill_path() -> PathBuf { plugin_dir().join("skills").join("manage").join("SKILL.md") }
+fn manifest_path() -> PathBuf {
+    plugin_dir().join("plugin.json")
+}
+fn delegate_skill_path() -> PathBuf {
+    plugin_dir()
+        .join("skills")
+        .join("delegate")
+        .join("SKILL.md")
+}
+fn manage_skill_path() -> PathBuf {
+    plugin_dir().join("skills").join("manage").join("SKILL.md")
+}
 fn manage_reference_path() -> PathBuf {
     plugin_dir()
         .join("skills")
@@ -37,13 +46,19 @@ fn manage_reference_path() -> PathBuf {
 }
 
 /// True if the plugin manifest exists at the canonical path.
-pub fn is_plugin_installed() -> bool { manifest_path().exists() }
+pub fn is_plugin_installed() -> bool {
+    manifest_path().exists()
+}
 
 #[doc(hidden)]
-pub fn manage_skill_content_for_test() -> &'static str { skill_manage::content() }
+pub fn manage_skill_content_for_test() -> &'static str {
+    skill_manage::content()
+}
 
 #[doc(hidden)]
-pub fn manage_reference_content_for_test() -> &'static str { skill_manage::reference_content() }
+pub fn manage_reference_content_for_test() -> &'static str {
+    skill_manage::reference_content()
+}
 
 /// Backward-compatible alias used by `gw doctor`. Returns true if either the
 /// new plugin OR a legacy skill install is present.

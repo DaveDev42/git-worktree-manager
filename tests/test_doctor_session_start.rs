@@ -11,12 +11,21 @@ fn session_start_quiet_exits_zero_in_normal_repo() {
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
         .expect("run gw doctor");
-    assert!(out.status.success(), "doctor --session-start should exit 0; stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "doctor --session-start should exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     let line_count = stdout.lines().filter(|l| !l.trim().is_empty()).count();
-    assert!(line_count <= 1, "expected at most one non-empty line, got: {stdout:?}");
-    assert!(stdout.contains("cwd=") || stdout.contains("gw:") || stdout.contains("ok="),
-        "summary should contain at least one key=value pair, got: {stdout:?}");
+    assert!(
+        line_count <= 1,
+        "expected at most one non-empty line, got: {stdout:?}"
+    );
+    assert!(
+        stdout.contains("cwd=") || stdout.contains("gw:") || stdout.contains("ok="),
+        "summary should contain at least one key=value pair, got: {stdout:?}"
+    );
 }
 
 #[test]

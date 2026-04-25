@@ -29,7 +29,10 @@ fn soft_proc(pid: u32, cmd: &str, tty: bool, started: u64) -> BusyInfo {
 #[test]
 fn soft_only_uses_warning_tone() {
     let s = render_refusal("feature-x", &[], &[soft_proc(123, "zsh", true, 60)]);
-    assert!(s.contains("may be in use"), "soft-only must use 'may be in use' wording");
+    assert!(
+        s.contains("may be in use"),
+        "soft-only must use 'may be in use' wording"
+    );
     assert!(s.contains("Re-run with --force"));
     assert!(!s.contains("Cannot delete"));
 }

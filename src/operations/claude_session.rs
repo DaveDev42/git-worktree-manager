@@ -109,9 +109,7 @@ pub fn find_active_sessions(
             continue;
         }
         if let Some(reported_cwd) = newest_event_cwd(&path) {
-            let reported_canon = reported_cwd
-                .canonicalize()
-                .unwrap_or(reported_cwd);
+            let reported_canon = reported_cwd.canonicalize().unwrap_or(reported_cwd);
             if reported_canon != wt_canon {
                 continue;
             }
@@ -134,7 +132,9 @@ pub fn find_active_sessions(
 /// `$HOME` is not set / cannot be resolved.
 pub fn project_dir_for(worktree: &Path) -> Option<PathBuf> {
     let home = crate::constants::home_dir_or_fallback();
-    let canon = worktree.canonicalize().unwrap_or_else(|_| worktree.to_path_buf());
+    let canon = worktree
+        .canonicalize()
+        .unwrap_or_else(|_| worktree.to_path_buf());
     let encoded = encode_project_dir(&canon);
     Some(home.join(".claude").join("projects").join(encoded))
 }

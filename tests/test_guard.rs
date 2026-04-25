@@ -7,13 +7,19 @@ use std::process::{Command, Stdio};
 fn run_guard_with(payload: &str) -> std::process::Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_gw"))
         .arg("guard")
-        .arg("--tool-input").arg("-")
+        .arg("--tool-input")
+        .arg("-")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn gw guard");
-    child.stdin.as_mut().unwrap().write_all(payload.as_bytes()).unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(payload.as_bytes())
+        .unwrap();
     child.wait_with_output().unwrap()
 }
 
@@ -21,19 +27,30 @@ fn run_guard_with(payload: &str) -> std::process::Output {
 fn safe_command_passes() {
     let payload = r#"{"tool_name":"Bash","tool_input":{"command":"ls -la"}}"#;
     let out = run_guard_with(payload);
-    assert!(out.status.success(), "safe cmd must allow; stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "safe cmd must allow; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 #[test]
 fn risky_publish_blocked_when_cwd_unhealthy() {
     // /nonexistent/dir/xyz does not exist → unhealthy cwd → block.
-    let payload = r#"{"tool_name":"Bash","tool_input":{"command":"git push","cwd":"/nonexistent/dir/xyz"}}"#;
+    let payload =
+        r#"{"tool_name":"Bash","tool_input":{"command":"git push","cwd":"/nonexistent/dir/xyz"}}"#;
     let out = run_guard_with(payload);
-    assert!(!out.status.success(), "risky cmd in unhealthy cwd should block; stdout={} stderr={}",
-        String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(
+        !out.status.success(),
+        "risky cmd in unhealthy cwd should block; stdout={} stderr={}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(err.contains("git push") || err.contains("blocking"),
-        "stderr should explain the block: {err}");
+    assert!(
+        err.contains("git push") || err.contains("blocking"),
+        "stderr should explain the block: {err}"
+    );
 }
 
 #[test]
@@ -44,8 +61,11 @@ fn risky_publish_allowed_when_cwd_healthy() {
         tmp.path().display()
     );
     let out = run_guard_with(&payload);
-    assert!(out.status.success(), "risky cmd in healthy cwd should pass; stderr={}",
-        String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "risky cmd in healthy cwd should pass; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 #[test]

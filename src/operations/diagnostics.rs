@@ -6,9 +6,9 @@ use crate::constants::{
     format_config_key, version_meets_minimum, CONFIG_KEY_BASE_BRANCH, MIN_GIT_VERSION,
     MIN_GIT_VERSION_MAJOR, MIN_GIT_VERSION_MINOR,
 };
-use crate::registry;
 use crate::error::Result;
 use crate::git;
+use crate::registry;
 
 use super::display::get_worktree_status;
 use super::pr_cache::PrCache;

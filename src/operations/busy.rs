@@ -701,7 +701,9 @@ mod tests {
         let (hard, _soft) = detect_busy_tiered(dir.path());
         let _ = child.kill();
         let _ = child.wait();
-        assert!(hard.iter().any(|b| matches!(b.source, BusySource::Lockfile)));
+        assert!(hard
+            .iter()
+            .any(|b| matches!(b.source, BusySource::Lockfile)));
         assert!(hard.iter().all(|b| matches!(b.tier, BusyTier::Hard)));
     }
 
