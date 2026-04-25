@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.39](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.38...v0.0.39) (2026-04-25)
+
+
+### Features
+
+* **upgrade:** add --yes flag for non-interactive upgrade ([#104](https://github.com/DaveDev42/git-worktree-manager/issues/104)) ([5ada374](https://github.com/DaveDev42/git-worktree-manager/commit/5ada374156ddb7a859848a004ae32b3aa21c6c20))
+
 ## [0.0.38](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.37...v0.0.38) (2026-04-25)
 
 
