@@ -320,8 +320,8 @@ pub fn run() {
         Some(Commands::Guard { tool_input }) => guard::run(&tool_input),
         Some(Commands::SetupClaude) => setup_claude::setup_claude(),
 
-        Some(Commands::Upgrade) => {
-            update::upgrade();
+        Some(Commands::Upgrade { yes }) => {
+            update::upgrade(yes);
             Ok(())
         }
 

@@ -440,7 +440,7 @@ fn extract_zip(_data: &[u8], _dest: &std::path::Path, _bin_name: &str) -> Result
 }
 
 /// Manual upgrade command — downloads and installs the latest version.
-pub fn upgrade() {
+pub fn upgrade(yes: bool) {
     println!("git-worktree-manager v{}", CURRENT_VERSION);
 
     // Check for Homebrew installation
@@ -485,25 +485,32 @@ pub fn upgrade() {
         style(format!("v{}", latest_version)).green().bold()
     );
 
-    // Non-interactive: just print the info
-    if !std::io::stdin().is_terminal() {
-        println!(
-            "Download from: https://github.com/{}/{}/releases/latest",
-            REPO_OWNER, REPO_NAME
-        );
-        return;
-    }
+    // --yes skips the prompt entirely (works in TTY and non-TTY).
+    // Without --yes in a non-TTY environment, we cannot prompt — point
+    // the user at the manual download and the --yes flag, then exit.
+    if !yes {
+        if !std::io::stdin().is_terminal() {
+            println!(
+                "Re-run with {} to upgrade non-interactively, or download manually:",
+                style("--yes").cyan()
+            );
+            println!(
+                "  https://github.com/{}/{}/releases/latest",
+                REPO_OWNER, REPO_NAME
+            );
+            return;
+        }
 
-    // Prompt user
-    let confirm = dialoguer::Confirm::new()
-        .with_prompt("Upgrade now?")
-        .default(true)
-        .interact()
-        .unwrap_or(false);
+        let confirm = dialoguer::Confirm::new()
+            .with_prompt("Upgrade now?")
+            .default(true)
+            .interact()
+            .unwrap_or(false);
 
-    if !confirm {
-        println!("Upgrade cancelled.");
-        return;
+        if !confirm {
+            println!("Upgrade cancelled.");
+            return;
+        }
     }
 
     println!("Downloading v{}...", latest_version);
