@@ -102,7 +102,7 @@ gw merge
 | `gw upgrade` | Self-update to latest version |
 | `gw scan` | Register repos for global mode |
 | `gw prune` | Clean up stale registry entries |
-| `gw setup-claude` | Install Claude Code skill |
+| `gw setup-claude` | Install Claude Code plugin (delegate + manage skills) |
 | `gw shell-setup` | Interactive shell integration setup |
 | `gw -g <cmd>` | Global mode (cross-repo) |
 
@@ -131,13 +131,21 @@ Each launcher also has a short alias (e.g., `t` for tmux, `i-t` for iterm-tab).
 
 ## Claude Code Integration
 
-Delegate coding tasks to isolated worktrees directly from Claude Code:
+Install the gw plugin into your Claude Code setup:
 
 ```bash
-gw setup-claude    # One-time setup: installs the /gw skill
+gw setup-claude    # One-time: installs the gw plugin to ~/.claude/plugins/gw/
 ```
 
-Once installed, use the `/gw` slash command or natural language in Claude Code to delegate tasks. Each task runs in its own worktree with a separate Claude Code instance.
+The plugin bundles two skills:
+
+- **`delegate`** — invoked via `/gw <task description>`. Spawns a new worktree and a Claude Code session inside it with the given task as the initial prompt. One-shot, fire-and-forget.
+- **`manage`** — auto-applies when you (or Claude) run worktree management commands (`gw list/delete/clean/sync/merge/pr/resume`). Encodes a worktree-health rulebook (stale cwd, wrong-base branching, sibling drift, missing test/lint conventions) and a catalog of recommended Claude Code hooks. When relevant, Claude will *suggest* installing a hook into your project's `.claude/settings.json` and edit it on your consent — gw itself never modifies any settings file.
+
+### Behavior changes in this release
+
+- **`gw delete` no longer prompts.** Refusal messages now include a tiered explanation (Hard tier: active Claude session in the worktree, lockfile holder; Soft tier: process cwd scan). Pass `--force` once to override either tier — there is no interactive y/N path. Automation that piped `y` should switch to `--force`.
+- **`gw delete` detects active Claude Code sessions.** A worktree with a Claude Code session that wrote a JSONL event in the last 10 minutes refuses delete, even if the session was started by another `gw new` call. This directly prevents the "second session deletes the worktree the first session is working in" failure mode. Override with `--force`.
 
 ## Shell Integration
 
