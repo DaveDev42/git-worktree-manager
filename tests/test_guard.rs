@@ -56,10 +56,14 @@ fn risky_publish_blocked_when_cwd_unhealthy() {
 #[test]
 fn risky_publish_allowed_when_cwd_healthy() {
     let tmp = tempfile::tempdir().unwrap();
-    let payload = format!(
-        r#"{{"tool_name":"Bash","tool_input":{{"command":"git push","cwd":"{}"}}}}"#,
-        tmp.path().display()
-    );
+    let payload = serde_json::json!({
+        "tool_name": "Bash",
+        "tool_input": {
+            "command": "git push",
+            "cwd": tmp.path().to_string_lossy(),
+        }
+    })
+    .to_string();
     let out = run_guard_with(&payload);
     assert!(
         out.status.success(),
