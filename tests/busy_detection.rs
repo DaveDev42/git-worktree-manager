@@ -90,6 +90,37 @@ mod unix_only {
     }
 
     #[test]
+    fn delete_refuses_with_lockfile_hard_tier_message() {
+        // Construct a tempdir that LOOKS like a worktree (has .git dir),
+        // write a lockfile naming a live child PID (so it isn't excluded by
+        // the self-process-tree filter), then call detect_busy_tiered +
+        // render_refusal directly. We don't drive the full delete_worktree
+        // path (it requires a real registered worktree); we just verify the
+        // tiered API + renderer agree on the Hard-tier message shape.
+        use git_worktree_manager::operations::busy::detect_busy_tiered;
+        use git_worktree_manager::operations::busy_messages::render_refusal;
+        use git_worktree_manager::operations::lockfile::{LockEntry, LOCK_VERSION};
+        use std::process::{Command, Stdio};
+
+        let dir = tempfile::tempdir().unwrap();
+        let git_dir = dir.path().join(".git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .stdout(Stdio::null()).stderr(Stdio::null())
+            .spawn().expect("spawn sleep");
+        let entry = LockEntry { version: LOCK_VERSION, pid: child.id(), started_at: 0, cmd: "claude".into() };
+        std::fs::write(git_dir.join("gw-session.lock"), serde_json::to_string(&entry).unwrap()).unwrap();
+
+        let (hard, soft) = detect_busy_tiered(dir.path());
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(!hard.is_empty(), "lockfile should appear as hard");
+        let msg = render_refusal("feature-x", &hard, &soft);
+        assert!(msg.contains("Cannot delete"), "expected hard-tier refusal phrasing, got: {msg}");
+    }
+
+    #[test]
     fn gw_delete_rejects_busy_worktree_when_not_tty() {
         use assert_cmd::Command;
         use std::process::{Command as StdCommand, Stdio};

@@ -404,43 +404,22 @@ pub fn delete_worktree(
         }
     }
 
-    // Legacy single-target busy prompt (unchanged behavior).
-    let busy = crate::operations::busy::detect_busy(&worktree_path);
-    if !busy.is_empty() && !allow_busy {
+    let (hard, soft) = crate::operations::busy::detect_busy_tiered(&worktree_path);
+    if (!hard.is_empty() || !soft.is_empty()) && !allow_busy {
         let branch_display = branch_name.clone().unwrap_or_else(|| {
             worktree_path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| worktree_path.to_string_lossy().to_string())
         });
-        eprintln!(
-            "{} worktree '{}' is in use by:",
-            style("error:").red().bold(),
-            branch_display
+        let msg = crate::operations::busy_messages::render_refusal(
+            &branch_display, &hard, &soft,
         );
-        for b in &busy {
-            eprintln!("    PID {:>6}  {}  (source: {:?})", b.pid, b.cmd, b.source);
-        }
-
-        use std::io::IsTerminal;
-        if std::io::stdin().is_terminal() && std::io::stderr().is_terminal() {
-            use std::io::Write;
-            eprint!("Delete anyway? (y/N): ");
-            let _ = std::io::stderr().flush();
-            let mut buf = String::new();
-            std::io::stdin().read_line(&mut buf)?;
-            let ans = buf.trim().to_lowercase();
-            if ans != "y" && ans != "yes" {
-                eprintln!("Aborted.");
-                return Ok(());
-            }
-        } else {
-            return Err(CwError::Other(format!(
-                "worktree '{}' is in use by {} process(es); re-run with --force to override",
-                branch_display,
-                busy.len()
-            )));
-        }
+        eprint!("{}", msg);
+        return Err(CwError::Other(format!(
+            "worktree '{}' is in use; re-run with --force to override",
+            branch_display
+        )));
     }
 
     let flags = DeleteFlags {
