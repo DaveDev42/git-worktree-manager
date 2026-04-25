@@ -8,6 +8,7 @@ use crate::constants::{
 };
 use crate::error::Result;
 use crate::git;
+use crate::registry;
 
 use super::display::get_worktree_status;
 use super::pr_cache::PrCache;
@@ -21,7 +22,10 @@ struct WtInfo {
 }
 
 /// Perform health check on all worktrees.
-pub fn doctor() -> Result<()> {
+pub fn doctor(session_start: bool, quiet: bool) -> Result<()> {
+    if session_start {
+        return doctor_session_start(quiet);
+    }
     let repo = git::get_repo_root(None)?;
     println!(
         "\n{}\n",
@@ -55,6 +59,56 @@ pub fn doctor() -> Result<()> {
     // Recommendations
     print_recommendations(stale_count, &behind, &conflicted);
 
+    Ok(())
+}
+
+/// Hook-friendly single-line health summary. Always returns Ok(()) so a
+/// SessionStart hook never blocks the Claude Code session.
+fn doctor_session_start(quiet: bool) -> Result<()> {
+    let cwd = std::env::current_dir().ok();
+    let cwd_ok = cwd.as_ref().map(|p| p.exists()).unwrap_or(false);
+    let cwd_str = cwd
+        .as_ref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "?".into());
+
+    // Branch + base + registration are best-effort: failures here must not
+    // abort the line. Each failed lookup contributes "?" to the output.
+    let repo_root = git::get_repo_root(None).ok();
+    let branch = repo_root
+        .as_deref()
+        .and_then(|root| git::get_current_branch(Some(root)).ok())
+        .unwrap_or_else(|| "?".into());
+    let base = if branch != "?" {
+        repo_root
+            .as_deref()
+            .and_then(|root| {
+                let key = format_config_key(CONFIG_KEY_BASE_BRANCH, &branch);
+                git::get_config(&key, Some(root))
+            })
+            .unwrap_or_else(|| "?".into())
+    } else {
+        "?".into()
+    };
+    let registered = {
+        let registry = registry::load_registry();
+        cwd.as_ref()
+            .map(|p| {
+                let key = p
+                    .canonicalize()
+                    .unwrap_or_else(|_| p.clone())
+                    .to_string_lossy()
+                    .to_string();
+                registry.repositories.contains_key(&key)
+            })
+            .unwrap_or(false)
+    };
+
+    let prefix = if quiet { "gw:" } else { "gw doctor:" };
+    println!(
+        "{} cwd={} ok={} branch={} base={} registered={}",
+        prefix, cwd_str, cwd_ok, branch, base, registered,
+    );
     Ok(())
 }
 
@@ -293,16 +347,26 @@ fn check_claude_integration() {
             "   {} Claude Code not detected (optional)",
             style("-").dim()
         );
+    } else if setup_claude::is_plugin_installed() {
+        println!("   {} gw plugin installed", style("*").green());
     } else if setup_claude::is_skill_installed() {
-        println!("   {} Claude Code skill installed", style("*").green());
-    } else {
+        // Legacy skill-only install. Suggest the upgrade.
         println!(
-            "   {} Claude Code detected but delegation skill not installed",
+            "   {} Legacy gw skill installed (pre-plugin layout)",
             style("!").yellow()
         );
         println!(
             "   {}",
-            style("Tip: Run 'gw setup-claude' to enable task delegation via Claude Code").dim()
+            style("Tip: Re-run 'gw setup-claude' to upgrade from skill to plugin").dim()
+        );
+    } else {
+        println!(
+            "   {} Claude Code detected but gw plugin not installed",
+            style("!").yellow()
+        );
+        println!(
+            "   {}",
+            style("Tip: Run 'gw setup-claude' to install the gw plugin for Claude Code").dim()
         );
     }
     println!();

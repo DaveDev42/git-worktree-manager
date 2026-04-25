@@ -12,6 +12,7 @@ use console::style;
 use crate::error::{CwError, Result};
 use crate::git;
 use crate::operations::busy::{self, BusyInfo};
+use crate::operations::busy_messages;
 use crate::operations::worktree::{self, DeleteFlags};
 
 /// Result of the interactive multi-select flow.
@@ -72,7 +73,8 @@ pub enum PlanEntry {
     Ready(Resolved),
     Busy {
         resolved: Resolved,
-        info: Vec<BusyInfo>,
+        hard: Vec<BusyInfo>,
+        soft: Vec<BusyInfo>,
     },
     Unresolved {
         input: String,
@@ -147,11 +149,15 @@ pub fn plan_busy(entries: Vec<PlanEntry>, allow_busy: bool) -> Vec<PlanEntry> {
         .into_iter()
         .map(|entry| match entry {
             PlanEntry::Ready(r) => {
-                let info = busy::detect_busy(&r.path);
-                if info.is_empty() {
+                let (hard, soft) = busy::detect_busy_tiered(&r.path);
+                if hard.is_empty() && soft.is_empty() {
                     PlanEntry::Ready(r)
                 } else {
-                    PlanEntry::Busy { resolved: r, info }
+                    PlanEntry::Busy {
+                        resolved: r,
+                        hard,
+                        soft,
+                    }
                 }
             }
             other => other,
@@ -203,10 +209,15 @@ pub fn print_summary(entries: &[PlanEntry], dry_run: bool) {
                 let label = r.branch.as_deref().unwrap_or(&r.input);
                 println!("  {:<30} {}", label, r.path.display());
             }
-            PlanEntry::Busy { resolved, info } => {
+            PlanEntry::Busy {
+                resolved,
+                hard,
+                soft,
+            } => {
                 let label = resolved.branch.as_deref().unwrap_or(&resolved.input);
-                let detail = info
+                let detail = hard
                     .first()
+                    .or_else(|| soft.first())
                     .map(|b| format!("PID {} {}", b.pid, b.cmd))
                     .unwrap_or_default();
                 println!("  {:<30} (busy: {})  [skip]", label, detail);
@@ -296,17 +307,16 @@ fn execute_all(entries: Vec<PlanEntry>, flags: DeleteFlags) -> Result<Vec<ItemRe
                     }
                 }
             }
-            PlanEntry::Busy { info, .. } => {
+            PlanEntry::Busy { hard, soft, .. } => {
                 // Summary line → stdout.
                 println!("{} Skipped {} (busy)", style("~").yellow(), label);
                 // Error mirror → stderr. Required so non-TTY `gw delete`
                 // against a busy worktree emits a stderr hint matching the
                 // legacy single-target flow (see tests/busy_detection.rs).
-                eprintln!(
-                    "{} worktree '{}' is in use by {} process(es); re-run with --force to override",
+                eprint!(
+                    "{} {}",
                     style("error:").red().bold(),
-                    label,
-                    info.len()
+                    busy_messages::render_refusal(&label, &hard, &soft)
                 );
                 results.push(ItemResult::Skipped {
                     label,
@@ -512,7 +522,8 @@ mod tests {
                     path: PathBuf::from("/tmp/b"),
                     branch: Some("b".into()),
                 },
-                info: vec![],
+                hard: vec![],
+                soft: vec![],
             },
             PlanEntry::Unresolved {
                 input: "c".into(),

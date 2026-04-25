@@ -427,7 +427,14 @@ pub enum Commands {
     Prune,
 
     /// Run diagnostics
-    Doctor,
+    Doctor {
+        /// Hook-friendly mode: emit a single-line summary and exit 0.
+        #[arg(long)]
+        session_start: bool,
+        /// Suppress informational chatter; keep only the summary.
+        #[arg(long)]
+        quiet: bool,
+    },
 
     /// Check for updates / upgrade
     Upgrade,
@@ -438,6 +445,15 @@ pub enum Commands {
 
     /// Interactive shell integration setup
     ShellSetup,
+
+    /// Hook helper: read a Claude Code hook payload from stdin (or a file)
+    /// and decide whether to allow or block the inbound tool use. Exits 0
+    /// to allow; non-zero with stderr message to block.
+    Guard {
+        /// Path to read the hook payload from, or "-" for stdin.
+        #[arg(long, value_name = "PATH")]
+        tool_input: String,
+    },
 
     /// [Internal] Get worktree path for a branch
     #[command(name = "_path", hide = true)]

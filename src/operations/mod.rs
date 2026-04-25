@@ -2,6 +2,8 @@
 pub mod ai_tools;
 pub mod backup;
 pub mod busy;
+pub mod busy_messages;
+pub mod claude_session;
 pub mod clean;
 pub mod config_ops;
 pub mod delete_batch;
@@ -9,6 +11,7 @@ pub mod diagnostics;
 pub mod display;
 pub mod git_ops;
 pub mod global_ops;
+pub mod guard;
 pub mod helpers;
 pub mod launchers;
 pub mod lockfile;

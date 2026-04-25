@@ -120,15 +120,20 @@ pub fn clean_worktrees(
     // This prevents `gw clean --merged` from wiping a worktree held open by
     // a Claude Code / shell / editor session. Users can pass --force to
     // ignore the busy gate.
-    let mut busy_skipped: Vec<(String, Vec<crate::operations::busy::BusyInfo>)> = Vec::new();
+    let mut busy_skipped: Vec<(
+        String,
+        Vec<crate::operations::busy::BusyInfo>,
+        Vec<crate::operations::busy::BusyInfo>,
+    )> = Vec::new();
     if !force {
         let mut kept: Vec<(String, String, String)> = Vec::with_capacity(to_delete.len());
         for (branch, path, reason) in to_delete.into_iter() {
-            let busy = crate::operations::busy::detect_busy(std::path::Path::new(&path));
-            if busy.is_empty() {
+            let (hard, soft) =
+                crate::operations::busy::detect_busy_tiered(std::path::Path::new(&path));
+            if hard.is_empty() && soft.is_empty() {
                 kept.push((branch, path, reason));
             } else {
-                busy_skipped.push((branch, busy));
+                busy_skipped.push((branch, hard, soft));
             }
         }
         to_delete = kept;
@@ -143,12 +148,11 @@ pub fn clean_worktrees(
             ))
             .yellow()
         );
-        for (branch, infos) in &busy_skipped {
-            let detail = infos
-                .first()
-                .map(|b| format!("PID {} {}", b.pid, b.cmd))
-                .unwrap_or_default();
-            println!("  - {:<30} (busy: {})", branch, detail);
+        for (branch, hard, soft) in &busy_skipped {
+            eprint!(
+                "{}",
+                crate::operations::busy_messages::render_refusal(branch, hard, soft)
+            );
         }
         println!();
     }
