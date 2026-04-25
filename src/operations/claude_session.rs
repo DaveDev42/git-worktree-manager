@@ -129,6 +129,16 @@ pub fn find_active_sessions(
     out
 }
 
+/// Resolve the per-worktree Claude projects directory, e.g.
+/// `~/.claude/projects/-Users-dave-Projects-foo`. Returns `None` if
+/// `$HOME` is not set / cannot be resolved.
+pub fn project_dir_for(worktree: &Path) -> Option<PathBuf> {
+    let home = crate::constants::home_dir_or_fallback();
+    let canon = worktree.canonicalize().unwrap_or_else(|_| worktree.to_path_buf());
+    let encoded = encode_project_dir(&canon);
+    Some(home.join(".claude").join("projects").join(encoded))
+}
+
 /// Companion: extract the `cwd` field from the same newest event. Used in
 /// Task 4 for path-encoding-collision defense. Returns `None` if not present.
 pub fn newest_event_cwd(path: &Path) -> Option<PathBuf> {

@@ -14,7 +14,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
-use super::lockfile;
+use super::{claude_session, lockfile};
+use chrono::Duration as ChronoDuration;
 
 /// Tier of a busy signal — controls refusal *strength* in `gw delete`.
 /// Hard signals (active Claude session, explicit lockfile) refuse with a
@@ -477,6 +478,78 @@ pub fn detect_busy_lockfile_only(worktree: &Path) -> Vec<BusyInfo> {
     out
 }
 
+/// Threshold for considering a Claude jsonl event "active." Spec value.
+const CLAUDE_ACTIVITY_THRESHOLD_MIN: i64 = 10;
+
+/// Tiered busy detection: returns `(hard, soft)` separately so the caller
+/// can render distinct refusal messages.
+///
+/// Hard signals (refuse strongly, override = `--force`):
+///   * Active Claude Code session (jsonl event within threshold)
+///   * Explicit lockfile
+///
+/// Soft signals (refuse with a warning, same `--force` override):
+///   * Process cwd scan results that are not already represented by a
+///     Hard signal (deduped by PID; PID 0 sentinels for ClaudeSession
+///     are not deduped).
+pub fn detect_busy_tiered(worktree: &Path) -> (Vec<BusyInfo>, Vec<BusyInfo>) {
+    let exclude_tree = self_process_tree();
+    let exclude_siblings = self_siblings();
+    let is_excluded = |pid: u32| exclude_tree.contains(&pid) || exclude_siblings.contains(&pid);
+
+    let mut hard = Vec::new();
+
+    // Hard: lockfile
+    if let Some(entry) = lockfile::read_and_clean_stale(worktree) {
+        if !is_excluded(entry.pid) {
+            hard.push(BusyInfo {
+                pid: entry.pid,
+                cmd: entry.cmd,
+                cwd: worktree.to_path_buf(),
+                source: BusySource::Lockfile,
+                tier: BusyTier::Hard,
+                tty: None,
+                started_secs_ago: None,
+            });
+        }
+    }
+
+    // Hard: active Claude sessions
+    if let Some(proj_dir) = claude_session::project_dir_for(worktree) {
+        let threshold = ChronoDuration::minutes(CLAUDE_ACTIVITY_THRESHOLD_MIN);
+        for s in claude_session::find_active_sessions(&proj_dir, worktree, threshold) {
+            // session_id is a UUID; surface as cmd "claude (session <id>)" with
+            // PID 0 as a sentinel meaning "not a process PID, informational entry".
+            let secs_ago = (chrono::Utc::now() - s.last_activity).num_seconds().max(0) as u64;
+            hard.push(BusyInfo {
+                pid: 0,
+                cmd: format!("claude (session {})", s.session_id),
+                cwd: worktree.to_path_buf(),
+                source: BusySource::ClaudeSession,
+                tier: BusyTier::Hard,
+                tty: None,
+                started_secs_ago: Some(secs_ago),
+            });
+        }
+    }
+
+    // Soft: process cwd scan, deduped against PIDs already in Hard (PID 0
+    // sentinels for ClaudeSession do not participate in dedup since real
+    // processes have non-zero PIDs).
+    let mut soft = Vec::new();
+    for info in scan_cwd(worktree) {
+        if is_excluded(info.pid) {
+            continue;
+        }
+        if hard.iter().any(|b| b.pid == info.pid && b.pid != 0) {
+            continue;
+        }
+        soft.push(info);
+    }
+
+    (hard, soft)
+}
+
 /// Terminal multiplexers whose server process may have been launched from
 /// within a worktree but does not meaningfully "occupy" it — the real work
 /// happens in child shells / tools, which the cwd scan reports independently.
@@ -593,6 +666,43 @@ mod tests {
             "expected tree to contain ppid {}",
             ppid
         );
+    }
+
+    #[test]
+    fn detect_busy_tiered_returns_hard_for_lockfile() {
+        use std::process::{Command, Stdio};
+        let dir = tempfile::tempdir().unwrap();
+        // Mark a fake .git dir so lock_path resolves predictably.
+        let git_dir = dir.path().join(".git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        // Spawn a short-lived child process to get a live PID that is NOT in
+        // self_process_tree (which excludes all ancestors up to init, but NOT
+        // descendants). Use sleep so the child stays alive through the assertion.
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn sleep");
+        let child_pid = child.id();
+        // Write the lockfile directly with the child's PID so it is live and
+        // not excluded by the ancestor-chain filter.
+        let entry = crate::operations::lockfile::LockEntry {
+            version: crate::operations::lockfile::LOCK_VERSION,
+            pid: child_pid,
+            started_at: 0,
+            cmd: "claude".to_string(),
+        };
+        std::fs::write(
+            git_dir.join("gw-session.lock"),
+            serde_json::to_string(&entry).unwrap(),
+        )
+        .unwrap();
+        let (hard, _soft) = detect_busy_tiered(dir.path());
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(hard.iter().any(|b| matches!(b.source, BusySource::Lockfile)));
+        assert!(hard.iter().all(|b| matches!(b.tier, BusyTier::Hard)));
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
