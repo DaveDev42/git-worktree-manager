@@ -12,6 +12,7 @@ use crate::constants::home_dir_or_fallback;
 use crate::error::Result;
 
 pub mod claude_cli;
+pub mod paths;
 mod legacy;
 mod manifest;
 mod skill_delegate;
