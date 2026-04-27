@@ -64,3 +64,30 @@ fn marketplace_and_plugin_slug_constants() {
     assert_eq!(paths::PLUGIN_NAME, "gw");
     assert_eq!(paths::PLUGIN_SLUG, "gw@gw-local");
 }
+
+use git_worktree_manager::operations::setup_claude::manifest;
+
+#[test]
+fn marketplace_manifest_has_required_fields() {
+    let body = manifest::marketplace_json();
+    let v: serde_json::Value = serde_json::from_str(body).expect("valid JSON");
+    assert_eq!(v["name"], "gw-local");
+    assert_eq!(v["owner"]["name"], "git-worktree-manager");
+    let plugins = v["plugins"].as_array().expect("plugins array");
+    assert_eq!(plugins.len(), 1);
+    assert_eq!(plugins[0]["name"], "gw");
+    assert_eq!(plugins[0]["source"], "./gw-plugin");
+}
+
+#[test]
+fn plugin_manifest_uses_cargo_version() {
+    let body = manifest::plugin_json();
+    let v: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
+    assert_eq!(v["name"], "gw");
+    let version = v["version"].as_str().expect("version string");
+    // Version comes from CARGO_PKG_VERSION; sanity-check semver shape.
+    assert!(
+        version.split('.').count() == 3,
+        "expected semver, got {version}"
+    );
+}

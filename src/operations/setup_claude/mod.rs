@@ -12,9 +12,9 @@ use crate::constants::home_dir_or_fallback;
 use crate::error::Result;
 
 pub mod claude_cli;
-pub mod paths;
 mod legacy;
-mod manifest;
+pub mod manifest;
+pub mod paths;
 mod skill_delegate;
 mod skill_manage;
 
@@ -93,6 +93,7 @@ pub fn setup_claude() -> Result<()> {
 /// reliance on platform env-var lookup (e.g. dirs::home_dir reads
 /// USERPROFILE on Windows via SHGetKnownFolderPath, which ignores
 /// process-set env vars).
+#[allow(deprecated)]
 pub fn setup_claude_under(home: &Path) -> Result<()> {
     legacy::remove_legacy_installs_under(home);
 
