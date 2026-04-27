@@ -347,17 +347,17 @@ fn check_claude_integration() {
             "   {} Claude Code not detected (optional)",
             style("-").dim()
         );
-    } else if setup_claude::is_plugin_installed() {
+    } else if setup_claude::is_installed() {
         println!("   {} gw plugin installed", style("*").green());
     } else if setup_claude::is_skill_installed() {
-        // Legacy skill-only install. Suggest the upgrade.
+        // Legacy install (any pre-marketplace layout).
         println!(
-            "   {} Legacy gw skill installed (pre-plugin layout)",
+            "   {} Legacy gw install detected (pre-marketplace layout)",
             style("!").yellow()
         );
         println!(
             "   {}",
-            style("Tip: Re-run 'gw setup-claude' to upgrade from skill to plugin").dim()
+            style("Tip: Re-run 'gw setup-claude' to upgrade to the marketplace install").dim()
         );
     } else {
         println!(
@@ -421,5 +421,21 @@ fn print_recommendations(
             println!("  - Resolve conflicts in conflicted worktrees");
         }
         println!();
+    }
+}
+
+#[doc(hidden)]
+pub struct SetupClaudeDoctorMessages {
+    pub installed: &'static str,
+    pub legacy: &'static str,
+    pub missing: &'static str,
+}
+
+#[doc(hidden)]
+pub fn setup_claude_doctor_messages() -> SetupClaudeDoctorMessages {
+    SetupClaudeDoctorMessages {
+        installed: "gw plugin installed",
+        legacy: "Re-run 'gw setup-claude' to upgrade to the marketplace install",
+        missing: "Run 'gw setup-claude' to install the gw plugin for Claude Code",
     }
 }
