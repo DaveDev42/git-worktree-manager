@@ -65,6 +65,24 @@ fn marketplace_and_plugin_slug_constants() {
     assert_eq!(paths::PLUGIN_SLUG, "gw@gw-local");
 }
 
+use git_worktree_manager::operations::setup_claude::command_gw;
+
+#[test]
+fn gw_command_body_invokes_delegate_skill() {
+    let body = command_gw::content();
+    // Must mention the delegate skill so /gw <task> routes correctly.
+    assert!(
+        body.contains("delegate") || body.contains("gw new"),
+        "command body should reference the delegate skill or gw new"
+    );
+    // YAML frontmatter required for Claude Code commands.
+    assert!(
+        body.starts_with("---\n"),
+        "command body must start with YAML frontmatter"
+    );
+    assert!(body.contains("description:"), "frontmatter description");
+}
+
 use git_worktree_manager::operations::setup_claude::manifest;
 
 #[test]
