@@ -29,6 +29,16 @@ pub mod writer;
 
 use claude_cli::{ClaudeCli, RealClaudeCli};
 
+/// Tracks which branch of the `claude` CLI invocation path was taken.
+enum CliOutcome {
+    /// `claude` CLI was not available; we wrote files but did not call it.
+    NotRun,
+    /// We called `marketplace_add` + `plugin_install` (fresh registration).
+    AddInstall,
+    /// We called `marketplace_update` + `plugin_update` (refresh).
+    UpdateUpdate,
+}
+
 #[doc(hidden)]
 pub fn manage_skill_content_for_test() -> &'static str {
     skill_manage::content()
@@ -79,13 +89,14 @@ pub fn setup_claude_with_cli(home: &Path, data_local: &Path, cli: &dyn ClaudeCli
 
     let any_changed = write_files(data_local)?;
 
-    if cli.is_available() {
+    let cli_outcome = if cli.is_available() {
         if claude_registered {
             // Refresh: pull marketplace source (no-op for local), then
             // bump the cached plugin to the new version if plugin.json
             // changed.
             let _ = cli.marketplace_update(paths::MARKETPLACE_NAME);
             let _ = cli.plugin_update(paths::PLUGIN_SLUG);
+            CliOutcome::UpdateUpdate
         } else {
             cli.marketplace_add(&paths::marketplace_root_under(data_local))
                 .map_err(|e| {
@@ -93,6 +104,7 @@ pub fn setup_claude_with_cli(home: &Path, data_local: &Path, cli: &dyn ClaudeCli
                 })?;
             cli.plugin_install(paths::PLUGIN_SLUG)
                 .map_err(|e| CwError::Other(format!("`claude plugin install` failed: {e}")))?;
+            CliOutcome::AddInstall
         }
     } else {
         eprintln!(
@@ -105,9 +117,10 @@ pub fn setup_claude_with_cli(home: &Path, data_local: &Path, cli: &dyn ClaudeCli
             paths::marketplace_root_under(data_local).display()
         );
         eprintln!("    claude plugin install {}", paths::PLUGIN_SLUG);
-    }
+        CliOutcome::NotRun
+    };
 
-    print_outcome(data_local, any_changed, claude_registered);
+    print_outcome(data_local, any_changed, cli_outcome);
     Ok(())
 }
 
@@ -163,18 +176,28 @@ fn write_files(data_local: &Path) -> Result<bool> {
     Ok(any_changed)
 }
 
-fn print_outcome(data_local: &Path, any_changed: bool, was_installed: bool) {
+fn print_outcome(data_local: &Path, any_changed: bool, cli_outcome: CliOutcome) {
     let location = paths::marketplace_root_under(data_local);
     if !any_changed {
-        println!("{} gw plugin already up to date.", style("*").green());
-        println!("  Location: {}", style(location.display()).dim());
+        match cli_outcome {
+            CliOutcome::AddInstall => {
+                println!(
+                    "{} gw plugin re-registered with Claude Code (files unchanged).",
+                    style("*").green()
+                );
+                println!("  Location: {}", style(location.display()).dim());
+            }
+            CliOutcome::NotRun | CliOutcome::UpdateUpdate => {
+                println!("{} gw plugin already up to date.", style("*").green());
+                println!("  Location: {}", style(location.display()).dim());
+            }
+        }
         return;
     }
 
-    let verb = if was_installed {
-        "refreshed"
-    } else {
-        "installed"
+    let verb = match cli_outcome {
+        CliOutcome::UpdateUpdate => "refreshed",
+        CliOutcome::AddInstall | CliOutcome::NotRun => "installed",
     };
     println!(
         "{} gw plugin {} at {}.",
