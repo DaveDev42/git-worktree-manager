@@ -13,7 +13,7 @@ use crate::error::Result;
 
 pub mod claude_cli;
 pub mod command_gw;
-mod legacy;
+pub mod legacy;
 pub mod manifest;
 pub mod paths;
 mod skill_delegate;

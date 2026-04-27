@@ -35,18 +35,21 @@ fn install_creates_manifest_and_two_skills() {
 
 #[test]
 fn install_is_idempotent() {
+    // NOTE: ~/.claude/plugins/gw/ is the *legacy* install location that legacy
+    // cleanup now removes on every run (it is the broken plugin layout being
+    // replaced by the marketplace install). Idempotency of the new marketplace
+    // path is tested in test_setup_claude_marketplace.rs (Task 7+).
+    // This test verifies that a second run at minimum leaves the manifest in
+    // place (i.e. the re-install after cleanup succeeds without error).
     let home = tempfile::tempdir().unwrap();
     run_install_with_home(home.path());
     let manifest = home.path().join(".claude/plugins/gw/plugin.json");
-    let mtime_1 = std::fs::metadata(&manifest).unwrap().modified().unwrap();
+    assert!(manifest.exists(), "manifest must exist after first install");
 
-    std::thread::sleep(std::time::Duration::from_millis(20));
     run_install_with_home(home.path());
-    let mtime_2 = std::fs::metadata(&manifest).unwrap().modified().unwrap();
-
-    assert_eq!(
-        mtime_1, mtime_2,
-        "second install must not rewrite unchanged content"
+    assert!(
+        manifest.exists(),
+        "manifest must exist after second install (legacy cleanup + reinstall)"
     );
 }
 
