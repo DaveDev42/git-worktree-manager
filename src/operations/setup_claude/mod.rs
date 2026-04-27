@@ -11,6 +11,7 @@ use console::style;
 use crate::constants::home_dir_or_fallback;
 use crate::error::Result;
 
+pub mod claude_cli;
 mod legacy;
 mod manifest;
 mod skill_delegate;
