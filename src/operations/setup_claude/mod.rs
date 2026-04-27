@@ -18,6 +18,7 @@ pub mod manifest;
 pub mod paths;
 mod skill_delegate;
 mod skill_manage;
+pub mod writer;
 
 const PLUGIN_NAME: &str = "gw";
 
