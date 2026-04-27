@@ -40,9 +40,13 @@ fn fake_cli_records_calls() {
     assert!(fake.is_available());
     fake.marketplace_add(Path::new("/tmp/mp")).unwrap();
     fake.plugin_install("gw@gw-local").unwrap();
+    fake.marketplace_update("gw-local").unwrap();
+    fake.plugin_update("gw@gw-local").unwrap();
 
     let calls = fake.calls.borrow();
-    assert_eq!(calls.len(), 2);
+    assert_eq!(calls.len(), 4);
     assert_eq!(calls[0], "add:/tmp/mp");
     assert_eq!(calls[1], "install:gw@gw-local");
+    assert_eq!(calls[2], "mp-update:gw-local");
+    assert_eq!(calls[3], "update:gw@gw-local");
 }

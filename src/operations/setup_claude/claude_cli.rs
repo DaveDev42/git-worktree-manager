@@ -45,16 +45,13 @@ pub struct RealClaudeCli;
 
 impl RealClaudeCli {
     fn run(&self, args: &[&str]) -> Result<(), ClaudeCliError> {
-        let out = Command::new("claude")
-            .args(args)
-            .output()
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    ClaudeCliError::NotInstalled
-                } else {
-                    ClaudeCliError::Io(e)
-                }
-            })?;
+        let out = Command::new("claude").args(args).output().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                ClaudeCliError::NotInstalled
+            } else {
+                ClaudeCliError::Io(e)
+            }
+        })?;
         if !out.status.success() {
             return Err(ClaudeCliError::NonZeroExit {
                 code: out.status.code(),
@@ -75,21 +72,19 @@ impl ClaudeCli for RealClaudeCli {
     }
     fn marketplace_add(&self, path: &Path) -> Result<(), ClaudeCliError> {
         // `--scope user` so the registration is global, not per-project.
-        self.run(&[
-            "plugin",
-            "marketplace",
-            "add",
-            &path.display().to_string(),
-            "--scope",
-            "user",
-        ])
+        let path_str = path.display().to_string();
+        self.run(&["plugin", "marketplace", "add", &path_str, "--scope", "user"])
     }
+    // No `--scope` flag: `claude plugin marketplace update` operates on the
+    // marketplace registration itself, which has no scope concept.
     fn marketplace_update(&self, name: &str) -> Result<(), ClaudeCliError> {
         self.run(&["plugin", "marketplace", "update", name])
     }
     fn plugin_install(&self, slug: &str) -> Result<(), ClaudeCliError> {
         self.run(&["plugin", "install", slug, "--scope", "user"])
     }
+    // No `--scope` arg: `claude plugin update`'s default scope is `user`,
+    // which matches the scope we install under in `plugin_install`.
     fn plugin_update(&self, slug: &str) -> Result<(), ClaudeCliError> {
         self.run(&["plugin", "update", slug])
     }
