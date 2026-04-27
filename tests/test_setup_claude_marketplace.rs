@@ -103,6 +103,19 @@ fn second_install_uses_update_path() {
     let cli1 = RecordingCli::new(true);
     setup_claude_with_cli(home.path(), data.path(), &cli1).unwrap();
 
+    // Simulate Claude Code having registered the plugin after the first run.
+    // The new logic reads `<home>/.claude/plugins/installed_plugins.json`
+    // as the source of truth for "is the plugin registered with Claude Code?"
+    // Without this file, `claude_has_plugin_registered` returns false and the
+    // second run would correctly fall back to the fresh add+install path.
+    let plugins_dir = home.path().join(".claude").join("plugins");
+    fs::create_dir_all(&plugins_dir).unwrap();
+    fs::write(
+        plugins_dir.join("installed_plugins.json"),
+        br#"{"plugins":{"gw@gw-local":[{"scope":"user"}]}}"#,
+    )
+    .unwrap();
+
     let cli2 = RecordingCli::new(true);
     setup_claude_with_cli(home.path(), data.path(), &cli2).unwrap();
 
@@ -120,6 +133,65 @@ fn second_install_uses_update_path() {
     assert!(
         !calls.iter().any(|c| c.starts_with("add:")),
         "second run must not re-add marketplace"
+    );
+}
+
+/// Regression test for the "sentinel-but-not-registered" bug.
+///
+/// Sequence:
+///   1. First `setup_claude_with_cli` → installs, sentinel created.
+///   2. User runs `claude plugin uninstall gw@gw-local` →
+///      `installed_plugins.json` no longer has our entry (simulated here by
+///      simply not writing the file).
+///   3. Second `setup_claude_with_cli` → must take the fresh add+install
+///      path, NOT the update path, because Claude Code has no record of us.
+///
+/// Before the fix the old code branched on sentinel existence, so step 3
+/// silently called update+update against a non-registered plugin — a no-op
+/// that left the plugin absent.
+#[test]
+fn reinstall_after_claude_uninstall_uses_add_path() {
+    let home = tempfile::tempdir().unwrap();
+    let data = tempfile::tempdir().unwrap();
+
+    // First run: fresh install. Sentinel is created; no installed_plugins.json written.
+    let cli1 = RecordingCli::new(true);
+    setup_claude_with_cli(home.path(), data.path(), &cli1).unwrap();
+    assert!(
+        paths::sentinel_under(data.path()).exists(),
+        "sentinel must exist after first install"
+    );
+
+    // Do NOT write installed_plugins.json — this simulates the user having
+    // run `claude plugin uninstall gw@gw-local` after the first install,
+    // which removes our entry from Claude Code's plugin registry while
+    // leaving the sentinel file intact.
+
+    // Second run: should detect "not registered in Claude Code" and re-run
+    // the full add+install path, not the update path.
+    let cli2 = RecordingCli::new(true);
+    setup_claude_with_cli(home.path(), data.path(), &cli2).unwrap();
+
+    let calls = cli2.calls();
+    assert!(
+        calls.iter().any(|c| c.starts_with("add:")),
+        "re-install after uninstall must call marketplace add; calls={:?}",
+        calls
+    );
+    assert!(
+        calls.iter().any(|c| c == "install:gw@gw-local"),
+        "re-install after uninstall must call plugin install; calls={:?}",
+        calls
+    );
+    assert!(
+        !calls.iter().any(|c| c == "mp-update:gw-local"),
+        "re-install after uninstall must NOT call marketplace update; calls={:?}",
+        calls
+    );
+    assert!(
+        !calls.iter().any(|c| c == "update:gw@gw-local"),
+        "re-install after uninstall must NOT call plugin update; calls={:?}",
+        calls
     );
 }
 

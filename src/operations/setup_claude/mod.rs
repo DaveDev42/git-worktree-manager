@@ -70,12 +70,17 @@ pub fn setup_claude() -> Result<()> {
 pub fn setup_claude_with_cli(home: &Path, data_local: &Path, cli: &dyn ClaudeCli) -> Result<()> {
     legacy::remove_legacy_installs_under(home);
 
-    let already_installed = paths::sentinel_under(data_local).exists();
+    // Check whether Claude Code has our plugin registered in its own state
+    // file. This is the source of truth for CLI branching: if Claude Code has
+    // uninstalled the plugin (e.g. via `claude plugin uninstall`), the sentinel
+    // file still exists but the plugin is gone — we must re-run add+install,
+    // not update+update, to re-register it.
+    let claude_registered = claude_has_plugin_registered(home);
 
     let any_changed = write_files(data_local)?;
 
     if cli.is_available() {
-        if already_installed {
+        if claude_registered {
             // Refresh: pull marketplace source (no-op for local), then
             // bump the cached plugin to the new version if plugin.json
             // changed.
@@ -102,8 +107,28 @@ pub fn setup_claude_with_cli(home: &Path, data_local: &Path, cli: &dyn ClaudeCli
         eprintln!("    claude plugin install {}", paths::PLUGIN_SLUG);
     }
 
-    print_outcome(data_local, any_changed, already_installed);
+    print_outcome(data_local, any_changed, claude_registered);
     Ok(())
+}
+
+/// Returns true iff Claude Code's `installed_plugins.json` contains a
+/// non-empty entry for our plugin slug (`gw@gw-local`).
+///
+/// Treats any I/O or parse error as "not registered" so we fall back safely
+/// to a fresh add+install rather than silently doing nothing.
+fn claude_has_plugin_registered(home: &Path) -> bool {
+    let path = paths::installed_plugins_json_under(home);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(json): std::result::Result<serde_json::Value, _> = serde_json::from_str(&text) else {
+        return false;
+    };
+    json.get("plugins")
+        .and_then(|p| p.get(paths::PLUGIN_SLUG))
+        .and_then(|v| v.as_array())
+        .map(|arr| !arr.is_empty())
+        .unwrap_or(false)
 }
 
 fn write_files(data_local: &Path) -> Result<bool> {

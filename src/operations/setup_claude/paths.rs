@@ -63,3 +63,11 @@ pub fn skill_manage_reference_under(data_local: &Path) -> PathBuf {
 pub fn sentinel_under(data_local: &Path) -> PathBuf {
     marketplace_root_under(data_local).join(SENTINEL_FILE)
 }
+
+/// Path to Claude Code's plugin registration file under `home`.
+/// This file tracks which plugins Claude Code has installed.
+pub fn installed_plugins_json_under(home: &Path) -> PathBuf {
+    home.join(".claude")
+        .join("plugins")
+        .join("installed_plugins.json")
+}
