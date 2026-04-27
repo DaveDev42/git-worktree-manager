@@ -1,15 +1,22 @@
-//! Plugin installer for Claude Code integration.
+//! Local-marketplace installer for Claude Code integration.
 //!
-//! Installs gw as a Claude Code *plugin* at `~/.claude/plugins/gw/` with
-//! two skills (`delegate`, `manage`). Removes legacy single-skill installs
-//! at `~/.claude/skills/gw/` and `~/.claude/skills/gw-delegate/`.
+//! `gw setup-claude` writes a self-contained Claude Code marketplace tree
+//! under the OS data-local dir (e.g. `~/.local/share/git-worktree-manager/
+//! claude-marketplace/` on Linux/macOS, `%LOCALAPPDATA%\git-worktree-
+//! manager\claude-marketplace\` on Windows). After writing, we shell out
+//! to the `claude` CLI to register the marketplace and install/update the
+//! plugin so Claude Code actually loads it.
+//!
+//! Re-runs are idempotent: file content is content-addressed, and the
+//! `claude` CLI calls switch between fresh install and update based on a
+//! sentinel marker we drop on first run.
 
 use std::path::{Path, PathBuf};
 
 use console::style;
 
 use crate::constants::home_dir_or_fallback;
-use crate::error::Result;
+use crate::error::{CwError, Result};
 
 pub mod claude_cli;
 pub mod command_gw;
@@ -20,39 +27,7 @@ mod skill_delegate;
 mod skill_manage;
 pub mod writer;
 
-const PLUGIN_NAME: &str = "gw";
-
-fn plugin_dir_under(home: &Path) -> PathBuf {
-    home.join(".claude").join("plugins").join(PLUGIN_NAME)
-}
-
-fn manifest_path_under(home: &Path) -> PathBuf {
-    plugin_dir_under(home).join("plugin.json")
-}
-fn delegate_skill_path_under(home: &Path) -> PathBuf {
-    plugin_dir_under(home)
-        .join("skills")
-        .join("delegate")
-        .join("SKILL.md")
-}
-fn manage_skill_path_under(home: &Path) -> PathBuf {
-    plugin_dir_under(home)
-        .join("skills")
-        .join("manage")
-        .join("SKILL.md")
-}
-fn manage_reference_path_under(home: &Path) -> PathBuf {
-    plugin_dir_under(home)
-        .join("skills")
-        .join("manage")
-        .join("references")
-        .join("gw-commands.md")
-}
-
-/// True if the plugin manifest exists at the canonical path.
-pub fn is_plugin_installed() -> bool {
-    manifest_path_under(&home_dir_or_fallback()).exists()
-}
+use claude_cli::{ClaudeCli, RealClaudeCli};
 
 #[doc(hidden)]
 pub fn manage_skill_content_for_test() -> &'static str {
@@ -64,62 +39,122 @@ pub fn manage_reference_content_for_test() -> &'static str {
     skill_manage::reference_content()
 }
 
-/// Backward-compatible alias used by `gw doctor`. Returns true if either the
-/// new plugin OR a legacy skill install is present.
+/// True if our marketplace tree exists at the canonical data-local path.
+pub fn is_installed() -> bool {
+    let dl = data_local_or_fallback();
+    paths::sentinel_under(&dl).exists()
+}
+
+/// Backward-compat alias used by `gw doctor`. Returns true if either the
+/// new install OR a legacy install (any of three layouts) is present.
 pub fn is_skill_installed() -> bool {
-    is_plugin_installed() || legacy::any_legacy_present()
+    is_installed() || legacy::any_legacy_present()
 }
 
-fn write_if_changed(
-    path: &PathBuf,
-    new_content: &str,
-) -> std::result::Result<bool, std::io::Error> {
-    if path.exists() {
-        let existing = std::fs::read_to_string(path).unwrap_or_default();
-        if existing == new_content {
-            return Ok(false);
-        }
-    }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(path, new_content)?;
-    Ok(true)
+/// Backward-compat alias kept for diagnostics.rs. Same meaning as
+/// `is_installed()`.
+pub fn is_plugin_installed() -> bool {
+    is_installed()
 }
 
+/// Production entry point: resolves real home + data-local dirs and uses
+/// the real `claude` CLI.
 pub fn setup_claude() -> Result<()> {
-    setup_claude_under(&home_dir_or_fallback())
+    let home = home_dir_or_fallback();
+    let data_local = data_local_or_fallback();
+    setup_claude_with_cli(&home, &data_local, &RealClaudeCli)
 }
 
-/// Test-friendly variant: install into an arbitrary `home` root. Avoids
-/// reliance on platform env-var lookup (e.g. dirs::home_dir reads
-/// USERPROFILE on Windows via SHGetKnownFolderPath, which ignores
-/// process-set env vars).
-#[allow(deprecated)]
-pub fn setup_claude_under(home: &Path) -> Result<()> {
+/// Test/composition entry point. Lets callers inject the home root, the
+/// data-local root, and a `ClaudeCli` impl independently.
+pub fn setup_claude_with_cli(home: &Path, data_local: &Path, cli: &dyn ClaudeCli) -> Result<()> {
     legacy::remove_legacy_installs_under(home);
 
-    let manifest = manifest_path_under(home);
-    let delegate = delegate_skill_path_under(home);
-    let manage = manage_skill_path_under(home);
-    let reference = manage_reference_path_under(home);
+    let already_installed = paths::sentinel_under(data_local).exists();
 
-    let mut any_changed = false;
-    any_changed |= write_if_changed(&manifest, manifest::content())?;
-    any_changed |= write_if_changed(&delegate, skill_delegate::content())?;
-    any_changed |= write_if_changed(&manage, skill_manage::content())?;
-    any_changed |= write_if_changed(&reference, skill_manage::reference_content())?;
+    let any_changed = write_files(data_local)?;
 
-    let location = plugin_dir_under(home);
-    if !any_changed {
-        println!("{} gw plugin already up to date.\n", style("*").green());
-        println!("  Location: {}", style(location.display()).dim());
-        return Ok(());
+    if cli.is_available() {
+        if already_installed {
+            // Refresh: pull marketplace source (no-op for local), then
+            // bump the cached plugin to the new version if plugin.json
+            // changed.
+            let _ = cli.marketplace_update(paths::MARKETPLACE_NAME);
+            let _ = cli.plugin_update(paths::PLUGIN_SLUG);
+        } else {
+            cli.marketplace_add(&paths::marketplace_root_under(data_local))
+                .map_err(|e| {
+                    CwError::Other(format!("`claude plugin marketplace add` failed: {e}"))
+                })?;
+            cli.plugin_install(paths::PLUGIN_SLUG)
+                .map_err(|e| CwError::Other(format!("`claude plugin install` failed: {e}")))?;
+        }
+    } else {
+        eprintln!(
+            "{} `claude` CLI not found on PATH. Files were written but the plugin",
+            style("!").yellow()
+        );
+        eprintln!("  is not registered with Claude Code. Install Claude Code, then run:");
+        eprintln!(
+            "    claude plugin marketplace add {}",
+            paths::marketplace_root_under(data_local).display()
+        );
+        eprintln!("    claude plugin install {}", paths::PLUGIN_SLUG);
     }
 
+    print_outcome(data_local, any_changed, already_installed);
+    Ok(())
+}
+
+fn write_files(data_local: &Path) -> Result<bool> {
+    let mut any_changed = false;
+    any_changed |= writer::write_if_changed(
+        &paths::marketplace_manifest_under(data_local),
+        manifest::marketplace_json(),
+    )?;
+    any_changed |= writer::write_if_changed(
+        &paths::plugin_manifest_under(data_local),
+        &manifest::plugin_json(),
+    )?;
+    any_changed |=
+        writer::write_if_changed(&paths::command_gw_under(data_local), command_gw::content())?;
+    any_changed |= writer::write_if_changed(
+        &paths::skill_delegate_under(data_local),
+        skill_delegate::content(),
+    )?;
+    any_changed |= writer::write_if_changed(
+        &paths::skill_manage_under(data_local),
+        skill_manage::content(),
+    )?;
+    any_changed |= writer::write_if_changed(
+        &paths::skill_manage_reference_under(data_local),
+        skill_manage::reference_content(),
+    )?;
+    let sentinel = paths::sentinel_under(data_local);
+    if !writer::sentinel_present(&sentinel) {
+        writer::write_sentinel(&sentinel)?;
+        any_changed = true;
+    }
+    Ok(any_changed)
+}
+
+fn print_outcome(data_local: &Path, any_changed: bool, was_installed: bool) {
+    let location = paths::marketplace_root_under(data_local);
+    if !any_changed {
+        println!("{} gw plugin already up to date.", style("*").green());
+        println!("  Location: {}", style(location.display()).dim());
+        return;
+    }
+
+    let verb = if was_installed {
+        "refreshed"
+    } else {
+        "installed"
+    };
     println!(
-        "{} gw plugin installed at {}.\n",
+        "{} gw plugin {} at {}.",
         style("*").green().bold(),
+        verb,
         style(location.display()).dim()
     );
     println!(
@@ -127,11 +162,13 @@ pub fn setup_claude_under(home: &Path) -> Result<()> {
         style("/gw").cyan()
     );
     println!(
-        "  The bundled '{}' skill will recommend hooks (e.g. SessionStart sanity)",
+        "  The bundled '{}' skill recommends hooks (e.g. SessionStart sanity)",
         style("manage").cyan()
     );
     println!("  in-session when relevant. It edits your project's .claude/settings.json");
-    println!("  on your consent — gw itself never modifies any settings file.\n");
+    println!("  on your consent — gw itself never modifies any settings file.");
+}
 
-    Ok(())
+fn data_local_or_fallback() -> PathBuf {
+    dirs::data_local_dir().unwrap_or_else(|| home_dir_or_fallback().join(".local").join("share"))
 }

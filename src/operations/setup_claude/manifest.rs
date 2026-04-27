@@ -30,12 +30,3 @@ pub fn plugin_json() -> String {
         PLUGIN_VERSION
     )
 }
-
-/// Temporary shim kept until Task 7 rewrites `mod.rs`. Returns the OLD
-/// (broken) `plugin.json` body so the existing call site in `mod.rs`
-/// continues to compile and the test_setup_claude_plugin.rs integration
-/// test (which Task 7 deletes) keeps passing in the meantime.
-#[deprecated(note = "removed in Task 7")]
-pub fn content() -> &'static str {
-    "{\n  \"name\": \"gw\",\n  \"version\": \"1\",\n  \"description\": \"git-worktree-manager plugin: delegate tasks to worktrees and manage multi-worktree workflows safely.\",\n  \"author\": \"git-worktree-manager\"\n}\n"
-}
