@@ -342,32 +342,22 @@ fn check_claude_integration() {
         .map(|o| o.status.success())
         .unwrap_or(false);
 
+    let msgs = setup_claude_doctor_messages();
+
     if !has_claude {
         println!(
             "   {} Claude Code not detected (optional)",
             style("-").dim()
         );
     } else if setup_claude::is_installed() {
-        println!("   {} gw plugin installed", style("*").green());
+        println!("   {} {}", style("*").green(), msgs.installed);
     } else if setup_claude::is_skill_installed() {
         // Legacy install (any pre-marketplace layout).
-        println!(
-            "   {} Legacy gw install detected (pre-marketplace layout)",
-            style("!").yellow()
-        );
-        println!(
-            "   {}",
-            style("Tip: Re-run 'gw setup-claude' to upgrade to the marketplace install").dim()
-        );
+        println!("   {} {}", style("!").yellow(), msgs.legacy_alert);
+        println!("   {}", style(format!("Tip: {}", msgs.legacy_tip)).dim());
     } else {
-        println!(
-            "   {} Claude Code detected but gw plugin not installed",
-            style("!").yellow()
-        );
-        println!(
-            "   {}",
-            style("Tip: Run 'gw setup-claude' to install the gw plugin for Claude Code").dim()
-        );
+        println!("   {} {}", style("!").yellow(), msgs.missing_alert);
+        println!("   {}", style(format!("Tip: {}", msgs.missing_tip)).dim());
     }
     println!();
 }
@@ -424,18 +414,22 @@ fn print_recommendations(
     }
 }
 
-#[doc(hidden)]
+/// Source-of-truth strings for the Claude Code section of `gw doctor`.
 pub struct SetupClaudeDoctorMessages {
     pub installed: &'static str,
-    pub legacy: &'static str,
-    pub missing: &'static str,
+    pub legacy_alert: &'static str,
+    pub legacy_tip: &'static str,
+    pub missing_alert: &'static str,
+    pub missing_tip: &'static str,
 }
 
-#[doc(hidden)]
+/// Returns the strings printed by [`check_claude_integration`].
 pub fn setup_claude_doctor_messages() -> SetupClaudeDoctorMessages {
     SetupClaudeDoctorMessages {
         installed: "gw plugin installed",
-        legacy: "Re-run 'gw setup-claude' to upgrade to the marketplace install",
-        missing: "Run 'gw setup-claude' to install the gw plugin for Claude Code",
+        legacy_alert: "Legacy gw install detected (pre-marketplace layout)",
+        legacy_tip: "Re-run 'gw setup-claude' to upgrade to the marketplace install",
+        missing_alert: "Claude Code detected but gw plugin not installed",
+        missing_tip: "Run 'gw setup-claude' to install the gw plugin for Claude Code",
     }
 }

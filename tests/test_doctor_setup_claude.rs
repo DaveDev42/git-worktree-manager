@@ -1,21 +1,33 @@
-//! Smoke test that the doctor's setup-claude block uses the new
-//! terminology. We can't easily intercept stdout in a unit test without
-//! rearchitecting diagnostics, so this test asserts on the source string
-//! constants exposed for tests.
+//! Pins the strings that `gw doctor` prints for its Claude Code section.
+//! Because `check_claude_integration` is not easily interceptable without
+//! rearchitecting diagnostics, we assert on the constants in
+//! `setup_claude_doctor_messages()`, which is the single source of truth
+//! that the print sites now read directly. A refactor that silently drops
+//! or scrambles these strings will break this test.
 
 use git_worktree_manager::operations::diagnostics;
 
 #[test]
 fn doctor_setup_claude_messages_present() {
-    // Helper exposed by diagnostics for tests; see Task 8 step 3.
     let msgs = diagnostics::setup_claude_doctor_messages();
     assert!(
         msgs.installed.contains("plugin installed"),
         "installed message"
     );
     assert!(
-        msgs.legacy.contains("Re-run") && msgs.legacy.contains("setup-claude"),
+        msgs.legacy_alert.contains("Legacy") && msgs.legacy_alert.contains("pre-marketplace"),
+        "legacy alert line"
+    );
+    assert!(
+        msgs.legacy_tip.contains("Re-run") && msgs.legacy_tip.contains("setup-claude"),
         "legacy upgrade tip"
     );
-    assert!(msgs.missing.contains("setup-claude"), "missing install tip");
+    assert!(
+        msgs.missing_alert.contains("Claude Code detected"),
+        "missing alert line"
+    );
+    assert!(
+        msgs.missing_tip.contains("setup-claude") && msgs.missing_tip.contains("install"),
+        "missing install tip"
+    );
 }
