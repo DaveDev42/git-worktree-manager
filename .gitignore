@@ -21,3 +21,8 @@ Thumbs.db
 .claude/*.lock
 .claude/tasks/
 .claude/settings.local.json
+
+# LLM-generated implementation plans/specs (Superpowers workflow). Useful as
+# scratch space during a task but not maintained as living docs — keep them
+# local to the worktree.
+docs/superpowers/
