@@ -100,9 +100,15 @@ pub enum Commands {
         #[arg(short = 'T', long)]
         term: Option<String>,
 
-        /// Launch AI tool in background
-        #[arg(long)]
+        /// Launch AI tool in background (e.g. `wezterm-tab` → `wezterm-tab-bg`,
+        /// `foreground` → `detach`). No-op for launchers without a background variant.
+        #[arg(long, conflicts_with = "fg")]
         bg: bool,
+
+        /// Force AI tool into foreground (inverse of --bg). No-op for launchers
+        /// without a foreground variant.
+        #[arg(long)]
+        fg: bool,
 
         /// Initial prompt to pass to the AI tool (starts interactive session with task)
         #[arg(long)]
@@ -182,9 +188,15 @@ pub enum Commands {
         #[arg(short = 'T', long)]
         term: Option<String>,
 
-        /// Launch AI tool in background
-        #[arg(long)]
+        /// Launch AI tool in background (e.g. `wezterm-tab` → `wezterm-tab-bg`,
+        /// `foreground` → `detach`). No-op for launchers without a background variant.
+        #[arg(long, conflicts_with = "fg")]
         bg: bool,
+
+        /// Force AI tool into foreground (inverse of --bg). No-op for launchers
+        /// without a foreground variant.
+        #[arg(long)]
+        fg: bool,
 
         /// Resolve target as worktree name (instead of branch)
         #[arg(short, long)]

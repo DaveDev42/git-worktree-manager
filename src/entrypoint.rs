@@ -101,7 +101,8 @@ pub fn run() {
             base,
             no_term,
             term,
-            bg: _,
+            bg,
+            fg,
             prompt,
             prompt_file,
             prompt_stdin,
@@ -124,6 +125,8 @@ pub fn run() {
                 term.as_deref(),
                 no_term,
                 resolved.as_deref(),
+                bg,
+                fg,
             )?;
             Ok(())
         })(),
@@ -170,12 +173,13 @@ pub fn run() {
         Some(Commands::Resume {
             branch,
             term,
-            bg: _,
+            bg,
+            fg,
             worktree: is_worktree,
             by_branch,
         }) => {
             let lookup_mode = resolve_lookup_mode(is_worktree, by_branch);
-            ai_tools::resume_worktree(branch.as_deref(), term.as_deref(), lookup_mode)
+            ai_tools::resume_worktree(branch.as_deref(), term.as_deref(), lookup_mode, bg, fg)
         }
 
         Some(Commands::Shell { worktree, args }) => {
@@ -264,8 +268,12 @@ pub fn run() {
             BackupAction::Create {
                 branch,
                 all,
-                output: _,
-            } => backup::backup_worktree(branch.as_deref(), all),
+                output,
+            } => backup::backup_worktree(
+                branch.as_deref(),
+                all,
+                output.as_deref().map(std::path::Path::new),
+            ),
             BackupAction::List { branch, all } => backup::list_backups(branch.as_deref(), all),
             BackupAction::Restore { branch, path, id } => {
                 backup::restore_worktree(&branch, path.as_deref(), id.as_deref())
