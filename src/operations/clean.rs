@@ -259,37 +259,11 @@ pub fn clean_worktrees(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, MutexGuard};
-
-    /// Serialise env-var mutations: `fetch_from_gh` / `cache_path_for` in
-    /// `pr_cache.rs` read `GW_TEST_GH_JSON`, `GW_TEST_GH_FAIL`, and
-    /// `GW_TEST_CACHE_DIR` — all gated on `#[cfg(test)]` so they only fire
-    /// in unit-test mode (which is why these tests live here, not in
-    /// `tests/test_clean_merged.rs`).
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-    fn env_lock() -> MutexGuard<'static, ()> {
-        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    struct EnvGuard {
-        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
-    }
-    impl EnvGuard {
-        fn capture(keys: &[&'static str]) -> Self {
-            let saved = keys.iter().map(|k| (*k, std::env::var_os(k))).collect();
-            Self { saved }
-        }
-    }
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            for (k, v) in self.saved.drain(..) {
-                match v {
-                    Some(val) => std::env::set_var(k, val),
-                    None => std::env::remove_var(k),
-                }
-            }
-        }
-    }
+    // The env-var lock and guard are defined in `super::super::test_env` so
+    // this module and `pr_cache` share a single mutex. Without sharing, each
+    // module's tests would hold a different lock and race on the same global
+    // env vars (`GW_TEST_GH_JSON`, `GW_TEST_GH_FAIL`, `GW_TEST_CACHE_DIR`).
+    use super::super::test_env::{env_lock, EnvGuard};
 
     fn init_git_repo(path: &std::path::Path) {
         for args in &[

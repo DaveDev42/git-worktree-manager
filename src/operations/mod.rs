@@ -21,4 +21,6 @@ pub mod setup_claude;
 pub mod shell;
 pub mod spawn_spec;
 pub mod stash;
+#[cfg(test)]
+pub(crate) mod test_env;
 pub mod worktree;
