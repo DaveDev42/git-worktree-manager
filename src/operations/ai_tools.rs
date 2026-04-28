@@ -22,14 +22,26 @@ use super::launchers;
 use super::spawn_spec::{self, SpawnSpec};
 
 /// Launch AI coding assistant in the specified directory.
+#[allow(clippy::too_many_arguments)]
 pub fn launch_ai_tool(
     path: &Path,
     term: Option<&str>,
     resume: bool,
     prompt: Option<&str>,
     initial_prompt: Option<&str>,
+    bg: bool,
+    fg: bool,
 ) -> Result<()> {
-    let (method, session_name) = parse_term_option(term)?;
+    let (mut method, session_name) = parse_term_option(term)?;
+    if bg {
+        if let Some(m) = method.to_bg() {
+            method = m;
+        }
+    } else if fg {
+        if let Some(m) = method.to_fg() {
+            method = m;
+        }
+    }
 
     // Determine command
     let ai_cmd_parts = if let Some(p) = prompt {
@@ -157,6 +169,8 @@ pub fn resume_worktree(
     worktree: Option<&str>,
     term: Option<&str>,
     lookup_mode: Option<&str>,
+    bg: bool,
+    fg: bool,
 ) -> Result<()> {
     let resolved = resolve_worktree_target(worktree, lookup_mode)?;
     let worktree_path = resolved.path;
@@ -250,7 +264,7 @@ pub fn resume_worktree(
             );
         }
 
-        launch_ai_tool(&worktree_path, term, has_session, None, None)?;
+        launch_ai_tool(&worktree_path, term, has_session, None, None, bg, fg)?;
     }
 
     // Post-resume hooks

@@ -35,7 +35,10 @@ fn get_backups_dir() -> PathBuf {
 }
 
 /// Create backup of worktree(s) using git bundle.
-pub fn backup_worktree(branch: Option<&str>, all: bool) -> Result<()> {
+///
+/// `output_dir` overrides the default backups root (`~/.config/.../backups`)
+/// when provided; the directory is created if it does not exist.
+pub fn backup_worktree(branch: Option<&str>, all: bool, output_dir: Option<&Path>) -> Result<()> {
     let repo = git::get_repo_root(None)?;
 
     let branches_to_backup: Vec<(String, PathBuf)> = if all {
@@ -45,7 +48,13 @@ pub fn backup_worktree(branch: Option<&str>, all: bool) -> Result<()> {
         vec![(resolved.branch, resolved.path)]
     };
 
-    let backups_root = get_backups_dir();
+    let backups_root = match output_dir {
+        Some(p) => {
+            let _ = std::fs::create_dir_all(p);
+            p.to_path_buf()
+        }
+        None => get_backups_dir(),
+    };
     let timestamp = crate::session::chrono_now_iso_pub()
         .replace([':', '-'], "")
         .split('T')

@@ -179,3 +179,38 @@ fn test_backup_with_slash_in_branch() {
         stdout
     );
 }
+
+/// `backup create --output <dir>` overrides the backups root, writing the
+/// bundle and metadata under the user-specified directory instead of the
+/// default `~/.config/.../backups`.
+#[test]
+fn test_backup_create_with_output_dir() {
+    let repo = TestRepo::new();
+    repo.cw(&["new", "out-test", "--no-term"]);
+
+    let custom_dir = repo.path().join("custom-backups");
+    let custom_str = custom_dir.to_string_lossy().to_string();
+
+    let output = repo.cw(&["backup", "create", "out-test", "--output", &custom_str]);
+    assert!(
+        output.status.success(),
+        "backup create --output failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        custom_dir.join("out-test").is_dir(),
+        "expected backup under custom output dir at {}",
+        custom_dir.display()
+    );
+
+    // Default backups dir should NOT contain this branch's backup.
+    let default_dir = git_worktree_manager::config::get_config_path()
+        .parent()
+        .expect("config path has parent")
+        .join("backups");
+    assert!(
+        !default_dir.join("out-test").exists(),
+        "backup must not appear in default dir when --output is given",
+    );
+}

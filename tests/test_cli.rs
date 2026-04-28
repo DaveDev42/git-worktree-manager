@@ -143,9 +143,19 @@ fn test_new_help() {
         .stdout(predicate::str::contains("--base"))
         .stdout(predicate::str::contains("--no-term"))
         .stdout(predicate::str::contains("--term"))
+        .stdout(predicate::str::contains("--bg"))
+        .stdout(predicate::str::contains("--fg"))
         .stdout(predicate::str::contains("--prompt "))
         .stdout(predicate::str::contains("--prompt-file"))
         .stdout(predicate::str::contains("--prompt-stdin"));
+}
+
+#[test]
+fn test_new_bg_fg_conflict() {
+    cw().args(["new", "x", "--bg", "--fg", "--no-term"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used"));
 }
 
 #[test]
@@ -212,7 +222,17 @@ fn test_resume_help() {
     cw().args(["resume", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("--term"));
+        .stdout(predicate::str::contains("--term"))
+        .stdout(predicate::str::contains("--bg"))
+        .stdout(predicate::str::contains("--fg"));
+}
+
+#[test]
+fn test_resume_bg_fg_conflict() {
+    cw().args(["resume", "some-branch", "--bg", "--fg"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used"));
 }
 
 #[test]

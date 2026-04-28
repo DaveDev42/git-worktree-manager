@@ -96,6 +96,29 @@ impl LaunchMethod {
 }
 
 impl LaunchMethod {
+    /// Return the background variant of this launch method, if one exists.
+    /// `--bg` uses this; methods without a paired variant are left unchanged
+    /// upstream (silent no-op).
+    pub fn to_bg(&self) -> Option<Self> {
+        match self {
+            Self::Foreground => Some(Self::Detach),
+            Self::WeztermTab => Some(Self::WeztermTabBg),
+            _ => None,
+        }
+    }
+
+    /// Return the foreground variant of this launch method, if one exists.
+    /// Inverse of `to_bg`.
+    pub fn to_fg(&self) -> Option<Self> {
+        match self {
+            Self::Detach => Some(Self::Foreground),
+            Self::WeztermTabBg => Some(Self::WeztermTab),
+            _ => None,
+        }
+    }
+}
+
+impl LaunchMethod {
     /// Human-readable display name.
     pub fn display_name(&self) -> &'static str {
         match self {
@@ -425,6 +448,50 @@ mod tests {
         assert!(PRESET_NAMES.contains(&"claude"));
         assert!(PRESET_NAMES.contains(&"codex"));
         assert!(PRESET_NAMES.contains(&"no-op"));
+    }
+
+    #[test]
+    fn test_to_bg_supported_methods() {
+        assert_eq!(LaunchMethod::Foreground.to_bg(), Some(LaunchMethod::Detach));
+        assert_eq!(
+            LaunchMethod::WeztermTab.to_bg(),
+            Some(LaunchMethod::WeztermTabBg)
+        );
+    }
+
+    #[test]
+    fn test_to_bg_unsupported_methods_silent_noop() {
+        // Unsupported launchers return None so the caller leaves the method
+        // unchanged instead of erroring.
+        assert_eq!(LaunchMethod::ItermTab.to_bg(), None);
+        assert_eq!(LaunchMethod::TmuxWindow.to_bg(), None);
+        assert_eq!(LaunchMethod::ZellijTab.to_bg(), None);
+        assert_eq!(LaunchMethod::Detach.to_bg(), None);
+        assert_eq!(LaunchMethod::WeztermTabBg.to_bg(), None);
+    }
+
+    #[test]
+    fn test_to_fg_supported_methods() {
+        assert_eq!(LaunchMethod::Detach.to_fg(), Some(LaunchMethod::Foreground));
+        assert_eq!(
+            LaunchMethod::WeztermTabBg.to_fg(),
+            Some(LaunchMethod::WeztermTab),
+        );
+    }
+
+    #[test]
+    fn test_to_fg_unsupported_methods_silent_noop() {
+        assert_eq!(LaunchMethod::ItermTab.to_fg(), None);
+        assert_eq!(LaunchMethod::Foreground.to_fg(), None);
+        assert_eq!(LaunchMethod::WeztermTab.to_fg(), None);
+    }
+
+    #[test]
+    fn test_bg_fg_roundtrip() {
+        // bg ∘ fg should return the original method for paired variants.
+        for m in [LaunchMethod::Foreground, LaunchMethod::WeztermTab] {
+            assert_eq!(m.to_bg().and_then(|x| x.to_fg()), Some(m));
+        }
     }
 
     #[test]

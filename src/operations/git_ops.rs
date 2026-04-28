@@ -307,7 +307,15 @@ pub fn merge_worktree(
                         "\n{} Launching AI to resolve conflicts...\n",
                         style("*").cyan().bold()
                     );
-                    let _ = super::ai_tools::launch_ai_tool(&cwd, None, false, Some(&prompt), None);
+                    let _ = super::ai_tools::launch_ai_tool(
+                        &cwd,
+                        None,
+                        false,
+                        Some(&prompt),
+                        None,
+                        false,
+                        false,
+                    );
                     return Ok(());
                 }
 
