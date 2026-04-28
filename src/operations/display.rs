@@ -65,6 +65,22 @@ pub fn get_worktree_status(
         return "busy".to_string();
     }
 
+    // Also flag worktrees occupied by an active Claude Code session. Same
+    // two-stage gate as `detect_busy_tiered`: jsonl event within the
+    // 10-minute threshold AND a live `claude` process holding the
+    // worktree. The process scan is OnceLock-cached, so the cost is one
+    // narrow `lsof` per `gw` invocation regardless of how many worktrees
+    // we check.
+    if let Some(proj_dir) = crate::operations::claude_session::project_dir_for(path) {
+        let threshold =
+            chrono::Duration::minutes(crate::operations::busy::CLAUDE_ACTIVITY_THRESHOLD_MIN);
+        let sessions =
+            crate::operations::claude_session::find_active_sessions(&proj_dir, path, threshold);
+        if !sessions.is_empty() && crate::operations::claude_process::has_live_claude_in(path) {
+            return "busy".to_string();
+        }
+    }
+
     // Check if cwd is inside this worktree. Canonicalize both sides so that
     // symlink skew (e.g. macOS /var vs /private/var) does not miss a match.
     if let Ok(cwd) = std::env::current_dir() {
@@ -1160,6 +1176,49 @@ mod tests {
         let _ = child.wait();
 
         assert_eq!(status, "busy");
+    }
+
+    /// Regression: `get_worktree_status` must not mark a worktree busy on
+    /// the strength of a stale jsonl alone. Same scenario as the
+    /// detect_busy_tiered regression — we plant a fresh-looking jsonl
+    /// without any live claude process, and verify the worktree is NOT
+    /// reported as busy.
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn test_get_worktree_status_not_busy_when_jsonl_active_but_no_live_claude() {
+        use crate::operations::test_env::{env_lock, EnvGuard};
+        let _lock = env_lock();
+        let _guard = EnvGuard::capture(&["HOME"]);
+
+        let home = tempfile::TempDir::new().unwrap();
+        std::env::set_var("HOME", home.path());
+
+        let repo = tempfile::TempDir::new().unwrap();
+        let wt = repo.path().join("wt1");
+        std::fs::create_dir_all(wt.join(".git")).unwrap();
+        let wt_canon = wt.canonicalize().unwrap_or(wt.clone());
+
+        // Plant a jsonl whose newest event is now (well within the 10-minute
+        // threshold) and whose `cwd` matches the worktree.
+        let encoded = wt_canon.to_string_lossy().replace(['/', '.'], "-");
+        let proj_dir = home.path().join(".claude").join("projects").join(encoded);
+        std::fs::create_dir_all(&proj_dir).unwrap();
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let line = serde_json::json!({
+            "timestamp": now,
+            "cwd": wt_canon.to_string_lossy(),
+        });
+        std::fs::write(
+            proj_dir.join("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl"),
+            format!("{}\n", line),
+        )
+        .unwrap();
+
+        let status = get_worktree_status(&wt, repo.path(), Some("wt1"), &PrCache::default());
+        assert_ne!(
+            status, "busy",
+            "expected non-busy without a live claude process, got busy"
+        );
     }
 
     #[test]

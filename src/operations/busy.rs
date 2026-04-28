@@ -479,7 +479,7 @@ pub fn detect_busy_lockfile_only(worktree: &Path) -> Vec<BusyInfo> {
 }
 
 /// Threshold for considering a Claude jsonl event "active." Spec value.
-const CLAUDE_ACTIVITY_THRESHOLD_MIN: i64 = 10;
+pub const CLAUDE_ACTIVITY_THRESHOLD_MIN: i64 = 10;
 
 /// Tiered busy detection: returns `(hard, soft)` separately so the caller
 /// can render distinct refusal messages.
