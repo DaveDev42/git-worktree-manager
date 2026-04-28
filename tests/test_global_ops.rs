@@ -278,9 +278,18 @@ fn test_global_list_modified_worktree() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("mod-wt");
 
-    // Create an untracked file to dirty the worktree
+    // Add a real commit on mod-wt so its tip diverges from main. Without
+    // this, `git branch --merged main` lists mod-wt (it shares main's tip
+    // commit) and `gw -g list` reports the worktree as "merged" — which
+    // beats "modified" in the status priority. The test wants to exercise
+    // the dirty-tree path, so we make mod-wt unambiguously not-merged
+    // first.
+    std::fs::write(wt.join("committed.txt"), "ahead of main").unwrap();
+    TestRepo::git_at(&wt, &["add", "committed.txt"]);
+    TestRepo::git_at(&wt, &["commit", "-m", "ahead of main"]);
+
+    // Now stage an uncommitted change to dirty the worktree.
     std::fs::write(wt.join("newfile.txt"), "new content").unwrap();
-    // Stage it to make it a real modification
     TestRepo::git_at(&wt, &["add", "newfile.txt"]);
 
     let output = repo.cw(&["-g", "list"]);
