@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.40](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.39...v0.0.40) (2026-04-28)
+
+
+### Bug Fixes
+
+* **clean:** use PrCache for --merged detection to handle squash merges ([#109](https://github.com/DaveDev42/git-worktree-manager/issues/109)) ([ee80a26](https://github.com/DaveDev42/git-worktree-manager/commit/ee80a26d4507714340142f45955d9d0536bf0806))
+* **setup-claude:** install plugin via local Claude Code marketplace ([#107](https://github.com/DaveDev42/git-worktree-manager/issues/107)) ([2c9370e](https://github.com/DaveDev42/git-worktree-manager/commit/2c9370e47d4c8c5c8d591b79727e8249b1413e41))
+
 ## [0.0.39](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.38...v0.0.39) (2026-04-25)
 
 
