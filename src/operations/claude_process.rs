@@ -97,16 +97,49 @@ fn scan_processes() -> Vec<ProcessSnapshot> {
     use std::collections::HashMap;
     use std::process::Command;
 
-    // Single lsof call: fd `cwd` (process cwd), `txt` (executable + lib mappings),
-    // and any open regular-file/dir fds whose name contains "/.claude". The
-    // "/.claude" filter is applied post-hoc on the parsed records since lsof
-    // has no built-in path-substring filter; we still ask for all fds and let
-    // the parser keep only what we need.
-    //
-    // -F pcfn emits records with fields: p<pid>, c<cmd>, f<fd>, n<path>.
-    // +c 0 disables the 9-char cmd truncation.
+    // Stage 1: enumerate candidate PIDs via `ps -Ao pid,comm`, filtering on
+    // kernel-recorded command name. This is cheap (~50ms) and avoids the
+    // heavy system-wide `lsof` whose latency balloons under disk/IO load.
+    // `comm` reflects the basename the kernel knows the process by, which
+    // is unaffected by Claude Code's argv[0] rewriting — so this 1st-stage
+    // filter is sound even before the txt-mapping double-check below.
+    let ps_out = match Command::new("ps").args(["-Ao", "pid=,comm="]).output() {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+    let mut candidate_pids: Vec<u32> = Vec::new();
+    for line in String::from_utf8_lossy(&ps_out.stdout).lines() {
+        let line = line.trim_start();
+        let (pid_s, rest) = match line.split_once(' ') {
+            Some(p) => p,
+            None => continue,
+        };
+        let Ok(pid) = pid_s.parse::<u32>() else {
+            continue;
+        };
+        // `ps -o comm=` on macOS prints the full executable path. Take
+        // basename and match either `claude` (CLI) or `Claude` (Claude.app).
+        let basename = std::path::Path::new(rest.trim())
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if basename == "claude" || basename == "Claude" {
+            candidate_pids.push(pid);
+        }
+    }
+    if candidate_pids.is_empty() {
+        return Vec::new();
+    }
+
+    // Stage 2: targeted `lsof -p <pid>,<pid>,...` — only the candidates,
+    // not every process on the box. Records: p<pid>, f<fd>, n<path>.
+    let pid_arg = candidate_pids
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
     let output = match Command::new("lsof")
-        .args(["-F", "pcfn", "+c", "0"])
+        .args(["-F", "pfn", "+c", "0", "-p", &pid_arg])
         .output()
     {
         Ok(o) => o,
@@ -124,8 +157,6 @@ fn scan_processes() -> Vec<ProcessSnapshot> {
         if let Some(rest) = line.strip_prefix('p') {
             cur_pid = rest.parse().ok();
             cur_fd.clear();
-        } else if line.starts_with('c') {
-            // command — not needed by this module
         } else if let Some(rest) = line.strip_prefix('f') {
             cur_fd = rest.to_string();
         } else if let Some(rest) = line.strip_prefix('n') {
@@ -144,8 +175,9 @@ fn scan_processes() -> Vec<ProcessSnapshot> {
                 }
                 "txt" => entry.txt_paths.push(path),
                 _ => {
-                    // Keep only fds under some ".claude" directory — we don't
-                    // need every open fd in the system in our cache.
+                    // Keep only fds under some ".claude" directory — these
+                    // are the per-worktree settings.json / .claude/ dir
+                    // that Claude Code holds open while running.
                     if path.to_string_lossy().contains("/.claude") {
                         let canon = path.canonicalize().unwrap_or(path);
                         entry.claude_fd_paths.push(canon);
@@ -172,6 +204,20 @@ fn scan_processes() -> Vec<ProcessSnapshot> {
             Err(_) => continue,
         };
         let proc_path = entry.path();
+
+        // 1st-stage filter: kernel-recorded comm. Cheap read on every
+        // process; skips the expensive fd directory walk for non-claude
+        // processes (the box typically has hundreds of those).
+        // /proc/<pid>/comm is truncated to 15 chars but "claude" / "Claude"
+        // both fit comfortably.
+        let comm = match std::fs::read_to_string(proc_path.join("comm")) {
+            Ok(s) => s.trim().to_string(),
+            Err(_) => continue,
+        };
+        if comm != "claude" && comm != "Claude" {
+            continue;
+        }
+
         let cwd = std::fs::read_link(proc_path.join("cwd"))
             .ok()
             .map(|p| p.canonicalize().unwrap_or(p));
@@ -192,9 +238,6 @@ fn scan_processes() -> Vec<ProcessSnapshot> {
                     }
                 }
             }
-        }
-        if cwd.is_none() && txt_paths.is_empty() && claude_fd_paths.is_empty() {
-            continue;
         }
         out.push(ProcessSnapshot {
             pid,
