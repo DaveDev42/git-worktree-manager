@@ -137,11 +137,21 @@ fn test_show_stats_commit_statistics() {
 fn test_show_stats_status_distribution() {
     let repo = TestRepo::new();
 
-    // Create clean worktree
-    repo.create_worktree("clean-branch");
+    // Create clean worktree. Add a commit so its tip diverges from main —
+    // without this, `git branch --merged main` lists clean-branch (it shares
+    // main's tip commit) and `gw stats` reports it as "merged", which would
+    // defeat the test's intent of exercising the "clean" status path.
+    let clean_wt = repo.create_worktree("clean-branch");
+    std::fs::write(clean_wt.join("ahead.txt"), "ahead of main").unwrap();
+    TestRepo::git_at(&clean_wt, &["add", "ahead.txt"]);
+    TestRepo::git_at(&clean_wt, &["commit", "-m", "ahead of main"]);
 
-    // Create modified worktree
+    // Create modified worktree (also needs to diverge before being dirtied so
+    // it isn't reported as merged either).
     let modified_wt = repo.create_worktree("modified-branch");
+    std::fs::write(modified_wt.join("ahead.txt"), "ahead of main").unwrap();
+    TestRepo::git_at(&modified_wt, &["add", "ahead.txt"]);
+    TestRepo::git_at(&modified_wt, &["commit", "-m", "ahead of main"]);
     std::fs::write(modified_wt.join("test.txt"), "modified").unwrap();
 
     let stdout = repo.cw_stdout(&["stats"]);

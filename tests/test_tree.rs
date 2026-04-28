@@ -112,6 +112,14 @@ fn test_show_tree_modified_worktree() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("feature-branch");
 
+    // Add a commit so feature-branch's tip diverges from main. Without this,
+    // `git branch --merged main` lists feature-branch and `gw tree` reports
+    // it as "merged", which beats "modified" in the status priority and
+    // defeats the test's intent.
+    std::fs::write(wt.join("ahead.txt"), "ahead of main").unwrap();
+    TestRepo::git_at(&wt, &["add", "ahead.txt"]);
+    TestRepo::git_at(&wt, &["commit", "-m", "ahead of main"]);
+
     // Modify a file in the worktree (without committing)
     std::fs::write(wt.join("test.txt"), "modified content").unwrap();
 

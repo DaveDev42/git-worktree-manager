@@ -1,6 +1,7 @@
 /// Batch cleanup of worktrees.
 ///
 use console::style;
+use std::path::Path;
 
 use crate::constants::{format_config_key, path_age_days, CONFIG_KEY_BASE_BRANCH};
 use crate::error::Result;
@@ -8,7 +9,47 @@ use crate::git;
 use crate::messages;
 
 use super::display::get_worktree_status;
-use super::pr_cache::PrCache;
+use super::pr_cache::{PrCache, PrState};
+
+/// Determine whether `branch` is merged, using the same two-step logic as
+/// `gw list`:
+///   1. PrCache (primary) — squash-merge aware, checks GitHub PR state.
+///   2. `git branch --merged` (fallback) — only catches traditional merge
+///      commits, but still useful when `gh` is not available.
+///
+/// Returns `Some(base_branch_name)` if merged, `None` otherwise. Returning
+/// the resolved base lets the caller render an accurate "merged into <base>"
+/// reason without re-deriving the base separately (which would risk silent
+/// drift if the resolution logic ever changed in only one place).
+///
+/// The base branch is read from `branch.<name>.worktreeBase` git config; if
+/// absent, `git::detect_default_branch` is used as the fallback.  The old
+/// code silently skipped the merged check when the config key was missing,
+/// which caused `gw clean --merged` to miss every squash-merged branch (the
+/// live bug: `gw list` showed "merged" while `gw clean --merged` said "No
+/// worktrees match").
+pub(super) fn branch_is_merged(
+    branch_name: &str,
+    repo: &Path,
+    pr_cache: &PrCache,
+) -> Option<String> {
+    // Determine base branch: git config first, repo default second.
+    let base_key = format_config_key(CONFIG_KEY_BASE_BRANCH, branch_name);
+    let base_branch = git::get_config(&base_key, Some(repo))
+        .unwrap_or_else(|| git::detect_default_branch(Some(repo)));
+
+    // Primary: cached GitHub PR state (squash-merge aware).
+    if matches!(pr_cache.state(branch_name), Some(PrState::Merged)) {
+        return Some(base_branch);
+    }
+
+    // Fallback: git branch --merged (traditional merge commits only).
+    if git::is_branch_merged(branch_name, &base_branch, Some(repo)) {
+        return Some(base_branch);
+    }
+
+    None
+}
 
 /// Batch cleanup of worktrees based on criteria.
 pub fn clean_worktrees(
@@ -30,32 +71,22 @@ pub fn clean_worktrees(
         return Ok(());
     }
 
+    // Load the PR cache once at the top so the merged-check and the interactive
+    // listing both share the same instance (no double fetch).
+    let pr_cache = PrCache::load_or_fetch(&repo, no_cache);
+
     let mut to_delete: Vec<(String, String, String)> = Vec::new(); // (branch, path, reason)
 
     for (branch_name, path) in git::get_feature_worktrees(Some(&repo))? {
         let mut should_delete = false;
         let mut reasons = Vec::new();
 
-        // Check if merged
+        // Check if merged — mirrors `gw list`'s merge-detection strategy:
+        // PrCache first (squash-merge aware), git fallback second.
         if merged {
-            let base_key = format_config_key(CONFIG_KEY_BASE_BRANCH, &branch_name);
-            if let Some(base_branch) = git::get_config(&base_key, Some(&repo)) {
-                if let Ok(r) = git::git_command(
-                    &[
-                        "branch",
-                        "--merged",
-                        &base_branch,
-                        "--format=%(refname:short)",
-                    ],
-                    Some(&repo),
-                    false,
-                    true,
-                ) {
-                    if r.returncode == 0 && r.stdout.lines().any(|l| l.trim() == branch_name) {
-                        should_delete = true;
-                        reasons.push(format!("merged into {}", base_branch));
-                    }
-                }
+            if let Some(base_branch) = branch_is_merged(&branch_name, &repo, &pr_cache) {
+                should_delete = true;
+                reasons.push(format!("merged into {}", base_branch));
             }
         }
 
@@ -83,7 +114,7 @@ pub fn clean_worktrees(
     if interactive && to_delete.is_empty() {
         println!("{}\n", style("Available worktrees:").cyan().bold());
         let mut all_wt = Vec::new();
-        let pr_cache = PrCache::load_or_fetch(&repo, no_cache);
+        // Reuse the already-loaded pr_cache instance (no second fetch).
         for (branch_name, path) in git::get_feature_worktrees(Some(&repo))? {
             let status = get_worktree_status(&path, &repo, Some(branch_name.as_str()), &pr_cache);
             println!("  [{:8}] {:<30} {}", status, branch_name, path.display());
@@ -223,4 +254,194 @@ pub fn clean_worktrees(
     println!("{}\n", style("* Prune complete").dim());
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // The env-var lock and guard are defined in `super::super::test_env` so
+    // this module and `pr_cache` share a single mutex. Without sharing, each
+    // module's tests would hold a different lock and race on the same global
+    // env vars (`GW_TEST_GH_JSON`, `GW_TEST_GH_FAIL`, `GW_TEST_CACHE_DIR`).
+    use super::super::test_env::{env_lock, EnvGuard};
+
+    fn init_git_repo(path: &std::path::Path) {
+        for args in &[
+            vec!["init", "-b", "main"],
+            vec!["config", "user.name", "Test"],
+            vec!["config", "user.email", "test@test.com"],
+            vec!["config", "commit.gpgsign", "false"],
+        ] {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(path)
+                .output()
+                .unwrap();
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Case A: squash-merged branch detected via PrCache, worktreeBase MISSING.
+    //
+    // This is the live bug: `gw list` shows "merged", but the old
+    // `gw clean --merged` skipped the check entirely when worktreeBase
+    // was absent from git config.
+    // ──────────────────────────────────────────────────────────────────────
+    #[test]
+    fn case_a_squash_merged_pr_cache_no_worktree_base() {
+        let _g = env_lock();
+        let _env = EnvGuard::capture(&["GW_TEST_GH_JSON", "GW_TEST_GH_FAIL", "GW_TEST_CACHE_DIR"]);
+
+        // Inject a MERGED PR into the PrCache via the test env hook.
+        std::env::set_var(
+            "GW_TEST_GH_JSON",
+            r#"[{"headRefName":"fix-squash-branch","state":"MERGED"}]"#,
+        );
+        let tmp_repo =
+            std::path::PathBuf::from(format!("/tmp/gw-test-unit-a-{}", std::process::id()));
+        let cache = PrCache::load_or_fetch(&tmp_repo, true);
+
+        // Sanity: ensure the cache has the MERGED state before calling the predicate.
+        assert_eq!(
+            cache.state("fix-squash-branch"),
+            Some(&super::super::pr_cache::PrState::Merged),
+            "PrCache must report Merged for the test to be meaningful"
+        );
+
+        // Use a real tempdir as "repo" — worktreeBase is intentionally absent.
+        let repo_dir = tempfile::tempdir().unwrap();
+        let repo = repo_dir.path();
+        init_git_repo(repo);
+
+        let result = branch_is_merged("fix-squash-branch", repo, &cache);
+        assert!(
+            result.is_some(),
+            "branch_is_merged must return Some(base) when PrCache reports MERGED, \
+             even without a worktreeBase git config entry (the live bug)"
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Case C: branch with no PR, not reachable from base, no worktreeBase.
+    //         Predicate must return None (no false-positive).
+    // ──────────────────────────────────────────────────────────────────────
+    #[test]
+    fn case_c_no_pr_not_merged_no_worktree_base() {
+        let _g = env_lock();
+        let _env = EnvGuard::capture(&["GW_TEST_GH_JSON", "GW_TEST_GH_FAIL", "GW_TEST_CACHE_DIR"]);
+
+        // Empty cache — no PRs at all.
+        std::env::set_var("GW_TEST_GH_FAIL", "1");
+        let tmp_repo =
+            std::path::PathBuf::from(format!("/tmp/gw-test-unit-c-{}", std::process::id()));
+        let cache = PrCache::load_or_fetch(&tmp_repo, true);
+
+        let repo_dir = tempfile::tempdir().unwrap();
+        let repo = repo_dir.path();
+        init_git_repo(repo);
+
+        // Initial commit on main
+        std::fs::write(repo.join("README.md"), "hi").unwrap();
+        for args in &[vec!["add", "."], vec!["commit", "-m", "init"]] {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(repo)
+                .env("GIT_AUTHOR_NAME", "Test")
+                .env("GIT_AUTHOR_EMAIL", "test@test.com")
+                .env("GIT_COMMITTER_NAME", "Test")
+                .env("GIT_COMMITTER_EMAIL", "test@test.com")
+                .output()
+                .unwrap();
+        }
+        // Unmerged feature branch
+        std::process::Command::new("git")
+            .args(["checkout", "-b", "feat-unmerged"])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        std::fs::write(repo.join("feat.txt"), "work").unwrap();
+        for args in &[vec!["add", "."], vec!["commit", "-m", "feat work"]] {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(repo)
+                .env("GIT_AUTHOR_NAME", "Test")
+                .env("GIT_AUTHOR_EMAIL", "test@test.com")
+                .env("GIT_COMMITTER_NAME", "Test")
+                .env("GIT_COMMITTER_EMAIL", "test@test.com")
+                .output()
+                .unwrap();
+        }
+
+        let result = branch_is_merged("feat-unmerged", repo, &cache);
+        assert!(
+            result.is_none(),
+            "branch_is_merged must return None for an unmerged branch with no PR \
+             and no worktreeBase config"
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // The reason string returned to the user must agree with the resolved
+    // base branch — i.e., the helper returns the SAME base it used for the
+    // git fallback. Pins single-source-of-truth so the "merged into <base>"
+    // reason cannot silently disagree with the predicate's actual base.
+    // ──────────────────────────────────────────────────────────────────────
+    #[test]
+    fn reason_base_matches_resolved_worktree_base_config() {
+        let _g = env_lock();
+        let _env = EnvGuard::capture(&["GW_TEST_GH_JSON", "GW_TEST_GH_FAIL", "GW_TEST_CACHE_DIR"]);
+
+        std::env::set_var(
+            "GW_TEST_GH_JSON",
+            r#"[{"headRefName":"some-feature","state":"MERGED"}]"#,
+        );
+        let tmp_repo =
+            std::path::PathBuf::from(format!("/tmp/gw-test-unit-reason-{}", std::process::id()));
+        let cache = PrCache::load_or_fetch(&tmp_repo, true);
+
+        let repo_dir = tempfile::tempdir().unwrap();
+        let repo = repo_dir.path();
+        init_git_repo(repo);
+
+        // Set worktreeBase to a non-default value so we can tell the helper
+        // honored it (instead of silently falling back to detect_default_branch).
+        std::process::Command::new("git")
+            .args(["config", "branch.some-feature.worktreeBase", "develop"])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+
+        let result = branch_is_merged("some-feature", repo, &cache);
+        assert_eq!(
+            result.as_deref(),
+            Some("develop"),
+            "branch_is_merged must return the worktreeBase config value as the \
+             resolved base, so the user-facing 'merged into <base>' reason \
+             cannot drift from what the predicate actually checked"
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // PrCache OPEN must not mark a branch merged.
+    // ──────────────────────────────────────────────────────────────────────
+    #[test]
+    fn pr_open_is_not_merged() {
+        let _g = env_lock();
+        let _env = EnvGuard::capture(&["GW_TEST_GH_JSON", "GW_TEST_GH_FAIL", "GW_TEST_CACHE_DIR"]);
+
+        std::env::set_var(
+            "GW_TEST_GH_JSON",
+            r#"[{"headRefName":"feat-open","state":"OPEN"}]"#,
+        );
+        let tmp_repo =
+            std::path::PathBuf::from(format!("/tmp/gw-test-unit-open-{}", std::process::id()));
+        let cache = PrCache::load_or_fetch(&tmp_repo, true);
+
+        let repo_dir = tempfile::tempdir().unwrap();
+        let repo = repo_dir.path();
+        init_git_repo(repo);
+
+        let result = branch_is_merged("feat-open", repo, &cache);
+        assert!(result.is_none(), "An OPEN PR must not be considered merged");
+    }
 }

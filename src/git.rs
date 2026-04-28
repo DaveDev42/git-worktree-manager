@@ -576,13 +576,24 @@ pub fn remove_worktree_safe(worktree_path: &Path, repo: &Path, force: bool) -> R
 ///
 /// Uses `git branch --merged <base>` and checks if the feature branch is in the list.
 pub fn is_branch_merged(feature_branch: &str, base_branch: &str, repo: Option<&Path>) -> bool {
+    /// Strip the status prefix that `git branch` prepends to each line:
+    ///   `* ` — current branch in this checkout
+    ///   `+ ` — branch checked out in a linked worktree
+    ///   `  ` — ordinary branch (two leading spaces)
+    fn strip_branch_prefix(line: &str) -> &str {
+        let trimmed = line.trim();
+        trimmed
+            .strip_prefix("* ")
+            .or_else(|| trimmed.strip_prefix("+ "))
+            .unwrap_or(trimmed)
+    }
+
     // First try against remote base
     let remote_base = format!("origin/{}", base_branch);
     if let Ok(r) = git_command(&["branch", "--merged", &remote_base], repo, false, true) {
         if r.returncode == 0 {
             for line in r.stdout.lines() {
-                let name = line.trim().trim_start_matches("* ");
-                if name == feature_branch {
+                if strip_branch_prefix(line) == feature_branch {
                     return true;
                 }
             }
@@ -593,8 +604,7 @@ pub fn is_branch_merged(feature_branch: &str, base_branch: &str, repo: Option<&P
     if let Ok(r) = git_command(&["branch", "--merged", base_branch], repo, false, true) {
         if r.returncode == 0 {
             for line in r.stdout.lines() {
-                let name = line.trim().trim_start_matches("* ");
-                if name == feature_branch {
+                if strip_branch_prefix(line) == feature_branch {
                     return true;
                 }
             }

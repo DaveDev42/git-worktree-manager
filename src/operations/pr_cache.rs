@@ -369,18 +369,15 @@ fn write_to_disk(repo: &Path, prs: &HashMap<String, PrState>) {
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    use std::sync::{Mutex, MutexGuard};
 
-    // Tests mutate process-global env vars; the mutex serializes them to avoid
-    // races. Production code does not consult these vars (see #[cfg(test)]
-    // gates above).
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    /// Serializes env-var mutations across tests. Tests pair this with EnvGuard
-    /// for panic-safe restoration.
-    fn env_lock() -> MutexGuard<'static, ()> {
-        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
-    }
+    // The env-var lock and guard are defined in `super::super::test_env` so
+    // this module and `clean` share a single mutex. Without sharing, each
+    // module's tests would hold a different lock and race on the same global
+    // env vars — which surfaced as a flaky CI failure of
+    // `fetch_parses_gh_json_from_env` and
+    // `load_or_fetch_bypasses_disk_when_no_cache_true` once `clean::tests`
+    // started using the same env vars.
+    use super::super::test_env::{env_lock, EnvGuard};
 
     /// Sanity-check that now_secs() works on a normal system.
     // Note: the `None` branch (broken clock) is not exercised by tests; it requires
@@ -439,31 +436,6 @@ mod tests {
     }
 
     use tempfile::tempdir;
-
-    // #16: generic env-var save/restore guard. Captures the current values of
-    // the given keys and restores them on drop — panic-safe. Handles
-    // GW_TEST_CACHE_DIR, GW_TEST_GH_FAIL, GW_TEST_GH_JSON and any future vars.
-    struct EnvGuard {
-        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
-    }
-
-    impl EnvGuard {
-        fn capture(keys: &[&'static str]) -> Self {
-            let saved = keys.iter().map(|k| (*k, std::env::var_os(k))).collect();
-            Self { saved }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            for (k, v) in self.saved.drain(..) {
-                match v {
-                    Some(val) => std::env::set_var(k, val),
-                    None => std::env::remove_var(k),
-                }
-            }
-        }
-    }
 
     /// Set `GW_TEST_CACHE_DIR` for the duration of `f`. Restores the previous
     /// value (or removes the var) via an `EnvGuard`, so the env is cleaned up

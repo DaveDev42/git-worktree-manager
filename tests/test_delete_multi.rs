@@ -66,8 +66,14 @@ fn test_delete_multiple_mixed_valid_and_missing() {
 #[test]
 fn test_delete_dry_run_does_not_delete() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "p", "--no-term"]));
-    assert!(repo.cw_ok(&["new", "q", "--no-term"]));
+    let p_path = repo.create_worktree("p");
+    let q_path = repo.create_worktree("q");
+
+    // Add unique commits so the branches diverge from main and won't be
+    // counted as "merged" by git branch --merged (a branch at the same SHA
+    // as main is trivially merged).
+    TestRepo::commit_file_at(&p_path, "p.txt", "p work", "feat: p work");
+    TestRepo::commit_file_at(&q_path, "q.txt", "q work", "feat: q work");
 
     let out = repo.cw(&["delete", "p", "q", "--dry-run"]);
     assert!(out.status.success());

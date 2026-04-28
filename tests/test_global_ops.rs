@@ -94,6 +94,14 @@ fn test_global_list_shows_status() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("status-check");
 
+    // Add a commit so status-check's tip diverges from main. Without this,
+    // a freshly-created branch shares main's tip and gets reported as
+    // "merged" by `git branch --merged main` — which is the only status
+    // not in the assertion's allowlist below.
+    std::fs::write(wt.join("ahead.txt"), "ahead of main").unwrap();
+    TestRepo::git_at(&wt, &["add", "ahead.txt"]);
+    TestRepo::git_at(&wt, &["commit", "-m", "ahead of main"]);
+
     // Make the worktree dirty
     std::fs::write(wt.join("dirty.txt"), "uncommitted change").unwrap();
 
@@ -260,7 +268,15 @@ fn test_global_list_returns_zero() {
 fn test_global_list_clean_worktree() {
     // A worktree with no changes should show "clean"
     let repo = TestRepo::new();
-    let _wt = repo.create_worktree("clean-wt");
+    let wt = repo.create_worktree("clean-wt");
+
+    // Add a commit so clean-wt's tip diverges from main. Without this, a
+    // freshly-created branch shares main's tip and is reported as
+    // "merged" by `git branch --merged main`, which beats "clean" in the
+    // status priority and would defeat the test's intent.
+    std::fs::write(wt.join("ahead.txt"), "ahead of main").unwrap();
+    TestRepo::git_at(&wt, &["add", "ahead.txt"]);
+    TestRepo::git_at(&wt, &["commit", "-m", "ahead of main"]);
 
     let output = repo.cw(&["-g", "list"]);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -278,9 +294,18 @@ fn test_global_list_modified_worktree() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("mod-wt");
 
-    // Create an untracked file to dirty the worktree
+    // Add a real commit on mod-wt so its tip diverges from main. Without
+    // this, `git branch --merged main` lists mod-wt (it shares main's tip
+    // commit) and `gw -g list` reports the worktree as "merged" — which
+    // beats "modified" in the status priority. The test wants to exercise
+    // the dirty-tree path, so we make mod-wt unambiguously not-merged
+    // first.
+    std::fs::write(wt.join("committed.txt"), "ahead of main").unwrap();
+    TestRepo::git_at(&wt, &["add", "committed.txt"]);
+    TestRepo::git_at(&wt, &["commit", "-m", "ahead of main"]);
+
+    // Now stage an uncommitted change to dirty the worktree.
     std::fs::write(wt.join("newfile.txt"), "new content").unwrap();
-    // Stage it to make it a real modification
     TestRepo::git_at(&wt, &["add", "newfile.txt"]);
 
     let output = repo.cw(&["-g", "list"]);
