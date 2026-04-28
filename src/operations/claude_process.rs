@@ -83,7 +83,7 @@ fn snapshot() -> &'static [ProcessSnapshot] {
 /// two `lsof` calls overlap. Subsequent `has_live_claude_in` calls then
 /// hit the cache. Safe to call from multiple threads — `OnceLock` ensures
 /// the scan runs at most once.
-pub fn prewarm() {
+pub(crate) fn prewarm() {
     let _ = snapshot();
 }
 

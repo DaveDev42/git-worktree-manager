@@ -248,7 +248,7 @@ fn cwd_scan() -> &'static [(u32, String, PathBuf)] {
 /// system-wide `lsof` runs concurrently with `claude_process::prewarm`.
 /// Safe to call from multiple threads — `OnceLock` ensures the scan runs
 /// at most once.
-pub fn prewarm_cwd_scan() {
+pub(crate) fn prewarm_cwd_scan() {
     let _ = cwd_scan();
 }
 
@@ -487,7 +487,26 @@ pub fn detect_busy_lockfile_only(worktree: &Path) -> Vec<BusyInfo> {
 }
 
 /// Threshold for considering a Claude jsonl event "active." Spec value.
-pub const CLAUDE_ACTIVITY_THRESHOLD_MIN: i64 = 10;
+const CLAUDE_ACTIVITY_THRESHOLD_MIN: i64 = 10;
+
+/// The two-stage "Claude is here" gate. Returns the list of active
+/// sessions iff (a) the jsonl tail has an event within the threshold AND
+/// (b) a live `claude` process is occupying `worktree` (cwd or `.claude`
+/// fd). Returns `None` when either gate fails or no project dir is found.
+///
+/// This is the single source of truth for the gate — `detect_busy_tiered`
+/// uses it for the full hard/soft dispatch in `gw delete`, and
+/// `display::get_worktree_status` uses it as the "busy" check for read-
+/// only surfaces (`gw status` / `gw list`).
+pub fn active_claude_sessions(worktree: &Path) -> Option<Vec<claude_session::ActiveSession>> {
+    let proj_dir = claude_session::project_dir_for(worktree)?;
+    let threshold = ChronoDuration::minutes(CLAUDE_ACTIVITY_THRESHOLD_MIN);
+    let sessions = claude_session::find_active_sessions(&proj_dir, worktree, threshold);
+    if sessions.is_empty() || !claude_process::has_live_claude_in(worktree) {
+        return None;
+    }
+    Some(sessions)
+}
 
 /// Tiered busy detection: returns `(hard, soft)` separately so the caller
 /// can render distinct refusal messages.
@@ -523,32 +542,23 @@ pub fn detect_busy_tiered(worktree: &Path) -> (Vec<BusyInfo>, Vec<BusyInfo>) {
         }
     }
 
-    // Hard: active Claude sessions.
-    //
-    // Two-stage gate: a session is "active" iff its jsonl tail has an event
-    // within the threshold AND a live `claude` process is currently
-    // occupying this worktree. The second check rejects stale jsonls left
-    // behind when the user exited Claude cleanly within the last
-    // CLAUDE_ACTIVITY_THRESHOLD_MIN minutes — without it `gw delete`
-    // refuses for the full window even though no process is running.
-    if let Some(proj_dir) = claude_session::project_dir_for(worktree) {
-        let threshold = ChronoDuration::minutes(CLAUDE_ACTIVITY_THRESHOLD_MIN);
-        let sessions = claude_session::find_active_sessions(&proj_dir, worktree, threshold);
-        if !sessions.is_empty() && claude_process::has_live_claude_in(worktree) {
-            for s in sessions {
-                // session_id is a UUID; surface as cmd "claude (session <id>)" with
-                // PID 0 as a sentinel meaning "not a process PID, informational entry".
-                let secs_ago = (chrono::Utc::now() - s.last_activity).num_seconds().max(0) as u64;
-                hard.push(BusyInfo {
-                    pid: 0,
-                    cmd: format!("claude (session {})", s.session_id),
-                    cwd: worktree.to_path_buf(),
-                    source: BusySource::ClaudeSession,
-                    tier: BusyTier::Hard,
-                    tty: None,
-                    started_secs_ago: Some(secs_ago),
-                });
-            }
+    // Hard: active Claude sessions. The two-stage gate (jsonl event AND
+    // live `claude` process) lives in `active_claude_sessions` so that
+    // read-only surfaces (`gw status` / `gw list`) share the same check.
+    if let Some(sessions) = active_claude_sessions(worktree) {
+        for s in sessions {
+            // session_id is a UUID; surface as cmd "claude (session <id>)" with
+            // PID 0 as a sentinel meaning "not a process PID, informational entry".
+            let secs_ago = (chrono::Utc::now() - s.last_activity).num_seconds().max(0) as u64;
+            hard.push(BusyInfo {
+                pid: 0,
+                cmd: format!("claude (session {})", s.session_id),
+                cwd: worktree.to_path_buf(),
+                source: BusySource::ClaudeSession,
+                tier: BusyTier::Hard,
+                tty: None,
+                started_secs_ago: Some(secs_ago),
+            });
         }
     }
 

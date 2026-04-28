@@ -1,5 +1,5 @@
 use git_worktree_manager::operations::busy::{BusyInfo, BusySource, BusyTier};
-use git_worktree_manager::operations::busy_messages::render_refusal;
+use git_worktree_manager::operations::busy_messages::{render_busy_block, render_refusal};
 use std::path::PathBuf;
 
 fn hard_claude(secs: u64) -> BusyInfo {
@@ -55,4 +55,47 @@ fn both_tiers_lead_with_hard_then_show_soft() {
     let hard_pos = s.find("Active Claude session").unwrap();
     let soft_pos = s.find("Additional processes").unwrap();
     assert!(hard_pos < soft_pos, "Hard section must precede Soft");
+}
+
+// Tests for `render_busy_block` — the read-only variant used by
+// `gw status` / `gw list`. Body sections (Active Claude session /
+// Lockfile holder / cwd processes) are shared with `render_refusal` via
+// `render_hard_section` / `render_soft_list`; only the header tone and
+// the absence of `--force` guidance differ.
+
+#[test]
+fn busy_block_empty_inputs_yields_empty_string() {
+    assert_eq!(render_busy_block("feature-x", &[], &[]), "");
+}
+
+#[test]
+fn busy_block_uses_neutral_header_and_no_force_hint() {
+    let s = render_busy_block("feature-x", &[hard_claude(120)], &[]);
+    assert!(
+        s.contains("Worktree 'feature-x' may be in use:"),
+        "expected read-only header, got: {}",
+        s
+    );
+    assert!(s.contains("Active Claude session"));
+    assert!(
+        !s.contains("--force"),
+        "busy block must not mention --force; that's delete-specific"
+    );
+    assert!(
+        !s.contains("Cannot delete"),
+        "busy block must not use the delete-specific tone"
+    );
+}
+
+#[test]
+fn busy_block_renders_both_sections_when_both_tiers_present() {
+    let s = render_busy_block(
+        "feature-x",
+        &[hard_claude(60)],
+        &[soft_proc(7, "cargo build", false, 30)],
+    );
+    let hard_pos = s.find("Active Claude session").unwrap();
+    let soft_pos = s.find("Processes with cwd in this worktree").unwrap();
+    assert!(hard_pos < soft_pos, "Hard section must precede Soft");
+    assert!(!s.contains("--force"));
 }

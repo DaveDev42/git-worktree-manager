@@ -65,20 +65,12 @@ pub fn get_worktree_status(
         return "busy".to_string();
     }
 
-    // Also flag worktrees occupied by an active Claude Code session. Same
-    // two-stage gate as `detect_busy_tiered`: jsonl event within the
-    // 10-minute threshold AND a live `claude` process holding the
-    // worktree. The process scan is OnceLock-cached, so the cost is one
-    // narrow `lsof` per `gw` invocation regardless of how many worktrees
-    // we check.
-    if let Some(proj_dir) = crate::operations::claude_session::project_dir_for(path) {
-        let threshold =
-            chrono::Duration::minutes(crate::operations::busy::CLAUDE_ACTIVITY_THRESHOLD_MIN);
-        let sessions =
-            crate::operations::claude_session::find_active_sessions(&proj_dir, path, threshold);
-        if !sessions.is_empty() && crate::operations::claude_process::has_live_claude_in(path) {
-            return "busy".to_string();
-        }
+    // Also flag worktrees occupied by an active Claude Code session.
+    // Shares the two-stage gate (jsonl event + live `claude` process) with
+    // `detect_busy_tiered` via `busy::active_claude_sessions` so the two
+    // surfaces cannot drift. The process scan is OnceLock-cached.
+    if crate::operations::busy::active_claude_sessions(path).is_some() {
+        return "busy".to_string();
     }
 
     // Check if cwd is inside this worktree. Canonicalize both sides so that
@@ -191,6 +183,25 @@ impl RowInput {
     }
 }
 
+/// Prewarm the two `lsof`-backed caches (`busy::cwd_scan`,
+/// `claude_process::snapshot`) on detached background threads so they run
+/// concurrently with each other and with the foreground status loop.
+/// Later callers (`get_worktree_status`, `print_busy_details`) hit the
+/// cache instead of paying the lsof round-trip serially.
+///
+/// Detached threads: the join handles are dropped immediately. Both
+/// workers only mutate process-static `OnceLock`s, so a slow/stuck
+/// thread does not block process exit any more than a slow lsof already
+/// would; the foreground caller will race against them via
+/// `OnceLock::get_or_init`. We don't `join` here because the prewarm is
+/// best-effort — if it's still running when a caller hits the cache,
+/// `get_or_init` blocks once and continues. If the thread completes
+/// first, callers find the cache already populated.
+fn prewarm_busy_caches() {
+    std::thread::spawn(crate::operations::busy::prewarm_cwd_scan);
+    std::thread::spawn(crate::operations::claude_process::prewarm);
+}
+
 /// List all worktrees for the current repository.
 pub fn list_worktrees(no_cache: bool) -> Result<()> {
     let repo = git::get_repo_root(None)?;
@@ -230,22 +241,7 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Prewarm the two `lsof`-backed caches on background threads so they
-    // run concurrently with each other and with the status computations
-    // below. Both are `OnceLock`-backed; later callers (`get_worktree_status`,
-    // `print_busy_details`) hit the cache instead of paying the lsof
-    // round-trip serially.
-    //
-    // Detached threads: the join handles are dropped immediately. Both
-    // workers only mutate process-static `OnceLock`s, so a slow/stuck
-    // thread does not block process exit any more than a slow lsof
-    // already would; the foreground caller will race against them via
-    // `OnceLock::get_or_init`. We don't `join` here because the prewarm
-    // is best-effort — if it's still running when a caller hits the
-    // cache, `get_or_init` blocks once and continues. If the thread
-    // completes first, callers find the cache already populated.
-    std::thread::spawn(crate::operations::busy::prewarm_cwd_scan);
-    std::thread::spawn(crate::operations::claude_process::prewarm);
+    prewarm_busy_caches();
 
     let is_tty = crate::tui::stdout_is_tty();
     // #18/#33/#35: cache terminal_width() once — used in both the progressive/static
@@ -717,6 +713,7 @@ pub fn show_status(no_cache: bool) -> Result<()> {
 
 /// Display worktree hierarchy in a visual tree format.
 pub fn show_tree(no_cache: bool) -> Result<()> {
+    prewarm_busy_caches();
     let repo = git::get_repo_root(None)?;
     let cwd = std::env::current_dir().unwrap_or_default();
 
@@ -823,6 +820,7 @@ pub fn show_tree(no_cache: bool) -> Result<()> {
 
 /// Display usage analytics for worktrees.
 pub fn show_stats(no_cache: bool) -> Result<()> {
+    prewarm_busy_caches();
     let repo = git::get_repo_root(None)?;
     let feature_worktrees = git::get_feature_worktrees(Some(&repo))?;
 
