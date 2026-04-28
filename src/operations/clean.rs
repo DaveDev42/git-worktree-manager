@@ -17,16 +17,22 @@ use super::pr_cache::{PrCache, PrState};
 ///   2. `git branch --merged` (fallback) — only catches traditional merge
 ///      commits, but still useful when `gh` is not available.
 ///
+/// Returns `Some(base_branch_name)` if merged, `None` otherwise. Returning
+/// the resolved base lets the caller render an accurate "merged into <base>"
+/// reason without re-deriving the base separately (which would risk silent
+/// drift if the resolution logic ever changed in only one place).
+///
 /// The base branch is read from `branch.<name>.worktreeBase` git config; if
 /// absent, `git::detect_default_branch` is used as the fallback.  The old
 /// code silently skipped the merged check when the config key was missing,
 /// which caused `gw clean --merged` to miss every squash-merged branch (the
 /// live bug: `gw list` showed "merged" while `gw clean --merged` said "No
 /// worktrees match").
-///
-/// Visibility is `pub(crate)` — the helper is tested via unit tests in this
-/// module (`#[cfg(test)] mod tests`), not from external integration tests.
-pub(crate) fn branch_is_merged(branch_name: &str, repo: &Path, pr_cache: &PrCache) -> bool {
+pub(super) fn branch_is_merged(
+    branch_name: &str,
+    repo: &Path,
+    pr_cache: &PrCache,
+) -> Option<String> {
     // Determine base branch: git config first, repo default second.
     let base_key = format_config_key(CONFIG_KEY_BASE_BRANCH, branch_name);
     let base_branch = git::get_config(&base_key, Some(repo))
@@ -34,11 +40,15 @@ pub(crate) fn branch_is_merged(branch_name: &str, repo: &Path, pr_cache: &PrCach
 
     // Primary: cached GitHub PR state (squash-merge aware).
     if matches!(pr_cache.state(branch_name), Some(PrState::Merged)) {
-        return true;
+        return Some(base_branch);
     }
 
     // Fallback: git branch --merged (traditional merge commits only).
-    git::is_branch_merged(branch_name, &base_branch, Some(repo))
+    if git::is_branch_merged(branch_name, &base_branch, Some(repo)) {
+        return Some(base_branch);
+    }
+
+    None
 }
 
 /// Batch cleanup of worktrees based on criteria.
@@ -74,11 +84,7 @@ pub fn clean_worktrees(
         // Check if merged — mirrors `gw list`'s merge-detection strategy:
         // PrCache first (squash-merge aware), git fallback second.
         if merged {
-            let base_key = format_config_key(CONFIG_KEY_BASE_BRANCH, &branch_name);
-            let base_branch = git::get_config(&base_key, Some(&repo))
-                .unwrap_or_else(|| git::detect_default_branch(Some(&repo)));
-
-            if branch_is_merged(&branch_name, &repo, &pr_cache) {
+            if let Some(base_branch) = branch_is_merged(&branch_name, &repo, &pr_cache) {
                 should_delete = true;
                 reasons.push(format!("merged into {}", base_branch));
             }
@@ -335,15 +341,15 @@ mod tests {
 
         let result = branch_is_merged("fix-squash-branch", repo, &cache);
         assert!(
-            result,
-            "branch_is_merged must return true when PrCache reports MERGED, \
+            result.is_some(),
+            "branch_is_merged must return Some(base) when PrCache reports MERGED, \
              even without a worktreeBase git config entry (the live bug)"
         );
     }
 
     // ──────────────────────────────────────────────────────────────────────
     // Case C: branch with no PR, not reachable from base, no worktreeBase.
-    //         Predicate must return false (no false-positive).
+    //         Predicate must return None (no false-positive).
     // ──────────────────────────────────────────────────────────────────────
     #[test]
     fn case_c_no_pr_not_merged_no_worktree_base() {
@@ -394,17 +400,20 @@ mod tests {
 
         let result = branch_is_merged("feat-unmerged", repo, &cache);
         assert!(
-            !result,
-            "branch_is_merged must return false for an unmerged branch with no PR \
+            result.is_none(),
+            "branch_is_merged must return None for an unmerged branch with no PR \
              and no worktreeBase config"
         );
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // Regression: PrCache MERGED always wins regardless of worktreeBase.
+    // The reason string returned to the user must agree with the resolved
+    // base branch — i.e., the helper returns the SAME base it used for the
+    // git fallback. Pins single-source-of-truth so the "merged into <base>"
+    // reason cannot silently disagree with the predicate's actual base.
     // ──────────────────────────────────────────────────────────────────────
     #[test]
-    fn regression_pr_cache_merged_wins_over_missing_worktree_base() {
+    fn reason_base_matches_resolved_worktree_base_config() {
         let _g = env_lock();
         let _env = EnvGuard::capture(&["GW_TEST_GH_JSON", "GW_TEST_GH_FAIL", "GW_TEST_CACHE_DIR"]);
 
@@ -413,19 +422,28 @@ mod tests {
             r#"[{"headRefName":"some-feature","state":"MERGED"}]"#,
         );
         let tmp_repo =
-            std::path::PathBuf::from(format!("/tmp/gw-test-unit-reg-{}", std::process::id()));
+            std::path::PathBuf::from(format!("/tmp/gw-test-unit-reason-{}", std::process::id()));
         let cache = PrCache::load_or_fetch(&tmp_repo, true);
 
         let repo_dir = tempfile::tempdir().unwrap();
         let repo = repo_dir.path();
         init_git_repo(repo);
 
-        // worktreeBase config is intentionally absent.
+        // Set worktreeBase to a non-default value so we can tell the helper
+        // honored it (instead of silently falling back to detect_default_branch).
+        std::process::Command::new("git")
+            .args(["config", "branch.some-feature.worktreeBase", "develop"])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+
         let result = branch_is_merged("some-feature", repo, &cache);
-        assert!(
-            result,
-            "PrCache MERGED state must cause branch_is_merged to return true \
-             regardless of whether worktreeBase config is present"
+        assert_eq!(
+            result.as_deref(),
+            Some("develop"),
+            "branch_is_merged must return the worktreeBase config value as the \
+             resolved base, so the user-facing 'merged into <base>' reason \
+             cannot drift from what the predicate actually checked"
         );
     }
 
@@ -450,6 +468,6 @@ mod tests {
         init_git_repo(repo);
 
         let result = branch_is_merged("feat-open", repo, &cache);
-        assert!(!result, "An OPEN PR must not be considered merged");
+        assert!(result.is_none(), "An OPEN PR must not be considered merged");
     }
 }
