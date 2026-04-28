@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
-use super::{claude_session, lockfile};
+use super::{claude_process, claude_session, lockfile};
 use chrono::Duration as ChronoDuration;
 
 /// Tier of a busy signal — controls refusal *strength* in `gw delete`.
@@ -485,7 +485,8 @@ const CLAUDE_ACTIVITY_THRESHOLD_MIN: i64 = 10;
 /// can render distinct refusal messages.
 ///
 /// Hard signals (refuse strongly, override = `--force`):
-///   * Active Claude Code session (jsonl event within threshold)
+///   * Active Claude Code session: jsonl event within threshold AND a live
+///     `claude` process is occupying the worktree (cwd or `.claude` fd).
 ///   * Explicit lockfile
 ///
 /// Soft signals (refuse with a warning, same `--force` override):
@@ -514,22 +515,32 @@ pub fn detect_busy_tiered(worktree: &Path) -> (Vec<BusyInfo>, Vec<BusyInfo>) {
         }
     }
 
-    // Hard: active Claude sessions
+    // Hard: active Claude sessions.
+    //
+    // Two-stage gate: a session is "active" iff its jsonl tail has an event
+    // within the threshold AND a live `claude` process is currently
+    // occupying this worktree. The second check rejects stale jsonls left
+    // behind when the user exited Claude cleanly within the last
+    // CLAUDE_ACTIVITY_THRESHOLD_MIN minutes — without it `gw delete`
+    // refuses for the full window even though no process is running.
     if let Some(proj_dir) = claude_session::project_dir_for(worktree) {
         let threshold = ChronoDuration::minutes(CLAUDE_ACTIVITY_THRESHOLD_MIN);
-        for s in claude_session::find_active_sessions(&proj_dir, worktree, threshold) {
-            // session_id is a UUID; surface as cmd "claude (session <id>)" with
-            // PID 0 as a sentinel meaning "not a process PID, informational entry".
-            let secs_ago = (chrono::Utc::now() - s.last_activity).num_seconds().max(0) as u64;
-            hard.push(BusyInfo {
-                pid: 0,
-                cmd: format!("claude (session {})", s.session_id),
-                cwd: worktree.to_path_buf(),
-                source: BusySource::ClaudeSession,
-                tier: BusyTier::Hard,
-                tty: None,
-                started_secs_ago: Some(secs_ago),
-            });
+        let sessions = claude_session::find_active_sessions(&proj_dir, worktree, threshold);
+        if !sessions.is_empty() && claude_process::has_live_claude_in(worktree) {
+            for s in sessions {
+                // session_id is a UUID; surface as cmd "claude (session <id>)" with
+                // PID 0 as a sentinel meaning "not a process PID, informational entry".
+                let secs_ago = (chrono::Utc::now() - s.last_activity).num_seconds().max(0) as u64;
+                hard.push(BusyInfo {
+                    pid: 0,
+                    cmd: format!("claude (session {})", s.session_id),
+                    cwd: worktree.to_path_buf(),
+                    source: BusySource::ClaudeSession,
+                    tier: BusyTier::Hard,
+                    tty: None,
+                    started_secs_ago: Some(secs_ago),
+                });
+            }
         }
     }
 
@@ -756,6 +767,59 @@ mod tests {
             "expected to find child pid={} with cwd in {:?}",
             child.id(),
             dir.path()
+        );
+    }
+
+    /// Regression: a stale jsonl with a recent timestamp but no live
+    /// `claude` process owning the worktree must NOT produce a Hard
+    /// ClaudeSession signal. This is the "user just exited Claude
+    /// cleanly, then ran cw delete" scenario from the bug report.
+    ///
+    /// We exercise it by pointing `$HOME` at a tempdir, planting a
+    /// realistic jsonl under `~/.claude/projects/<encoded>/`, and
+    /// confirming the test process (which does not look like a Claude
+    /// install via its txt mappings) does not satisfy the live-process
+    /// gate.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn detect_busy_tiered_no_hard_when_jsonl_active_but_no_live_claude() {
+        use crate::operations::test_env::{env_lock, EnvGuard};
+        let _lock = env_lock();
+        let _guard = EnvGuard::capture(&["HOME"]);
+
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", home.path());
+
+        let wt = tempfile::tempdir().unwrap();
+        let wt_canon = wt.path().canonicalize().unwrap_or(wt.path().to_path_buf());
+
+        // Encode the worktree path the way Claude Code does (see
+        // claude_session::encode_project_dir).
+        let encoded = wt_canon.to_string_lossy().replace(['/', '.'], "-");
+        let proj_dir = home.path().join(".claude").join("projects").join(encoded);
+        std::fs::create_dir_all(&proj_dir).unwrap();
+
+        // Plant a jsonl whose newest event is "now" — i.e. well within the
+        // 10-minute activity threshold — and whose `cwd` matches the
+        // worktree (otherwise find_active_sessions filters it out).
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let line = serde_json::json!({
+            "timestamp": now,
+            "cwd": wt_canon.to_string_lossy(),
+        });
+        std::fs::write(
+            proj_dir.join("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl"),
+            format!("{}\n", line),
+        )
+        .unwrap();
+
+        let (hard, _soft) = detect_busy_tiered(wt.path());
+        assert!(
+            !hard
+                .iter()
+                .any(|b| matches!(b.source, BusySource::ClaudeSession)),
+            "expected no Hard ClaudeSession when no live claude holds the worktree, got: {:?}",
+            hard
         );
     }
 }
