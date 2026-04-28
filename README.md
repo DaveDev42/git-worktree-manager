@@ -93,7 +93,7 @@ gw merge
 | `gw sync [branch]` | Rebase on base branch |
 | `gw change-base <new-base> [branch]` | Change base branch for worktree |
 | `gw clean` | Batch cleanup (`--merged`, `--older-than`) |
-| `gw backup create/list/restore` | Git bundle backup |
+| `gw backup create/list/restore` | Git bundle backup (`backup create --output <dir>` to override the default backups root) |
 | `gw stash save/list/apply` | Worktree-aware stash |
 | `gw hook add/remove/list/...` | Lifecycle hooks |
 | `gw config ...` | Configuration management |
@@ -115,7 +115,9 @@ gw new fix-auth --term tmux         # New tmux session
 gw new fix-auth --term iterm-tab    # New iTerm tab
 gw new fix-auth --term zellij       # New Zellij session
 gw new fix-auth --term wezterm-tab  # New WezTerm tab
-gw resume fix-auth --bg             # Background launch
+gw new fix-auth --bg                # Force background variant of the launcher
+gw resume fix-auth --bg             # Same modifier on resume
+gw resume fix-auth --fg             # Force foreground variant (inverse)
 ```
 
 | Launcher | Variants |
@@ -128,6 +130,30 @@ gw resume fix-auth --bg             # Background launch
 | **WezTerm** | `wezterm-window`, `wezterm-tab`, `wezterm-tab-bg`, `wezterm-pane-h`, `wezterm-pane-v` |
 
 Each launcher also has a short alias (e.g., `t` for tmux, `i-t` for iterm-tab).
+
+### `--bg` / `--fg` modifiers
+
+`gw new` and `gw resume` accept `--bg` and `--fg` as launcher modifiers that
+swap to a paired variant of the resolved `--term` (or configured default):
+
+| Base method   | `--bg` maps to    | `--fg` maps to |
+|---------------|-------------------|----------------|
+| `foreground`  | `detach`          | —              |
+| `detach`      | —                 | `foreground`   |
+| `wezterm-tab` | `wezterm-tab-bg`  | —              |
+| `wezterm-tab-bg` | —              | `wezterm-tab`  |
+
+Other launchers have no paired variant — `--bg`/`--fg` are silent no-ops in
+that case (the original launcher runs unchanged). `--bg` and `--fg` cannot be
+combined.
+
+```bash
+# Default config is wezterm-tab-bg → use --fg for a one-off foregrounded launch
+gw resume fix-auth --fg
+
+# Detach a foreground-default launch without editing config
+gw new exploratory-spike --bg
+```
 
 ## Claude Code Integration
 

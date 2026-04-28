@@ -186,12 +186,24 @@ fn test_backup_with_slash_in_branch() {
 #[test]
 fn test_backup_create_with_output_dir() {
     let repo = TestRepo::new();
-    repo.cw(&["new", "out-test", "--no-term"]);
+    // Uniquify the branch so parallel/repeat runs cannot collide on the
+    // shared user config directory (TestRepo does not isolate $HOME).
+    let branch = format!("out-test-{}", std::process::id());
+    repo.cw(&["new", &branch, "--no-term"]);
 
     let custom_dir = repo.path().join("custom-backups");
     let custom_str = custom_dir.to_string_lossy().to_string();
 
-    let output = repo.cw(&["backup", "create", "out-test", "--output", &custom_str]);
+    // Snapshot whether the branch dir already exists in the default backups
+    // dir (it shouldn't, given the uniquified name) so the post-condition
+    // asserts non-creation by *this* invocation rather than absolute absence.
+    let default_dir = git_worktree_manager::config::get_config_path()
+        .parent()
+        .expect("config path has parent")
+        .join("backups");
+    let default_existed_before = default_dir.join(&branch).exists();
+
+    let output = repo.cw(&["backup", "create", &branch, "--output", &custom_str]);
     assert!(
         output.status.success(),
         "backup create --output failed: {}",
@@ -199,18 +211,16 @@ fn test_backup_create_with_output_dir() {
     );
 
     assert!(
-        custom_dir.join("out-test").is_dir(),
+        custom_dir.join(&branch).is_dir(),
         "expected backup under custom output dir at {}",
         custom_dir.display()
     );
 
-    // Default backups dir should NOT contain this branch's backup.
-    let default_dir = git_worktree_manager::config::get_config_path()
-        .parent()
-        .expect("config path has parent")
-        .join("backups");
-    assert!(
-        !default_dir.join("out-test").exists(),
-        "backup must not appear in default dir when --output is given",
+    // Default backups dir state must be unchanged for this branch.
+    let default_exists_after = default_dir.join(&branch).exists();
+    assert_eq!(
+        default_existed_before, default_exists_after,
+        "--output must not write to default backups dir (changed: {} -> {})",
+        default_existed_before, default_exists_after,
     );
 }
