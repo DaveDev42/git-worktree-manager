@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.41](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.40...v0.0.41) (2026-04-28)
+
+
+### Bug Fixes
+
+* **busy:** require live claude process to flag worktree busy ([#112](https://github.com/DaveDev42/git-worktree-manager/issues/112)) ([49a622a](https://github.com/DaveDev42/git-worktree-manager/commit/49a622a33ccdd2f328f73d4ee4230d6a31146c09))
+* wire dead --bg / --fg / backup --output flags ([#111](https://github.com/DaveDev42/git-worktree-manager/issues/111)) ([61c46f8](https://github.com/DaveDev42/git-worktree-manager/commit/61c46f8832adc43d74bbfb4bad4dffee3aafa9a5))
+
 ## [0.0.40](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.39...v0.0.40) (2026-04-28)
 
 
