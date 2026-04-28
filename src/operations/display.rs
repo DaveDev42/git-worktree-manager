@@ -161,11 +161,14 @@ struct WorktreeRow {
     status: String,
     age: String,
     rel_path: String,
+    /// Worktree path; retained so post-render `print_busy_details` can
+    /// scan busy rows without re-parsing `git worktree list`.
+    path: std::path::PathBuf,
 }
 
 /// Serial-prep input passed to status computation.
-/// Shares all fields with `WorktreeRow` except `path` (used to compute status)
-/// and `status` itself (filled in by the parallel worker).
+/// Shares all fields with `WorktreeRow` except `status` (filled in by the
+/// parallel worker).
 #[derive(Clone)]
 struct RowInput {
     path: std::path::PathBuf,
@@ -183,6 +186,7 @@ impl RowInput {
             status,
             age: self.age,
             rel_path: self.rel_path,
+            path: self.path,
         }
     }
 }
@@ -265,6 +269,7 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
     // rows and the footer follows naturally. Using terminal.insert_before()
     // could align it inside the viewport, but the current behaviour is
     // acceptable and avoids extra ratatui complexity.
+    print_busy_details(&rows);
     print_summary_footer(&rows);
 
     println!();
@@ -385,6 +390,11 @@ fn render_rows_progressive(
     // can fill before that initial draw.
     guard.as_mut().draw(|f| app.render(f))?;
 
+    // Retain paths in row order so the post-render `print_busy_details` block
+    // can scan busy rows. The producer takes `inputs` by move into the worker
+    // thread, so we capture the paths up-front.
+    let paths: Vec<std::path::PathBuf> = inputs.iter().map(|i| i.path.clone()).collect();
+
     // `thread::scope` blocks until all spawned threads finish (when the closure
     // returns). The explicit `producer.join()` here is solely to extract the
     // panic payload for diagnostics; the actual join would happen automatically
@@ -432,30 +442,24 @@ fn render_rows_progressive(
         guard.as_mut().draw(|f| app.render(f))?;
     }
 
-    Ok(app.into_rows().into_iter().map(Into::into).collect())
+    Ok(app
+        .into_rows()
+        .into_iter()
+        .zip(paths)
+        .map(|(r, path)| WorktreeRow {
+            worktree_id: r.worktree_id,
+            current_branch: r.current_branch,
+            status: r.status,
+            age: r.age,
+            rel_path: r.rel_path,
+            path,
+        })
+        .collect())
 }
 
-/// Field-for-field 1:1 mapping from TUI row data to the internal display row.
-/// Both structs are intentionally isomorphic; the destructuring below makes a
-/// new field in `RowData` a compile error here — exactly the safety the reviewer wanted.
-impl From<crate::tui::list_view::RowData> for WorktreeRow {
-    fn from(r: crate::tui::list_view::RowData) -> Self {
-        let crate::tui::list_view::RowData {
-            worktree_id,
-            current_branch,
-            status,
-            age,
-            rel_path,
-        } = r;
-        WorktreeRow {
-            worktree_id,
-            current_branch,
-            status,
-            age,
-            rel_path,
-        }
-    }
-}
+// Note: `WorktreeRow` is no longer derived `From<RowData>`. The path field
+// is plumbed through the zip in `render_rows_progressive` so the busy-details
+// printer can recover the worktree path post-render.
 
 /// Look up the intended branch for a worktree via git config metadata.
 fn lookup_intended_branch(repo: &Path, current_branch: &str, path: &Path) -> Option<String> {
@@ -503,6 +507,37 @@ fn lookup_intended_branch(repo: &Path, current_branch: &str, path: &Path) -> Opt
     }
 
     None
+}
+
+/// Print a multi-line block per busy worktree showing the same body
+/// sections `gw delete` uses (Active Claude session / Lockfile holder /
+/// processes with cwd in this worktree), via the shared
+/// `busy_messages::render_busy_block`. Skips the `--force` guidance —
+/// `gw status` is read-only.
+///
+/// No-op when there are zero busy rows. The cwd scan is `OnceLock`-cached
+/// for the process, so calling this after `get_worktree_status` adds no
+/// extra scans.
+fn print_busy_details(rows: &[WorktreeRow]) {
+    let busy_rows: Vec<&WorktreeRow> = rows.iter().filter(|r| r.status == "busy").collect();
+    if busy_rows.is_empty() {
+        return;
+    }
+
+    for row in busy_rows {
+        let (hard, soft) = crate::operations::busy::detect_busy_tiered(&row.path);
+        // detect_busy_tiered may return empty if a process exited between
+        // get_worktree_status and now. Skip silently — the table already
+        // showed it as busy and the user can re-run.
+        if hard.is_empty() && soft.is_empty() {
+            continue;
+        }
+        let block =
+            crate::operations::busy_messages::render_busy_block(&row.worktree_id, &hard, &soft);
+        println!();
+        // The block already ends with a trailing newline; print as-is.
+        print!("{}", block);
+    }
 }
 
 fn print_summary_footer(rows: &[WorktreeRow]) {
