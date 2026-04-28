@@ -230,6 +230,23 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
         return Ok(());
     }
 
+    // Prewarm the two `lsof`-backed caches on background threads so they
+    // run concurrently with each other and with the status computations
+    // below. Both are `OnceLock`-backed; later callers (`get_worktree_status`,
+    // `print_busy_details`) hit the cache instead of paying the lsof
+    // round-trip serially.
+    //
+    // Detached threads: the join handles are dropped immediately. Both
+    // workers only mutate process-static `OnceLock`s, so a slow/stuck
+    // thread does not block process exit any more than a slow lsof
+    // already would; the foreground caller will race against them via
+    // `OnceLock::get_or_init`. We don't `join` here because the prewarm
+    // is best-effort — if it's still running when a caller hits the
+    // cache, `get_or_init` blocks once and continues. If the thread
+    // completes first, callers find the cache already populated.
+    std::thread::spawn(crate::operations::busy::prewarm_cwd_scan);
+    std::thread::spawn(crate::operations::claude_process::prewarm);
+
     let is_tty = crate::tui::stdout_is_tty();
     // #18/#33/#35: cache terminal_width() once — used in both the progressive/static
     // branch decision and the post-render print guard.

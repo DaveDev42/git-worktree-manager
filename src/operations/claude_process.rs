@@ -78,6 +78,15 @@ fn snapshot() -> &'static [ProcessSnapshot] {
     SNAPSHOT_CACHE.get_or_init(scan_processes).as_slice()
 }
 
+/// Force-populate the snapshot cache. Intended for parallel prewarm: spawn
+/// this on a background thread alongside `busy::prewarm_cwd_scan` so the
+/// two `lsof` calls overlap. Subsequent `has_live_claude_in` calls then
+/// hit the cache. Safe to call from multiple threads — `OnceLock` ensures
+/// the scan runs at most once.
+pub fn prewarm() {
+    let _ = snapshot();
+}
+
 /// Returns true iff a live `claude` process is occupying `worktree`.
 ///
 /// Returns `false` when the scan could not run (lsof missing, /proc

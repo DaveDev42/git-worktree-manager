@@ -244,6 +244,14 @@ fn cwd_scan() -> &'static [(u32, String, PathBuf)] {
     CWD_SCAN_CACHE.get_or_init(raw_cwd_scan).as_slice()
 }
 
+/// Force-populate the cwd scan cache. Intended for parallel prewarm so the
+/// system-wide `lsof` runs concurrently with `claude_process::prewarm`.
+/// Safe to call from multiple threads — `OnceLock` ensures the scan runs
+/// at most once.
+pub fn prewarm_cwd_scan() {
+    let _ = cwd_scan();
+}
+
 #[cfg(target_os = "linux")]
 fn raw_cwd_scan() -> Vec<(u32, String, PathBuf)> {
     let mut out = Vec::new();
