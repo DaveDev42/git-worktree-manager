@@ -66,9 +66,33 @@ fn render_soft_list(out: &mut String, soft: &[BusyInfo]) {
     }
 }
 
-/// Render the user-facing refusal text. Empty inputs in both vectors is a
-/// programming error (caller should not have refused) but is rendered as
-/// an empty string for safety.
+/// Render the busy-status block (header + body) for read-only callers
+/// like `gw status` / `gw list`. Same body sections as `render_refusal`
+/// (Active Claude session / Lockfile holder / cwd processes) but with a
+/// neutral header and no `--force` guidance. Returns an empty string
+/// when both vectors are empty.
+pub fn render_busy_block(branch_display: &str, hard: &[BusyInfo], soft: &[BusyInfo]) -> String {
+    let mut out = String::new();
+    if hard.is_empty() && soft.is_empty() {
+        return out;
+    }
+    out.push_str(&format!(
+        "⚠ Worktree '{}' may be in use:\n\n",
+        branch_display
+    ));
+    if !hard.is_empty() {
+        render_hard_section(&mut out, hard);
+    }
+    if !soft.is_empty() {
+        out.push_str("  Processes with cwd in this worktree:\n");
+        render_soft_list(&mut out, soft);
+    }
+    out
+}
+
+/// Render the user-facing refusal text for `gw delete`. Empty inputs in
+/// both vectors is a programming error (caller should not have refused)
+/// but is rendered as an empty string for safety.
 pub fn render_refusal(branch_display: &str, hard: &[BusyInfo], soft: &[BusyInfo]) -> String {
     let mut out = String::new();
     match (hard.is_empty(), soft.is_empty()) {

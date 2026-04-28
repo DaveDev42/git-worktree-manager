@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
-use super::{claude_session, lockfile};
+use super::{claude_process, claude_session, lockfile};
 use chrono::Duration as ChronoDuration;
 
 /// Tier of a busy signal — controls refusal *strength* in `gw delete`.
@@ -242,6 +242,14 @@ fn warn_scan_failed(what: &str) {
 /// Populate and return the cached cwd scan (all processes, not filtered).
 fn cwd_scan() -> &'static [(u32, String, PathBuf)] {
     CWD_SCAN_CACHE.get_or_init(raw_cwd_scan).as_slice()
+}
+
+/// Force-populate the cwd scan cache. Intended for parallel prewarm so the
+/// system-wide `lsof` runs concurrently with `claude_process::prewarm`.
+/// Safe to call from multiple threads — `OnceLock` ensures the scan runs
+/// at most once.
+pub(crate) fn prewarm_cwd_scan() {
+    let _ = cwd_scan();
 }
 
 #[cfg(target_os = "linux")]
@@ -481,11 +489,31 @@ pub fn detect_busy_lockfile_only(worktree: &Path) -> Vec<BusyInfo> {
 /// Threshold for considering a Claude jsonl event "active." Spec value.
 const CLAUDE_ACTIVITY_THRESHOLD_MIN: i64 = 10;
 
+/// The two-stage "Claude is here" gate. Returns the list of active
+/// sessions iff (a) the jsonl tail has an event within the threshold AND
+/// (b) a live `claude` process is occupying `worktree` (cwd or `.claude`
+/// fd). Returns `None` when either gate fails or no project dir is found.
+///
+/// This is the single source of truth for the gate — `detect_busy_tiered`
+/// uses it for the full hard/soft dispatch in `gw delete`, and
+/// `display::get_worktree_status` uses it as the "busy" check for read-
+/// only surfaces (`gw status` / `gw list`).
+pub fn active_claude_sessions(worktree: &Path) -> Option<Vec<claude_session::ActiveSession>> {
+    let proj_dir = claude_session::project_dir_for(worktree)?;
+    let threshold = ChronoDuration::minutes(CLAUDE_ACTIVITY_THRESHOLD_MIN);
+    let sessions = claude_session::find_active_sessions(&proj_dir, worktree, threshold);
+    if sessions.is_empty() || !claude_process::has_live_claude_in(worktree) {
+        return None;
+    }
+    Some(sessions)
+}
+
 /// Tiered busy detection: returns `(hard, soft)` separately so the caller
 /// can render distinct refusal messages.
 ///
 /// Hard signals (refuse strongly, override = `--force`):
-///   * Active Claude Code session (jsonl event within threshold)
+///   * Active Claude Code session: jsonl event within threshold AND a live
+///     `claude` process is occupying the worktree (cwd or `.claude` fd).
 ///   * Explicit lockfile
 ///
 /// Soft signals (refuse with a warning, same `--force` override):
@@ -514,10 +542,11 @@ pub fn detect_busy_tiered(worktree: &Path) -> (Vec<BusyInfo>, Vec<BusyInfo>) {
         }
     }
 
-    // Hard: active Claude sessions
-    if let Some(proj_dir) = claude_session::project_dir_for(worktree) {
-        let threshold = ChronoDuration::minutes(CLAUDE_ACTIVITY_THRESHOLD_MIN);
-        for s in claude_session::find_active_sessions(&proj_dir, worktree, threshold) {
+    // Hard: active Claude sessions. The two-stage gate (jsonl event AND
+    // live `claude` process) lives in `active_claude_sessions` so that
+    // read-only surfaces (`gw status` / `gw list`) share the same check.
+    if let Some(sessions) = active_claude_sessions(worktree) {
+        for s in sessions {
             // session_id is a UUID; surface as cmd "claude (session <id>)" with
             // PID 0 as a sentinel meaning "not a process PID, informational entry".
             let secs_ago = (chrono::Utc::now() - s.last_activity).num_seconds().max(0) as u64;
@@ -756,6 +785,59 @@ mod tests {
             "expected to find child pid={} with cwd in {:?}",
             child.id(),
             dir.path()
+        );
+    }
+
+    /// Regression: a stale jsonl with a recent timestamp but no live
+    /// `claude` process owning the worktree must NOT produce a Hard
+    /// ClaudeSession signal. This is the "user just exited Claude
+    /// cleanly, then ran cw delete" scenario from the bug report.
+    ///
+    /// We exercise it by pointing `$HOME` at a tempdir, planting a
+    /// realistic jsonl under `~/.claude/projects/<encoded>/`, and
+    /// confirming the test process (which does not look like a Claude
+    /// install via its txt mappings) does not satisfy the live-process
+    /// gate.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn detect_busy_tiered_no_hard_when_jsonl_active_but_no_live_claude() {
+        use crate::operations::test_env::{env_lock, EnvGuard};
+        let _lock = env_lock();
+        let _guard = EnvGuard::capture(&["HOME"]);
+
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", home.path());
+
+        let wt = tempfile::tempdir().unwrap();
+        let wt_canon = wt.path().canonicalize().unwrap_or(wt.path().to_path_buf());
+
+        // Encode the worktree path the way Claude Code does (see
+        // claude_session::encode_project_dir).
+        let encoded = wt_canon.to_string_lossy().replace(['/', '.'], "-");
+        let proj_dir = home.path().join(".claude").join("projects").join(encoded);
+        std::fs::create_dir_all(&proj_dir).unwrap();
+
+        // Plant a jsonl whose newest event is "now" — i.e. well within the
+        // 10-minute activity threshold — and whose `cwd` matches the
+        // worktree (otherwise find_active_sessions filters it out).
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let line = serde_json::json!({
+            "timestamp": now,
+            "cwd": wt_canon.to_string_lossy(),
+        });
+        std::fs::write(
+            proj_dir.join("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl"),
+            format!("{}\n", line),
+        )
+        .unwrap();
+
+        let (hard, _soft) = detect_busy_tiered(wt.path());
+        assert!(
+            !hard
+                .iter()
+                .any(|b| matches!(b.source, BusySource::ClaudeSession)),
+            "expected no Hard ClaudeSession when no live claude holds the worktree, got: {:?}",
+            hard
         );
     }
 }
