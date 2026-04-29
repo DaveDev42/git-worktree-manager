@@ -56,7 +56,6 @@ impl SpawnSpec {
 /// Best-effort: any IO error is returned; callers may choose to swallow it
 /// because the launcher itself still works without the persistent copy.
 fn write_last_to_git_dir(spec: &SpawnSpec, git_dir: &Path) -> Result<()> {
-    fs::create_dir_all(git_dir)?;
     let mut persistent = spec.clone();
     // Critical: persistent copy must survive `execute()`'s unlink so the
     // user can re-run `gw _spawn-ai` repeatedly after a corruption event.
