@@ -826,7 +826,6 @@ fn test_sync_nested_worktrees() {
 #[test]
 fn test_clean_no_criteria() {
     let repo = TestRepo::new();
-    let _output = repo.cw(&["clean"]);
     let combined = repo.cw_combined(&["clean"]);
     assert!(
         combined.contains("filter") || combined.contains("requires"),

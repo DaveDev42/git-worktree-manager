@@ -16,9 +16,10 @@ fn clean_interactive_is_removed_and_points_at_delete() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    assert!(
-        !output.status.success(),
-        "gw clean -i should exit non-zero after the consolidation; exit code: {:?}\noutput: {}",
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "gw clean -i should exit 2 (misuse); got: {:?}\noutput: {}",
         output.status.code(),
         combined
     );

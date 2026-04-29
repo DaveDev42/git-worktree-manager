@@ -57,7 +57,8 @@ pub(super) fn branch_is_merged(
 /// Returns an exit code (0/1/2) matching the convention `gw delete` uses:
 /// - `0`: every selected worktree was deleted (or filters matched nothing).
 /// - `1`: user cancelled at the batch-confirmation prompt.
-/// - `2`: misuse (no filter flags / removed `-i` flag) or partial failure.
+/// - `2`: misuse (no filter flags / removed `-i` flag), or any worktree was
+///   skipped (busy) or failed to delete.
 pub fn clean_worktrees(
     merged: bool,
     older_than: Option<u64>,
@@ -127,12 +128,9 @@ pub fn clean_worktrees(
         git_force: true,
         allow_busy: force,
     };
+    let count = selected.len() as u32;
     let code = delete_batch::delete_worktrees(
-        selected.clone(),
-        /*interactive=*/ false,
-        dry_run,
-        flags,
-        /*lookup_mode=*/ None,
+        selected, /*interactive=*/ false, dry_run, flags, /*lookup_mode=*/ None,
     )?;
 
     // Prune stale metadata on any non-cancelled path (matches legacy UX).
@@ -147,7 +145,6 @@ pub fn clean_worktrees(
     // On partial failure `delete_batch` already printed a Summary line, so
     // only print the success banner when every selection succeeded.
     if code == 0 && !dry_run {
-        let count = selected.len() as u32;
         println!(
             "\n{}",
             style(messages::cleanup_complete(count)).green().bold()
