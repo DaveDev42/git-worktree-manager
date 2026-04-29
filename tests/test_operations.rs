@@ -829,12 +829,13 @@ fn test_clean_no_criteria() {
     let _output = repo.cw(&["clean"]);
     let combined = repo.cw_combined(&["clean"]);
     assert!(
-        combined.contains("criterion")
-            || combined.contains("specify")
-            || combined.contains("Specify")
-            || combined.contains("error")
-            || combined.contains("must"),
-        "Expected error about missing criteria, got: {}",
+        combined.contains("filter") || combined.contains("requires"),
+        "Expected error about missing filter, got: {}",
+        combined
+    );
+    assert!(
+        combined.contains("gw delete -i"),
+        "Expected redirect to 'gw delete -i', got: {}",
         combined
     );
 }
