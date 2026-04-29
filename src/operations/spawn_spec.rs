@@ -481,6 +481,33 @@ mod tests {
     }
 
     #[test]
+    fn read_spec_does_not_observe_unlink_for_persistent_copy() {
+        // Sanity check: the persistent copy is written with self_unlink=false,
+        // and `execute()`'s unlink branch only fires when self_unlink=true.
+        // Locks the on-disk default in via the public `read_spec` API so
+        // a future refactor that flips the default is caught here.
+        let dir = tempfile::tempdir().unwrap();
+        let worktree = dir.path();
+        let status = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(worktree)
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let spec = SpawnSpec::new(vec!["/bin/true".into()], worktree.to_path_buf());
+        let temp = tempfile::tempdir().unwrap();
+        let (_line, _path) = materialize_in_dir(&spec, temp.path()).unwrap();
+
+        let last = worktree.join(".git").join("gw-spawn-last.json");
+        let loaded = read_spec(&last).expect("read_spec should succeed");
+        assert!(
+            !loaded.self_unlink,
+            "persistent copy must keep self_unlink=false"
+        );
+    }
+
+    #[test]
     fn sweep_stale_removes_old_spec_files_only() {
         use std::time::{Duration, SystemTime};
         let dir = tempfile::tempdir().unwrap();
