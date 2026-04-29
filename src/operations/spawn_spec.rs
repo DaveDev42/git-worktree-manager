@@ -26,7 +26,7 @@ use crate::error::{CwError, Result};
 
 pub const SPEC_VERSION: u32 = 1;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SpawnSpec {
     pub version: u32,
     pub argv: Vec<String>,
@@ -43,6 +43,49 @@ impl SpawnSpec {
             self_unlink: true,
         }
     }
+}
+
+/// Write a non-self-unlinking copy of `spec` to `<git-dir>/gw-spawn-last.json`
+/// so the user can recover from a corrupted launcher line by running
+/// `gw _spawn-ai` (no args) inside the worktree.
+///
+/// `git_dir` is the path returned by `git rev-parse --git-dir` — for the
+/// main checkout this is `<repo>/.git/`, for linked worktrees it is
+/// `<repo>/.git/worktrees/<name>/`. Either way the file lives per-worktree.
+///
+/// Best-effort: any IO error is returned; callers may choose to swallow it
+/// because the launcher itself still works without the persistent copy.
+fn write_last_to_git_dir(spec: &SpawnSpec, git_dir: &Path) -> Result<()> {
+    fs::create_dir_all(git_dir)?;
+    let mut persistent = spec.clone();
+    // Critical: persistent copy must survive `execute()`'s unlink so the
+    // user can re-run `gw _spawn-ai` repeatedly after a corruption event.
+    persistent.self_unlink = false;
+    let path = git_dir.join("gw-spawn-last.json");
+    let json = serde_json::to_vec(&persistent)?;
+    fs::write(&path, json)?;
+    Ok(())
+}
+
+/// Look up the git-dir for `cwd` via `git rev-parse --git-dir`. Returns the
+/// absolute path to the `.git` directory (or `.git/worktrees/<name>/` for
+/// linked worktrees).
+fn git_dir_for(cwd: &Path) -> Result<PathBuf> {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--git-dir"])
+        .current_dir(cwd)
+        .output()
+        .map_err(|e| CwError::Other(format!("spawn-ai: git rev-parse failed: {}", e)))?;
+    if !output.status.success() {
+        return Err(CwError::Other(format!(
+            "spawn-ai: not a git worktree: {}",
+            cwd.display()
+        )));
+    }
+    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let p = PathBuf::from(&raw);
+    let absolute = if p.is_absolute() { p } else { cwd.join(p) };
+    Ok(absolute)
 }
 
 /// Write `spec` to a 0600 tempfile in the system temp dir and return
@@ -72,6 +115,14 @@ pub fn materialize_in_dir(spec: &SpawnSpec, dir: &Path) -> Result<(String, PathB
     // Persist — stop tempfile from auto-deleting on drop. `_spawn-ai` unlinks
     // it after reading, and the 24h sweep handles crash residue.
     let (_file, path) = named.keep().map_err(|e| e.error)?;
+
+    // Best-effort persistent copy for `gw _spawn-ai` (no args) recovery.
+    // If `spec.cwd` is not a git worktree (unusual — AI tools always run
+    // inside one) the failure is swallowed: the launcher still works via
+    // the random temp path.
+    if let Ok(git_dir) = git_dir_for(&spec.cwd) {
+        let _ = write_last_to_git_dir(spec, &git_dir);
+    }
 
     let shell_line = format!("gw _spawn-ai {}", quote_path_for_shell(&path));
     Ok((shell_line, path))
@@ -369,6 +420,43 @@ mod tests {
         std::fs::write(&path, serde_json::to_vec(&spec).unwrap()).unwrap();
         let loaded = read_spec(&path).unwrap();
         assert_eq!(loaded, spec);
+    }
+
+    #[test]
+    fn materialize_writes_last_copy_into_git_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let worktree = dir.path();
+        let status = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(worktree)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let git_dir = worktree.join(".git");
+
+        let spec = SpawnSpec::new(
+            vec!["claude".into(), "--print".into(), "hello".into()],
+            worktree.to_path_buf(),
+        );
+
+        let temp = tempfile::tempdir().unwrap();
+        let (_line, _path) = materialize_in_dir(&spec, temp.path()).unwrap();
+
+        let last = git_dir.join("gw-spawn-last.json");
+        assert!(
+            last.exists(),
+            "expected persistent copy at {}",
+            last.display()
+        );
+
+        let loaded: SpawnSpec =
+            serde_json::from_str(&std::fs::read_to_string(&last).unwrap()).unwrap();
+        assert!(
+            !loaded.self_unlink,
+            "persistent copy must have self_unlink=false"
+        );
+        assert_eq!(loaded.argv, spec.argv);
+        assert_eq!(loaded.cwd, spec.cwd);
     }
 
     #[test]
