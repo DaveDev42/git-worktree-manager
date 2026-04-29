@@ -38,7 +38,19 @@ fn interactive_select(main_repo: &Path) -> Result<InteractiveOutcome> {
     }
     let labels: Vec<String> = feature_worktrees
         .iter()
-        .map(|(branch, path)| format!("{:<30} {}", branch, path.display()))
+        .map(|(branch, path)| {
+            let age = crate::constants::path_age_days(path)
+                .map(crate::operations::display::format_age)
+                .unwrap_or_default();
+            let is_busy = !busy::detect_busy(path).is_empty();
+            crate::operations::display::format_selector_row(
+                branch,
+                &age,
+                is_busy,
+                &path.display().to_string(),
+                30,
+            )
+        })
         .collect();
     match crate::tui::multi_select::multi_select(&labels, "Select worktrees to delete:") {
         Some(indices) if indices.is_empty() => {
