@@ -138,6 +138,45 @@ pub fn format_age(age_days: f64) -> String {
     }
 }
 
+/// Compose a single row for the `gw delete -i` multi-select TUI.
+///
+/// Columns, left to right, separated by one space:
+///   branch (padded to `branch_col`) | age (padded to 9) | busy (7, colored) | path
+///
+/// The busy column carries an ANSI-colored `[busy]` token when `busy` is true,
+/// or 7 spaces when false. `arrow_select::visible_len` is ANSI-aware, so the
+/// colored and plain variants have identical visible width.
+///
+/// The path column is appended verbatim. The caller is expected to run the
+/// returned string through `arrow_select::truncate` to cap line width; that
+/// truncation clips the trailing path column, which is the correct behavior
+/// per the row-decorations spec (badges and age must survive, path may shrink).
+pub fn format_selector_row(
+    branch: &str,
+    age: &str,
+    busy: bool,
+    path: &str,
+    branch_col: usize,
+) -> String {
+    const AGE_COL: usize = 9;
+    const BUSY_COL: usize = 7;
+    let busy_cell: String = if busy {
+        // "[busy]" is 6 visible chars; pad to BUSY_COL with one trailing space.
+        format!("{} ", style("[busy]").yellow())
+    } else {
+        " ".repeat(BUSY_COL)
+    };
+    format!(
+        "{branch:<branch_col$} {age:<AGE_COL$} {busy_cell}{path}",
+        branch = branch,
+        age = age,
+        busy_cell = busy_cell,
+        path = path,
+        branch_col = branch_col,
+        AGE_COL = AGE_COL,
+    )
+}
+
 /// Compute age string for a path.
 fn path_age_str(path: &Path) -> String {
     if !path.exists() {
@@ -1179,6 +1218,53 @@ mod tests {
     fn test_format_age_boundary_below_one_hour() {
         // Less than 1 hour (1/24 day ≈ 0.0417)
         assert_eq!(format_age(0.04), "just now"); // 0.04 * 24 = 0.96h → 0 as i64
+    }
+
+    #[test]
+    fn format_selector_row_no_busy() {
+        let row = format_selector_row("feat/a", "2d ago", false, "feat-a", 30);
+        // branch (30) + space + age (9) + space + busy_pad (7) + path
+        assert_eq!(row, "feat/a                         2d ago           feat-a");
+    }
+
+    #[test]
+    fn format_selector_row_busy_contains_badge() {
+        let row = format_selector_row("fix/b", "3w ago", true, "fix-b", 30);
+        assert!(row.contains("[busy]"), "expected [busy] in row, got: {:?}", row);
+        assert!(row.contains("fix/b"));
+        assert!(row.contains("3w ago"));
+        assert!(row.contains("fix-b"));
+    }
+
+    #[test]
+    fn format_selector_row_busy_visible_width_matches_no_busy() {
+        // ANSI-colored [busy] must occupy the same visible width as 7 spaces,
+        // so columns stay aligned under and not-under the cursor.
+        let plain = format_selector_row("x", "1d ago", false, "p", 30);
+        let busy = format_selector_row("x", "1d ago", true, "p", 30);
+        assert_eq!(
+            crate::tui::arrow_select::visible_len(&plain),
+            crate::tui::arrow_select::visible_len(&busy),
+        );
+    }
+
+    #[test]
+    fn format_selector_row_empty_age_pads_to_nine() {
+        let row = format_selector_row("feat/a", "", false, "feat-a", 30);
+        // 30 branch + 1 sep + 9 age + 1 sep + 7 busy_pad = 48, then path starts.
+        // Verify the path "feat-a" starts at byte 48.
+        assert_eq!(&row[48..], "feat-a");
+    }
+
+    #[test]
+    fn format_selector_row_long_branch_does_not_truncate() {
+        let branch = "feat/extra-long-branch-name-well-past-thirty-chars";
+        let row = format_selector_row(branch, "1d ago", false, "p", 30);
+        assert!(
+            row.starts_with(branch),
+            "branch must not be truncated, got: {:?}",
+            row
+        );
     }
 
     // Note: this test exercises only the busy signal — repo/worktree
