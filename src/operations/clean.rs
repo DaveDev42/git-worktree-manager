@@ -57,11 +57,7 @@ pub(super) fn branch_is_merged(
 /// Returns an exit code (0/1/2) matching the convention `gw delete` uses:
 /// - `0`: every selected worktree was deleted (or filters matched nothing).
 /// - `1`: user cancelled at the batch-confirmation prompt.
-/// - `2`: misuse (no filter flags / deprecated -i flag) or partial failure.
-///
-/// `gw clean -i` is deprecated — the flag is accepted but immediately prints
-/// a redirect to `gw delete -i` and exits 2.  The new doc-comment on
-/// `Commands::Clean` also directs users to `gw delete -i`.
+/// - `2`: misuse (no filter flags / removed `-i` flag) or partial failure.
 pub fn clean_worktrees(
     merged: bool,
     older_than: Option<u64>,
@@ -69,8 +65,6 @@ pub fn clean_worktrees(
     force: bool,
     interactive: bool,
 ) -> Result<i32> {
-    // `-i` / `--interactive` is a deprecated redirect: tell the user to use
-    // `gw delete -i` instead, then exit non-zero so scripts break loudly.
     if interactive {
         eprintln!(
             "Error: `gw clean -i` has been removed.\n\
@@ -91,13 +85,10 @@ pub fn clean_worktrees(
     let main_repo = git::get_repo_root(None)?;
     let candidates = git::get_feature_worktrees(Some(&main_repo))?;
 
-    // PrCache loaded once. We pass `no_cache=false` because `--no-cache` was
-    // dropped from `Commands::Clean` (it only ever fed the removed `-i` path).
     let pr_cache = PrCache::load_or_fetch(&main_repo, false);
 
-    let is_merged_pred = |branch: &str| -> bool {
-        branch_is_merged(branch, &main_repo, &pr_cache).is_some()
-    };
+    let is_merged_pred =
+        |branch: &str| -> bool { branch_is_merged(branch, &main_repo, &pr_cache).is_some() };
     let is_old_pred = |path: &Path| -> bool {
         match older_than {
             Some(days) => path_age_days(path)
@@ -153,14 +144,13 @@ pub fn clean_worktrees(
         println!("{}", style("* Prune complete").dim());
     }
 
-    // Print the legacy success banner only when everything went through.
-    // On partial failure `delete_batch` already printed a Summary line; we
-    // do not double up.
+    // On partial failure `delete_batch` already printed a Summary line, so
+    // only print the success banner when every selection succeeded.
     if code == 0 && !dry_run {
-        let deleted = selected.len() as u32;
+        let count = selected.len() as u32;
         println!(
             "\n{}",
-            style(messages::cleanup_complete(deleted)).green().bold()
+            style(messages::cleanup_complete(count)).green().bold()
         );
     }
 
@@ -386,7 +376,10 @@ mod tests {
     #[test]
     fn filter_worktrees_pure_selects_union_of_matching_rules() {
         let candidates: Vec<(String, std::path::PathBuf)> = vec![
-            ("feat/merged-only".into(), std::path::PathBuf::from("/tmp/a")),
+            (
+                "feat/merged-only".into(),
+                std::path::PathBuf::from("/tmp/a"),
+            ),
             ("feat/old-only".into(), std::path::PathBuf::from("/tmp/b")),
             ("feat/both".into(), std::path::PathBuf::from("/tmp/c")),
             ("feat/neither".into(), std::path::PathBuf::from("/tmp/d")),

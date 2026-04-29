@@ -1,20 +1,10 @@
-//! Failing tests that pin the new `gw clean -i` redirect behavior.
-//!
-//! Both tests are intentionally written against the *future* state of the code:
-//! - `gw clean -i` should exit non-zero and mention `gw delete -i`
-//! - `gw clean --help` should mention `gw delete -i` in its output
-//!
-//! These tests FAIL against current `main` (where `clean -i` still works) and
-//! will only pass after `clean.rs` and `cli.rs` are updated in later tasks.
+//! Integration tests pinning the `gw clean -i` redirect to `gw delete -i`.
 
 mod common;
 use common::TestRepo;
 
-/// After the consolidation, `gw clean -i` must be removed.  The flag should
-/// either be rejected by clap (unknown flag, exit 2) or produce a hard error
-/// from the handler — either way the process must exit non-zero and the
-/// combined output must contain the literal string `gw delete -i` so the user
-/// knows where to go.
+/// `gw clean -i` must exit non-zero and mention `gw delete -i` in its output
+/// so users know where the interactive flow moved to.
 #[test]
 fn clean_interactive_is_removed_and_points_at_delete() {
     let repo = TestRepo::new();
@@ -40,10 +30,8 @@ fn clean_interactive_is_removed_and_points_at_delete() {
     );
 }
 
-/// After the consolidation, `gw clean --help` must surface a note pointing
-/// users at `gw delete -i` for interactive deletion.  The doc-comment on
-/// `Commands::Clean` will be updated in a later task; this test pins that
-/// requirement now.
+/// `gw clean --help` must mention `gw delete -i` so users discover the
+/// interactive flow even when reading help text.
 #[test]
 fn clean_help_mentions_delete_i_redirect() {
     let repo = TestRepo::new();
