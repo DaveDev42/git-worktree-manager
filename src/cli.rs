@@ -516,9 +516,10 @@ pub enum Commands {
     /// [Internal] Execute an AI tool spawn spec file
     #[command(name = "_spawn-ai", hide = true)]
     SpawnAi {
-        /// Path to the JSON spawn spec
+        /// Path to the JSON spawn spec. If omitted, resolves the most recent
+        /// spec for the current worktree from `<git-dir>/gw-spawn-last.json`.
         #[arg(value_hint = ValueHint::FilePath)]
-        spec: PathBuf,
+        spec: Option<PathBuf>,
     },
 }
 

@@ -171,6 +171,15 @@ pub fn execute(spec_path: &Path) -> Result<()> {
     }
 }
 
+/// Resolve the last persisted spec path for the current working directory's
+/// worktree. Reads `<git-dir>/gw-spawn-last.json`. Errors are prefixed with
+/// `spawn-ai:` so the entrypoint can print them verbatim.
+pub fn resolve_last_for_cwd() -> Result<PathBuf> {
+    Err(CwError::Other(
+        "spawn-ai: resolve_last_for_cwd not implemented yet".into(),
+    ))
+}
+
 /// Best-effort removal of stale `gw-spawn-*.json` temp files from the system
 /// temp directory. Intended to run once at `gw` startup. All errors are
 /// swallowed — this is a safety net, not a correctness mechanism.
