@@ -225,9 +225,17 @@ pub fn execute(spec_path: &Path) -> Result<()> {
 /// worktree. Reads `<git-dir>/gw-spawn-last.json`. Errors are prefixed with
 /// `spawn-ai:` so the entrypoint can print them verbatim.
 pub fn resolve_last_for_cwd() -> Result<PathBuf> {
-    Err(CwError::Other(
-        "spawn-ai: resolve_last_for_cwd not implemented yet".into(),
-    ))
+    let cwd = std::env::current_dir()
+        .map_err(|e| CwError::Other(format!("spawn-ai: cannot read current directory: {}", e)))?;
+    let git_dir = git_dir_for(&cwd)?;
+    let last = git_dir.join("gw-spawn-last.json");
+    if !last.exists() {
+        return Err(CwError::Other(format!(
+            "spawn-ai: no recent spawn found for this worktree (looked for {})",
+            last.display()
+        )));
+    }
+    Ok(last)
 }
 
 /// Best-effort removal of stale `gw-spawn-*.json` temp files from the system
@@ -483,5 +491,84 @@ mod tests {
         assert!(!old.exists(), "old gw-spawn file should be removed");
         assert!(recent.exists(), "recent gw-spawn file should remain");
         assert!(unrelated.exists(), "unrelated file should be untouched");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn resolve_last_for_cwd_finds_persisted_spec() {
+        let dir = tempfile::tempdir().unwrap();
+        let worktree = dir.path();
+        let status = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(worktree)
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let spec = SpawnSpec::new(
+            vec!["/bin/echo".into(), "hi".into()],
+            worktree.to_path_buf(),
+        );
+        let temp = tempfile::tempdir().unwrap();
+        let (_line, _path) = materialize_in_dir(&spec, temp.path()).unwrap();
+
+        let prev_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(worktree).unwrap();
+        let resolved = resolve_last_for_cwd();
+        std::env::set_current_dir(prev_cwd).unwrap();
+
+        let resolved = resolved.expect("resolve_last_for_cwd should succeed");
+        assert!(
+            resolved.exists(),
+            "resolved path must exist: {}",
+            resolved.display()
+        );
+        assert!(
+            resolved.ends_with("gw-spawn-last.json"),
+            "unexpected resolved path: {}",
+            resolved.display()
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn resolve_last_for_cwd_errors_when_no_spec_persisted() {
+        let dir = tempfile::tempdir().unwrap();
+        let worktree = dir.path();
+        let status = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(worktree)
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let prev_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(worktree).unwrap();
+        let result = resolve_last_for_cwd();
+        std::env::set_current_dir(prev_cwd).unwrap();
+
+        let err = result.unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("no recent spawn") || msg.contains("gw-spawn-last.json"),
+            "unexpected error: {}",
+            msg
+        );
+        assert!(msg.starts_with("spawn-ai:"), "missing prefix: {}", msg);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn resolve_last_for_cwd_errors_outside_a_git_worktree() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let prev_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+        let result = resolve_last_for_cwd();
+        std::env::set_current_dir(prev_cwd).unwrap();
+
+        let err = result.unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.starts_with("spawn-ai:"), "missing prefix: {}", msg);
     }
 }
