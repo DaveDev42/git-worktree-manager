@@ -35,7 +35,7 @@ Append these tests inside the existing `#[cfg(test)] mod tests` block in `src/op
     fn format_selector_row_no_busy() {
         let row = format_selector_row("feat/a", "2d ago", false, "feat-a", 30);
         // branch (30) + space + age (9) + space + busy_pad (7) + path
-        assert_eq!(row, "feat/a                         2d ago              feat-a");
+        assert_eq!(row, "feat/a                         2d ago           feat-a");
     }
 
     #[test]
@@ -62,9 +62,9 @@ Append these tests inside the existing `#[cfg(test)] mod tests` block in `src/op
     #[test]
     fn format_selector_row_empty_age_pads_to_nine() {
         let row = format_selector_row("feat/a", "", false, "feat-a", 30);
-        // 30 branch + 1 sep + 9 age + 1 sep + 7 busy_pad + 1 sep + path = fixed prefix
-        // Verify the path "feat-a" starts at byte 30 + 1 + 9 + 1 + 7 + 1 = 49.
-        assert_eq!(&row[49..], "feat-a");
+        // 30 branch + 1 sep + 9 age + 1 sep + 7 busy_pad = 48 (no separator
+        // between busy_pad and path). Path "feat-a" starts at byte 48.
+        assert_eq!(&row[48..], "feat-a");
     }
 
     #[test]
@@ -139,7 +139,7 @@ Expected: all 5 new tests PASS. If `format_selector_row_no_busy` fails on the ex
 Note: the non-busy `busy_cell` is 7 spaces with no separator after it, so the exact expected string is:
 
 ```
-"feat/a                         2d ago              feat-a"
+"feat/a                         2d ago           feat-a"
  \_________ 30 __________/ \______ 9 ____/ \_ 7 __/\_path_/
 ```
 
