@@ -280,6 +280,20 @@ fn sweep_stale_in(dir: &Path, max_age: Duration) {
 mod tests {
     use super::*;
 
+    struct CwdGuard(std::path::PathBuf);
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
+    impl CwdGuard {
+        fn enter(target: &std::path::Path) -> Self {
+            let prev = std::env::current_dir().unwrap();
+            std::env::set_current_dir(target).unwrap();
+            Self(prev)
+        }
+    }
+
     #[test]
     fn round_trip_preserves_killer_prompts() {
         let killers = [
@@ -512,12 +526,8 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let (_line, _path) = materialize_in_dir(&spec, temp.path()).unwrap();
 
-        let prev_cwd = std::env::current_dir().unwrap();
-        std::env::set_current_dir(worktree).unwrap();
-        let resolved = resolve_last_for_cwd();
-        std::env::set_current_dir(prev_cwd).unwrap();
-
-        let resolved = resolved.expect("resolve_last_for_cwd should succeed");
+        let _guard = CwdGuard::enter(worktree);
+        let resolved = resolve_last_for_cwd().expect("resolve_last_for_cwd should succeed");
         assert!(
             resolved.exists(),
             "resolved path must exist: {}",
@@ -542,10 +552,8 @@ mod tests {
             .unwrap();
         assert!(status.success());
 
-        let prev_cwd = std::env::current_dir().unwrap();
-        std::env::set_current_dir(worktree).unwrap();
+        let _guard = CwdGuard::enter(worktree);
         let result = resolve_last_for_cwd();
-        std::env::set_current_dir(prev_cwd).unwrap();
 
         let err = result.unwrap_err();
         let msg = format!("{err}");
@@ -562,10 +570,8 @@ mod tests {
     fn resolve_last_for_cwd_errors_outside_a_git_worktree() {
         let dir = tempfile::tempdir().unwrap();
 
-        let prev_cwd = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
+        let _guard = CwdGuard::enter(dir.path());
         let result = resolve_last_for_cwd();
-        std::env::set_current_dir(prev_cwd).unwrap();
 
         let err = result.unwrap_err();
         let msg = format!("{err}");
