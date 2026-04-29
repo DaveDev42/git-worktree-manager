@@ -390,7 +390,17 @@ pub fn run() {
             // failures exit from inside `execute` directly, also with 127.
             // Inner errors already carry the "spawn-ai:" prefix via their
             // CwError::Other messages, so we print them verbatim.
-            if let Err(e) = spawn_spec::execute(&spec) {
+            let resolved = match spec {
+                Some(p) => p,
+                None => match spawn_spec::resolve_last_for_cwd() {
+                    Ok(p) => p,
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        std::process::exit(127);
+                    }
+                },
+            };
+            if let Err(e) = spawn_spec::execute(&resolved) {
                 eprintln!("{}", e);
                 std::process::exit(127);
             }

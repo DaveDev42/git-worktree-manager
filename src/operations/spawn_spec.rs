@@ -26,7 +26,7 @@ use crate::error::{CwError, Result};
 
 pub const SPEC_VERSION: u32 = 1;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SpawnSpec {
     pub version: u32,
     pub argv: Vec<String>,
@@ -43,6 +43,50 @@ impl SpawnSpec {
             self_unlink: true,
         }
     }
+}
+
+/// Write a non-self-unlinking copy of `spec` to `<git-dir>/gw-spawn-last.json`
+/// so the user can recover from a corrupted launcher line by running
+/// `gw _spawn-ai` (no args) inside the worktree.
+///
+/// `git_dir` is the path returned by `git rev-parse --git-dir` — for the
+/// main checkout this is `<repo>/.git/`, for linked worktrees it is
+/// `<repo>/.git/worktrees/<name>/`. Either way the file lives per-worktree.
+///
+/// Best-effort: any IO error is returned; callers may choose to swallow it
+/// because the launcher itself still works without the persistent copy.
+fn write_last_to_git_dir(spec: &SpawnSpec, git_dir: &Path) -> Result<()> {
+    let mut persistent = spec.clone();
+    // Critical: persistent copy must survive `execute()`'s unlink so the
+    // user can re-run `gw _spawn-ai` repeatedly after a corruption event.
+    persistent.self_unlink = false;
+    let path = git_dir.join("gw-spawn-last.json");
+    let tmp = git_dir.join("gw-spawn-last.json.tmp");
+    let json = serde_json::to_vec(&persistent)?;
+    fs::write(&tmp, json)?;
+    fs::rename(&tmp, &path)?;
+    Ok(())
+}
+
+/// Look up the git-dir for `cwd` via `git rev-parse --git-dir`. Returns the
+/// absolute path to the `.git` directory (or `.git/worktrees/<name>/` for
+/// linked worktrees).
+fn git_dir_for(cwd: &Path) -> Result<PathBuf> {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--git-dir"])
+        .current_dir(cwd)
+        .output()
+        .map_err(|e| CwError::Other(format!("spawn-ai: git rev-parse failed: {}", e)))?;
+    if !output.status.success() {
+        return Err(CwError::Other(format!(
+            "spawn-ai: not a git worktree: {}",
+            cwd.display()
+        )));
+    }
+    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let p = PathBuf::from(&raw);
+    let absolute = if p.is_absolute() { p } else { cwd.join(p) };
+    Ok(absolute)
 }
 
 /// Write `spec` to a 0600 tempfile in the system temp dir and return
@@ -72,6 +116,14 @@ pub fn materialize_in_dir(spec: &SpawnSpec, dir: &Path) -> Result<(String, PathB
     // Persist — stop tempfile from auto-deleting on drop. `_spawn-ai` unlinks
     // it after reading, and the 24h sweep handles crash residue.
     let (_file, path) = named.keep().map_err(|e| e.error)?;
+
+    // Best-effort persistent copy for `gw _spawn-ai` (no args) recovery.
+    // If `spec.cwd` is not a git worktree (unusual — AI tools always run
+    // inside one) the failure is swallowed: the launcher still works via
+    // the random temp path.
+    if let Ok(git_dir) = git_dir_for(&spec.cwd) {
+        let _ = write_last_to_git_dir(spec, &git_dir);
+    }
 
     let shell_line = format!("gw _spawn-ai {}", quote_path_for_shell(&path));
     Ok((shell_line, path))
@@ -171,6 +223,23 @@ pub fn execute(spec_path: &Path) -> Result<()> {
     }
 }
 
+/// Resolve the last persisted spec path for the current working directory's
+/// worktree. Reads `<git-dir>/gw-spawn-last.json`. Errors are prefixed with
+/// `spawn-ai:` so the entrypoint can print them verbatim.
+pub fn resolve_last_for_cwd() -> Result<PathBuf> {
+    let cwd = std::env::current_dir()
+        .map_err(|e| CwError::Other(format!("spawn-ai: cannot read current directory: {}", e)))?;
+    let git_dir = git_dir_for(&cwd)?;
+    let last = git_dir.join("gw-spawn-last.json");
+    if !last.exists() {
+        return Err(CwError::Other(format!(
+            "spawn-ai: no recent spawn found for this worktree (looked for {})",
+            last.display()
+        )));
+    }
+    Ok(last)
+}
+
 /// Best-effort removal of stale `gw-spawn-*.json` temp files from the system
 /// temp directory. Intended to run once at `gw` startup. All errors are
 /// swallowed — this is a safety net, not a correctness mechanism.
@@ -212,6 +281,20 @@ fn sweep_stale_in(dir: &Path, max_age: Duration) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct CwdGuard(std::path::PathBuf);
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
+    impl CwdGuard {
+        fn enter(target: &std::path::Path) -> Self {
+            let prev = std::env::current_dir().unwrap();
+            std::env::set_current_dir(target).unwrap();
+            Self(prev)
+        }
+    }
 
     #[test]
     fn round_trip_preserves_killer_prompts() {
@@ -363,6 +446,70 @@ mod tests {
     }
 
     #[test]
+    fn materialize_writes_last_copy_into_git_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let worktree = dir.path();
+        let status = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(worktree)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let git_dir = worktree.join(".git");
+
+        let spec = SpawnSpec::new(
+            vec!["claude".into(), "--print".into(), "hello".into()],
+            worktree.to_path_buf(),
+        );
+
+        let temp = tempfile::tempdir().unwrap();
+        let (_line, _path) = materialize_in_dir(&spec, temp.path()).unwrap();
+
+        let last = git_dir.join("gw-spawn-last.json");
+        assert!(
+            last.exists(),
+            "expected persistent copy at {}",
+            last.display()
+        );
+
+        let loaded: SpawnSpec =
+            serde_json::from_str(&std::fs::read_to_string(&last).unwrap()).unwrap();
+        assert!(
+            !loaded.self_unlink,
+            "persistent copy must have self_unlink=false"
+        );
+        assert_eq!(loaded.argv, spec.argv);
+        assert_eq!(loaded.cwd, spec.cwd);
+    }
+
+    #[test]
+    fn read_spec_does_not_observe_unlink_for_persistent_copy() {
+        // Sanity check: the persistent copy is written with self_unlink=false,
+        // and `execute()`'s unlink branch only fires when self_unlink=true.
+        // Locks the on-disk default in via the public `read_spec` API so
+        // a future refactor that flips the default is caught here.
+        let dir = tempfile::tempdir().unwrap();
+        let worktree = dir.path();
+        let status = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(worktree)
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let spec = SpawnSpec::new(vec!["/bin/true".into()], worktree.to_path_buf());
+        let temp = tempfile::tempdir().unwrap();
+        let (_line, _path) = materialize_in_dir(&spec, temp.path()).unwrap();
+
+        let last = worktree.join(".git").join("gw-spawn-last.json");
+        let loaded = read_spec(&last).expect("read_spec should succeed");
+        assert!(
+            !loaded.self_unlink,
+            "persistent copy must keep self_unlink=false"
+        );
+    }
+
+    #[test]
     fn sweep_stale_removes_old_spec_files_only() {
         use std::time::{Duration, SystemTime};
         let dir = tempfile::tempdir().unwrap();
@@ -387,5 +534,76 @@ mod tests {
         assert!(!old.exists(), "old gw-spawn file should be removed");
         assert!(recent.exists(), "recent gw-spawn file should remain");
         assert!(unrelated.exists(), "unrelated file should be untouched");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn resolve_last_for_cwd_finds_persisted_spec() {
+        let dir = tempfile::tempdir().unwrap();
+        let worktree = dir.path();
+        let status = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(worktree)
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let spec = SpawnSpec::new(
+            vec!["/bin/echo".into(), "hi".into()],
+            worktree.to_path_buf(),
+        );
+        let temp = tempfile::tempdir().unwrap();
+        let (_line, _path) = materialize_in_dir(&spec, temp.path()).unwrap();
+
+        let _guard = CwdGuard::enter(worktree);
+        let resolved = resolve_last_for_cwd().expect("resolve_last_for_cwd should succeed");
+        assert!(
+            resolved.exists(),
+            "resolved path must exist: {}",
+            resolved.display()
+        );
+        assert!(
+            resolved.ends_with("gw-spawn-last.json"),
+            "unexpected resolved path: {}",
+            resolved.display()
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn resolve_last_for_cwd_errors_when_no_spec_persisted() {
+        let dir = tempfile::tempdir().unwrap();
+        let worktree = dir.path();
+        let status = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(worktree)
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let _guard = CwdGuard::enter(worktree);
+        let result = resolve_last_for_cwd();
+
+        let err = result.unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("no recent spawn") || msg.contains("gw-spawn-last.json"),
+            "unexpected error: {}",
+            msg
+        );
+        assert!(msg.starts_with("spawn-ai:"), "missing prefix: {}", msg);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn resolve_last_for_cwd_errors_outside_a_git_worktree() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let _guard = CwdGuard::enter(dir.path());
+        let result = resolve_last_for_cwd();
+
+        let err = result.unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.starts_with("spawn-ai:"), "missing prefix: {}", msg);
     }
 }
