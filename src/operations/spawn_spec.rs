@@ -61,8 +61,10 @@ fn write_last_to_git_dir(spec: &SpawnSpec, git_dir: &Path) -> Result<()> {
     // user can re-run `gw _spawn-ai` repeatedly after a corruption event.
     persistent.self_unlink = false;
     let path = git_dir.join("gw-spawn-last.json");
+    let tmp = git_dir.join("gw-spawn-last.json.tmp");
     let json = serde_json::to_vec(&persistent)?;
-    fs::write(&path, json)?;
+    fs::write(&tmp, json)?;
+    fs::rename(&tmp, &path)?;
     Ok(())
 }
 
