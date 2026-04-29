@@ -1224,13 +1224,20 @@ mod tests {
     fn format_selector_row_no_busy() {
         let row = format_selector_row("feat/a", "2d ago", false, "feat-a", 30);
         // branch (30) + space + age (9) + space + busy_pad (7) + path
-        assert_eq!(row, "feat/a                         2d ago           feat-a");
+        assert_eq!(
+            row,
+            "feat/a                         2d ago           feat-a"
+        );
     }
 
     #[test]
     fn format_selector_row_busy_contains_badge() {
         let row = format_selector_row("fix/b", "3w ago", true, "fix-b", 30);
-        assert!(row.contains("[busy]"), "expected [busy] in row, got: {:?}", row);
+        assert!(
+            row.contains("[busy]"),
+            "expected [busy] in row, got: {:?}",
+            row
+        );
         assert!(row.contains("fix/b"));
         assert!(row.contains("3w ago"));
         assert!(row.contains("fix-b"));
