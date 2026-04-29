@@ -213,8 +213,8 @@ fn test_clean_help() {
         .success()
         .stdout(predicate::str::contains("--merged"))
         .stdout(predicate::str::contains("--older-than"))
-        .stdout(predicate::str::contains("--interactive"))
-        .stdout(predicate::str::contains("--dry-run"));
+        .stdout(predicate::str::contains("--dry-run"))
+        .stdout(predicate::str::contains("gw delete -i"));
 }
 
 #[test]

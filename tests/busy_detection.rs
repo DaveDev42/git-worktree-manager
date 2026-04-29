@@ -1,17 +1,20 @@
-//! Integration test: spawn a sleep process with cwd inside a worktree
-//! and verify `detect_busy` finds it.
+//! Integration tests for busy detection: lockfile, TTY-aware delete, and
+//! miscellaneous busy-detection scenarios.
+//!
+//! The `external_process_with_cwd_in_worktree_is_detected` test was moved to
+//! `tests/busy_process_scan.rs` so it compiles to a separate test binary.
+//! That guarantees it runs in its own OS process with a fresh `CWD_SCAN_CACHE`
+//! OnceLock, preventing a sibling test from pre-populating the cache before
+//! the target child process is spawned.
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod unix_only {
-    use std::process::{Command, Stdio};
     use std::thread::sleep;
     use std::time::{Duration, Instant};
 
-    use git_worktree_manager::operations::busy::{detect_busy, BusySource};
+    use git_worktree_manager::operations::busy::detect_busy;
     use tempfile::TempDir;
 
-    /// Poll `f` up to ~2 seconds, 50ms between attempts. Returns true if
-    /// the predicate ever fires. Avoids flaky magic-sleep timing.
     fn wait_for<F: FnMut() -> bool>(mut f: F) -> bool {
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
@@ -28,41 +31,6 @@ mod unix_only {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0)
-    }
-
-    #[test]
-    fn external_process_with_cwd_in_worktree_is_detected() {
-        let dir = TempDir::new().unwrap();
-        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
-
-        let mut child = Command::new("sleep")
-            .arg("30")
-            .current_dir(dir.path())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn sleep");
-
-        // Note: detect_busy caches the cwd-scan. Since this is the first
-        // call in this test binary for this worktree, polling is fine —
-        // but in principle the cache could be populated before the child
-        // registered in another test. Each #[test] runs in its own process
-        // (cargo default), so we're safe.
-        let pid = child.id();
-        let found = wait_for(|| {
-            detect_busy(dir.path())
-                .iter()
-                .any(|i| i.pid == pid && i.source == BusySource::ProcessScan)
-        });
-
-        let _ = child.kill();
-        let _ = child.wait();
-
-        assert!(
-            found,
-            "expected to detect spawned child pid={} within 2s",
-            pid,
-        );
     }
 
     #[test]

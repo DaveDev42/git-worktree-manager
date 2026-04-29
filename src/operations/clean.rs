@@ -1,14 +1,15 @@
 /// Batch cleanup of worktrees.
 ///
 use console::style;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::constants::{format_config_key, path_age_days, CONFIG_KEY_BASE_BRANCH};
 use crate::error::Result;
 use crate::git;
 use crate::messages;
+use crate::operations::delete_batch;
+use crate::operations::worktree::DeleteFlags;
 
-use super::display::get_worktree_status;
 use super::pr_cache::{PrCache, PrState};
 
 /// Determine whether `branch` is merged, using the same two-step logic as
@@ -51,209 +52,133 @@ pub(super) fn branch_is_merged(
     None
 }
 
-/// Batch cleanup of worktrees based on criteria.
+/// Top-level `gw clean` entry point.
+///
+/// Returns an exit code (0/1/2) matching the convention `gw delete` uses:
+/// - `0`: every selected worktree was deleted (or filters matched nothing).
+/// - `1`: user cancelled at the batch-confirmation prompt.
+/// - `2`: misuse (no filter flags / removed `-i` flag), or any worktree was
+///   skipped (busy) or failed to delete.
 pub fn clean_worktrees(
-    no_cache: bool,
     merged: bool,
     older_than: Option<u64>,
-    interactive: bool,
     dry_run: bool,
     force: bool,
-) -> Result<()> {
-    let repo = git::get_repo_root(None)?;
-
-    // Must specify at least one criterion
-    if !merged && older_than.is_none() && !interactive {
+    interactive: bool,
+) -> Result<i32> {
+    if interactive {
         eprintln!(
-            "Error: Please specify at least one cleanup criterion:\n  \
-             --merged, --older-than, or -i/--interactive"
+            "Error: `gw clean -i` has been removed.\n\
+             For interactive selection, use `gw delete -i` instead."
         );
-        return Ok(());
+        return Ok(2);
     }
 
-    // Load the PR cache once at the top so the merged-check and the interactive
-    // listing both share the same instance (no double fetch).
-    let pr_cache = PrCache::load_or_fetch(&repo, no_cache);
-
-    let mut to_delete: Vec<(String, String, String)> = Vec::new(); // (branch, path, reason)
-
-    for (branch_name, path) in git::get_feature_worktrees(Some(&repo))? {
-        let mut should_delete = false;
-        let mut reasons = Vec::new();
-
-        // Check if merged — mirrors `gw list`'s merge-detection strategy:
-        // PrCache first (squash-merge aware), git fallback second.
-        if merged {
-            if let Some(base_branch) = branch_is_merged(&branch_name, &repo, &pr_cache) {
-                should_delete = true;
-                reasons.push(format!("merged into {}", base_branch));
-            }
-        }
-
-        // Check age
-        if let Some(days) = older_than {
-            if let Some(age) = path_age_days(&path) {
-                let age_days = age as u64;
-                if age_days >= days {
-                    should_delete = true;
-                    reasons.push(format!("older than {} days ({} days)", days, age_days));
-                }
-            }
-        }
-
-        if should_delete {
-            to_delete.push((
-                branch_name.clone(),
-                path.to_string_lossy().to_string(),
-                reasons.join(", "),
-            ));
-        }
-    }
-
-    // Interactive mode
-    if interactive && to_delete.is_empty() {
-        println!("{}\n", style("Available worktrees:").cyan().bold());
-        let mut all_wt = Vec::new();
-        // Reuse the already-loaded pr_cache instance (no second fetch).
-        for (branch_name, path) in git::get_feature_worktrees(Some(&repo))? {
-            let status = get_worktree_status(&path, &repo, Some(branch_name.as_str()), &pr_cache);
-            println!("  [{:8}] {:<30} {}", status, branch_name, path.display());
-            all_wt.push((branch_name, path.to_string_lossy().to_string()));
-        }
-        println!();
-        println!("Enter branch names to delete (space-separated), or 'all' for all:");
-
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        let input = input.trim();
-
-        if input.eq_ignore_ascii_case("all") {
-            to_delete = all_wt
-                .into_iter()
-                .map(|(b, p)| (b, p, "user selected".to_string()))
-                .collect();
-        } else {
-            let selected: Vec<&str> = input.split_whitespace().collect();
-            to_delete = all_wt
-                .into_iter()
-                .filter(|(b, _)| selected.contains(&b.as_str()))
-                .map(|(b, p)| (b, p, "user selected".to_string()))
-                .collect();
-        }
-
-        if to_delete.is_empty() {
-            println!("{}", style("No worktrees selected for deletion").yellow());
-            return Ok(());
-        }
-    }
-
-    // Skip worktrees that another session is actively using, unless --force.
-    // This prevents `gw clean --merged` from wiping a worktree held open by
-    // a Claude Code / shell / editor session. Users can pass --force to
-    // ignore the busy gate.
-    let mut busy_skipped: Vec<(
-        String,
-        Vec<crate::operations::busy::BusyInfo>,
-        Vec<crate::operations::busy::BusyInfo>,
-    )> = Vec::new();
-    if !force {
-        let mut kept: Vec<(String, String, String)> = Vec::with_capacity(to_delete.len());
-        for (branch, path, reason) in to_delete.into_iter() {
-            let (hard, soft) =
-                crate::operations::busy::detect_busy_tiered(std::path::Path::new(&path));
-            if hard.is_empty() && soft.is_empty() {
-                kept.push((branch, path, reason));
-            } else {
-                busy_skipped.push((branch, hard, soft));
-            }
-        }
-        to_delete = kept;
-    }
-
-    if !busy_skipped.is_empty() {
-        println!(
-            "{}",
-            style(format!(
-                "Skipping {} busy worktree(s) (use --force to override):",
-                busy_skipped.len()
-            ))
-            .yellow()
+    if !merged && older_than.is_none() {
+        eprintln!(
+            "Error: `gw clean` requires at least one filter:\n  \
+             --merged, --older-than <DURATION>.\n\
+             For interactive selection, use `gw delete -i`."
         );
-        for (branch, hard, soft) in &busy_skipped {
-            eprint!(
-                "{}",
-                crate::operations::busy_messages::render_refusal(branch, hard, soft)
-            );
-        }
-        println!();
+        return Ok(2);
     }
 
-    if to_delete.is_empty() {
+    let main_repo = git::get_repo_root(None)?;
+    let candidates = git::get_feature_worktrees(Some(&main_repo))?;
+
+    let pr_cache = PrCache::load_or_fetch(&main_repo, false);
+
+    let is_merged_pred =
+        |branch: &str| -> bool { branch_is_merged(branch, &main_repo, &pr_cache).is_some() };
+    let is_old_pred = |path: &Path| -> bool {
+        match older_than {
+            Some(days) => path_age_days(path)
+                .map(|age| age as u64 >= days)
+                .unwrap_or(false),
+            None => false,
+        }
+    };
+    let selected = filter_worktrees_pure(
+        &candidates,
+        merged,
+        older_than,
+        &is_merged_pred,
+        &is_old_pred,
+    );
+
+    if selected.is_empty() {
         println!(
-            "{} No worktrees match the cleanup criteria\n",
+            "{} No worktrees match the cleanup criteria",
             style("*").green().bold()
         );
-        return Ok(());
+        return Ok(0);
     }
 
-    // Show what will be deleted
-    let prefix = if dry_run { "DRY RUN: " } else { "" };
-    println!(
-        "\n{}\n",
-        style(format!("{}Worktrees to delete:", prefix))
-            .yellow()
-            .bold()
-    );
-    for (branch, path, reason) in &to_delete {
-        println!("  - {:<30} ({})", branch, reason);
-        println!("    Path: {}", path);
-    }
-    println!();
+    // Hand the selection to the shared deletion engine. The `DeleteFlags`
+    // here mirror the legacy `clean` semantics:
+    // - keep_branch=false / delete_remote=false: clean removes the local
+    //   branch metadata only.
+    // - git_force=true: matches the historical `git worktree remove --force`
+    //   behavior — the worktree may have local-only state.
+    // - allow_busy=force: only `--force` lets clean tear through a busy
+    //   worktree (one held by `gw shell` / claude / editor).
+    let flags = DeleteFlags {
+        keep_branch: false,
+        delete_remote: false,
+        git_force: true,
+        allow_busy: force,
+    };
+    let count = selected.len() as u32;
+    let code = delete_batch::delete_worktrees(
+        selected, /*interactive=*/ false, dry_run, flags, /*lookup_mode=*/ None,
+    )?;
 
-    if dry_run {
+    // Prune stale metadata on any non-cancelled path (matches legacy UX).
+    // If the user cancelled at the batch prompt (code == 1) nothing was
+    // deleted, so there's no metadata to prune.
+    if code != 1 {
+        println!("{}", style("Pruning stale worktree metadata...").dim());
+        let _ = git::git_command(&["worktree", "prune"], Some(&main_repo), false, false);
+        println!("{}", style("* Prune complete").dim());
+    }
+
+    // On partial failure `delete_batch` already printed a Summary line, so
+    // only print the success banner when every selection succeeded.
+    if code == 0 && !dry_run {
         println!(
-            "{} Would delete {} worktree(s)",
-            style("*").cyan().bold(),
-            to_delete.len()
+            "\n{}",
+            style(messages::cleanup_complete(count)).green().bold()
         );
-        println!("Run without --dry-run to actually delete them");
-        return Ok(());
     }
 
-    // Delete worktrees
-    let mut deleted = 0u32;
-    for (branch, _, _) in &to_delete {
-        println!("{}", style(format!("Deleting {}...", branch)).yellow());
-        // clean already filtered out busy worktrees above (unless --force),
-        // so at this point we pass allow_busy=true to skip the redundant
-        // gate inside delete_worktree.
-        match super::worktree::delete_worktree(Some(branch), false, false, true, true, None) {
-            Ok(()) => {
-                println!("{} Deleted {}", style("*").green().bold(), branch);
-                deleted += 1;
-            }
-            Err(e) => {
-                println!(
-                    "{} Failed to delete {}: {}",
-                    style("x").red().bold(),
-                    branch,
-                    e
-                );
-            }
-        }
+    Ok(code)
+}
+
+/// Pure selection helper. Takes a list of `(branch, path)` candidates and
+/// the active filter predicates; returns branch names matching at least one
+/// active filter (UNION semantics — a worktree matching either `--merged` OR
+/// `--older-than` qualifies, mirroring the legacy behavior). Generic over
+/// the predicates so unit tests can inject deterministic ones without a
+/// real git repo or PrCache.
+pub(crate) fn filter_worktrees_pure(
+    candidates: &[(String, PathBuf)],
+    merged: bool,
+    older_than_days: Option<u64>,
+    is_merged: &dyn Fn(&str) -> bool,
+    is_old: &dyn Fn(&Path) -> bool,
+) -> Vec<String> {
+    if !merged && older_than_days.is_none() {
+        return Vec::new();
     }
-
-    println!(
-        "\n{}\n",
-        style(messages::cleanup_complete(deleted)).green().bold()
-    );
-
-    // Prune stale metadata
-    println!("{}", style("Pruning stale worktree metadata...").dim());
-    let _ = git::git_command(&["worktree", "prune"], Some(&repo), false, false);
-    println!("{}\n", style("* Prune complete").dim());
-
-    Ok(())
+    candidates
+        .iter()
+        .filter(|(branch, path)| {
+            let m = merged && is_merged(branch);
+            let o = older_than_days.is_some() && is_old(path);
+            m || o
+        })
+        .map(|(branch, _)| branch.clone())
+        .collect()
 }
 
 #[cfg(test)]
@@ -443,5 +368,54 @@ mod tests {
 
         let result = branch_is_merged("feat-open", repo, &cache);
         assert!(result.is_none(), "An OPEN PR must not be considered merged");
+    }
+
+    #[test]
+    fn filter_worktrees_pure_selects_union_of_matching_rules() {
+        let candidates: Vec<(String, std::path::PathBuf)> = vec![
+            (
+                "feat/merged-only".into(),
+                std::path::PathBuf::from("/tmp/a"),
+            ),
+            ("feat/old-only".into(), std::path::PathBuf::from("/tmp/b")),
+            ("feat/both".into(), std::path::PathBuf::from("/tmp/c")),
+            ("feat/neither".into(), std::path::PathBuf::from("/tmp/d")),
+        ];
+        let is_merged =
+            |branch: &str| -> bool { matches!(branch, "feat/merged-only" | "feat/both") };
+        let is_old = |path: &std::path::Path| -> bool {
+            matches!(path.to_str().unwrap_or(""), "/tmp/b" | "/tmp/c")
+        };
+        let selected = super::filter_worktrees_pure(
+            &candidates,
+            /*merged=*/ true,
+            /*older_than_days=*/ Some(30),
+            &is_merged,
+            &is_old,
+        );
+        assert_eq!(
+            selected,
+            vec![
+                "feat/merged-only".to_string(),
+                "feat/old-only".to_string(),
+                "feat/both".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn filter_worktrees_pure_empty_when_no_filters_active() {
+        let candidates: Vec<(String, std::path::PathBuf)> =
+            vec![("x".into(), std::path::PathBuf::from("/tmp/x"))];
+        let is_merged = |_: &str| true;
+        let is_old = |_: &std::path::Path| true;
+        let selected = super::filter_worktrees_pure(
+            &candidates,
+            /*merged=*/ false,
+            /*older_than_days=*/ None,
+            &is_merged,
+            &is_old,
+        );
+        assert!(selected.is_empty());
     }
 }
