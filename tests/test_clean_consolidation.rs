@@ -53,3 +53,116 @@ fn clean_help_mentions_delete_i_redirect() {
         stdout
     );
 }
+
+/// `gw clean` with no filter flags must exit 2 (misuse) and tell the user
+/// which filters are valid plus where the interactive flow moved.
+#[test]
+fn clean_with_no_filters_exits_two() {
+    let repo = TestRepo::new();
+    let output = repo.cw(&["clean"]);
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "gw clean with no filters should exit 2; stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("--merged") && combined.contains("--older-than"),
+        "error should list both filters; got: {}",
+        combined
+    );
+    assert!(
+        combined.contains("gw delete -i"),
+        "error should redirect to 'gw delete -i'; got: {}",
+        combined
+    );
+}
+
+/// `gw clean --merged` against a real merge-commit branch must delete the
+/// worktree, prune metadata, and exit 0.
+#[test]
+fn clean_merged_deletes_and_exits_zero() {
+    let repo = TestRepo::new();
+
+    let wt_path = repo.create_worktree("feat-merge-exit");
+    TestRepo::commit_file_at(&wt_path, "feat.txt", "feature work", "feat: add feature");
+
+    repo.git(&["checkout", "main"]);
+    repo.git(&[
+        "merge",
+        "--no-ff",
+        "feat-merge-exit",
+        "-m",
+        "Merge feat-merge-exit",
+    ]);
+
+    let output = repo.cw(&["clean", "--merged"]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "gw clean --merged should exit 0 on success; stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        !wt_path.exists(),
+        "worktree directory should be gone after clean --merged; still exists at {:?}",
+        wt_path
+    );
+
+    let worktree_list = repo.git_stdout(&["worktree", "list"]);
+    assert!(
+        !worktree_list.contains("feat-merge-exit"),
+        "git worktree list should no longer mention the cleaned worktree; got:\n{}",
+        worktree_list
+    );
+}
+
+/// `gw clean --merged --dry-run` must exit 0 and leave the worktree intact.
+#[test]
+fn clean_merged_dry_run_preserves_worktree() {
+    let repo = TestRepo::new();
+
+    let wt_path = repo.create_worktree("feat-dry-run");
+    TestRepo::commit_file_at(&wt_path, "feat.txt", "work", "feat: dry-run candidate");
+
+    repo.git(&["checkout", "main"]);
+    repo.git(&[
+        "merge",
+        "--no-ff",
+        "feat-dry-run",
+        "-m",
+        "Merge feat-dry-run",
+    ]);
+
+    let output = repo.cw(&["clean", "--merged", "--dry-run"]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "gw clean --merged --dry-run should exit 0; stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        wt_path.exists(),
+        "dry-run must not delete the worktree; missing at {:?}",
+        wt_path
+    );
+
+    let worktree_list = repo.git_stdout(&["worktree", "list"]);
+    assert!(
+        worktree_list.contains("feat-dry-run"),
+        "dry-run must not prune the worktree from the registry; got:\n{}",
+        worktree_list
+    );
+}
