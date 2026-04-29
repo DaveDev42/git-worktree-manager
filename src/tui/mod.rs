@@ -3,6 +3,7 @@
 //! Houses:
 //! - `arrow_select`: raw-mode arrow-key single-select
 //! - `multi_select`: raw-mode arrow + space multi-select (for `gw delete -i`)
+//! - `raw_mode`:    RAII `RawModeGuard` for termios + cursor state (Unix-only)
 //! - `list_view`:   Inline Viewport renderer for `gw list`
 //! - `style`:       shared ratatui `Style` palette mirroring `crate::console`
 //!
@@ -12,6 +13,7 @@
 pub mod arrow_select;
 pub mod list_view;
 pub mod multi_select;
+pub mod raw_mode;
 pub mod style;
 
 // Re-export for backwards-compatible call sites that use `crate::tui::arrow_select(...)`.

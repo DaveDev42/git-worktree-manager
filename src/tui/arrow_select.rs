@@ -266,40 +266,10 @@ fn arrow_select_unix(
     let stdin = std::io::stdin();
     let fd = stdin.as_raw_fd();
 
-    // Save original terminal attributes
-    let mut old_termios: libc::termios = unsafe { std::mem::zeroed() };
-    if unsafe { libc::tcgetattr(fd, &mut old_termios) } != 0 {
-        return None; // Can't get termios, fall back
-    }
+    let _guard = super::raw_mode::RawModeGuard::enter(fd, true)?;
 
     let mut selected = default_index;
     let total_lines = items.len() + 2; // title + blank + items
-
-    // Hide cursor
-    write_stderr("\x1b[?25l");
-
-    // Set raw mode
-    let mut raw = old_termios;
-    // cfmakeraw equivalent
-    raw.c_iflag &= !(libc::IGNBRK
-        | libc::BRKINT
-        | libc::PARMRK
-        | libc::ISTRIP
-        | libc::INLCR
-        | libc::IGNCR
-        | libc::ICRNL
-        | libc::IXON);
-    raw.c_oflag &= !libc::OPOST;
-    raw.c_lflag &= !(libc::ECHO | libc::ECHONL | libc::ICANON | libc::ISIG | libc::IEXTEN);
-    raw.c_cflag &= !(libc::CSIZE | libc::PARENB);
-    raw.c_cflag |= libc::CS8;
-    raw.c_cc[libc::VMIN] = 1;
-    raw.c_cc[libc::VTIME] = 0;
-
-    if unsafe { libc::tcsetattr(fd, libc::TCSAFLUSH, &raw) } != 0 {
-        write_stderr("\x1b[?25h");
-        return None;
-    }
 
     let result = (|| -> Option<String> {
         render(items, title, selected, total_lines, true);
@@ -345,13 +315,6 @@ fn arrow_select_unix(
             }
         }
     })();
-
-    // Restore terminal
-    unsafe {
-        libc::tcsetattr(fd, libc::TCSADRAIN, &old_termios);
-    }
-    // Show cursor
-    write_stderr("\x1b[?25h");
 
     Some(result)
 }
