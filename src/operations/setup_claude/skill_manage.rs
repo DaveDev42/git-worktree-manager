@@ -27,7 +27,7 @@ These are the management-side commands. For full flag detail, see
 | `gw list` (alias `gw ls`) | List all worktrees with status indicators (active, clean, modified, stale). |
 | `gw status` | Show detailed info about the current worktree. |
 | `gw delete [target]` | Delete a worktree (and optionally its branch / remote branch). |
-| `gw clean` | Batch cleanup of merged or stale worktrees, with `--dry-run` and `-i` selection. |
+| `gw clean` | Batch cleanup of merged or stale worktrees by filter (`--merged`, `--older-than`); `--dry-run` previews. Use `gw delete -i` for interactive selection. |
 | `gw sync [branch]` | Rebase a worktree (or `--all`) against its base branch. |
 | `gw merge [branch]` | Merge a feature branch into its base branch. |
 | `gw pr [branch]` | Create a GitHub Pull Request from a worktree. |
@@ -346,11 +346,13 @@ Compare two branches.
 ## Maintenance
 
 ### `gw clean [OPTIONS]`
-Batch cleanup of worktrees.
+Batch cleanup of worktrees by filter. At least one filter is required.
 - `--merged` — Delete worktrees for branches already merged to base
 - `--older-than <DURATION>` — Delete worktrees older than duration (e.g., `7d`, `2w`, `1m`)
-- `-i, --interactive` — Interactive selection
 - `--dry-run` — Preview without deleting
+- `-f, --force` — Tear through busy worktrees
+
+For interactive selection, use `gw delete -i`.
 
 ### `gw doctor`
 Run health check: git version, worktree accessibility, uncommitted changes, behind-base detection, merge conflicts, Claude Code integration.

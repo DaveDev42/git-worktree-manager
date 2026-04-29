@@ -280,15 +280,10 @@ pub enum Commands {
         cache: CacheControl,
     },
 
-    /// Batch cleanup of worktrees
+    /// Batch cleanup of worktrees matching filters (`--merged`, `--older-than`).
     ///
-    /// Note: `--no-cache` only affects the interactive listing path inside `clean`
-    /// (which calls `get_worktree_status`). Merge/age-based deletion logic in `clean`
-    /// uses git directly and does not consult the PR cache.
+    /// For interactive selection, use `gw delete -i` instead.
     Clean {
-        #[command(flatten)]
-        cache: CacheControl,
-
         /// Delete worktrees for branches already merged to base
         #[arg(long)]
         merged: bool,
@@ -296,10 +291,6 @@ pub enum Commands {
         /// Delete worktrees older than duration (e.g., 7, 30d, 2w, 1m)
         #[arg(long, value_name = "DURATION", value_parser = parse_duration_days)]
         older_than: Option<u64>,
-
-        /// Interactive selection UI
-        #[arg(short, long)]
-        interactive: bool,
 
         /// Show what would be deleted without deleting
         #[arg(long)]
@@ -309,6 +300,10 @@ pub enum Commands {
         /// (default: skip worktrees another session is using)
         #[arg(short, long)]
         force: bool,
+
+        /// [Deprecated] Use `gw delete -i` for interactive selection.
+        #[arg(short, long, hide = true)]
+        interactive: bool,
     },
 
     /// Display worktree hierarchy as a tree
@@ -676,14 +671,13 @@ mod tests {
     use super::*;
     use clap::Parser;
 
-    /// Assert that `gw clean --no-cache` parses correctly. Pins the CacheControl
-    /// flag on Clean so accidental removal breaks the test.
+    /// Assert that `gw clean --merged` parses correctly.
     #[test]
-    fn clean_accepts_no_cache_flag() {
-        let cli = Cli::try_parse_from(["gw", "clean", "--no-cache"]).expect("parses");
-        let Some(Commands::Clean { cache, .. }) = cli.command else {
+    fn clean_accepts_merged_flag() {
+        let cli = Cli::try_parse_from(["gw", "clean", "--merged"]).expect("parses");
+        let Some(Commands::Clean { merged, .. }) = cli.command else {
             panic!("expected Clean variant, got {:?}", cli.command);
         };
-        assert!(cache.no_cache);
+        assert!(merged);
     }
 }

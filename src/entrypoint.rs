@@ -219,20 +219,16 @@ pub fn run() {
         }
 
         Some(Commands::Clean {
-            cache,
             merged,
             older_than,
-            interactive,
             dry_run,
             force,
-        }) => clean::clean_worktrees(
-            cache.no_cache,
-            merged,
-            older_than,
             interactive,
-            dry_run,
-            force,
-        ),
+        }) => match clean::clean_worktrees(merged, older_than, dry_run, force, interactive) {
+            Ok(0) => Ok(()),
+            Ok(code) => Err(crate::error::CwError::ExitCode(code)),
+            Err(e) => Err(e),
+        },
 
         Some(Commands::Sync {
             branch,
