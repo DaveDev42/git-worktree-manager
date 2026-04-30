@@ -177,15 +177,6 @@ fn test_delete_interactive_help_mentions_multiselect() {
 }
 
 #[test]
-fn test_sync_help() {
-    cw().args(["sync", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--all"))
-        .stdout(predicate::str::contains("--fetch-only"));
-}
-
-#[test]
 fn test_clean_help() {
     cw().args(["clean", "--help"])
         .assert()
@@ -275,14 +266,6 @@ fn test_delete_interactive_conflicts_with_positional() {
         msg.contains("cannot be used") || msg.contains("conflict"),
         "expected conflict error, got: {msg}"
     );
-}
-
-#[test]
-fn test_change_base_help() {
-    cw().args(["change-base", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--dry-run"));
 }
 
 #[test]
@@ -422,34 +405,8 @@ fn test_delete_short_flags() {
 }
 
 #[test]
-fn test_sync_ai_merge_flag() {
-    cw().args(["sync", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--ai-merge"));
-}
-
-#[test]
-fn test_change_base_interactive_flag() {
-    cw().args(["change-base", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--interactive"))
-        .stdout(predicate::str::contains("-i"));
-}
-
-#[test]
 fn test_resume_worktree_disambiguation_flag() {
     cw().args(["resume", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--worktree"))
-        .stdout(predicate::str::contains("-w"));
-}
-
-#[test]
-fn test_sync_worktree_disambiguation_flag() {
-    cw().args(["sync", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("--worktree"))

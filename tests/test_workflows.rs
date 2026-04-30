@@ -117,15 +117,6 @@ fn test_workflow_export_import_roundtrip() {
 }
 
 #[test]
-fn test_workflow_new_then_sync() {
-    let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "sync-wf", "--no-term"]));
-
-    let output = repo.cw(&["sync", "sync-wf"]);
-    assert!(output.status.success());
-}
-
-#[test]
 fn test_workflow_clean_dry_run() {
     let repo = TestRepo::new();
     assert!(repo.cw_ok(&["new", "clean-test", "--no-term"]));

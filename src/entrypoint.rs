@@ -191,36 +191,6 @@ pub fn run() {
             Err(e) => Err(e),
         },
 
-        Some(Commands::Sync {
-            branch,
-            all,
-            fetch_only,
-            ai_merge,
-            worktree: is_worktree,
-            by_branch,
-        }) => {
-            let lookup_mode = resolve_lookup_mode(is_worktree, by_branch);
-            worktree::sync_worktree(branch.as_deref(), all, fetch_only, ai_merge, lookup_mode)
-        }
-
-        Some(Commands::ChangeBase {
-            new_base,
-            branch,
-            dry_run,
-            interactive,
-            worktree: is_worktree,
-            by_branch,
-        }) => {
-            let lookup_mode = resolve_lookup_mode(is_worktree, by_branch);
-            config_ops::change_base_branch(
-                &new_base,
-                branch.as_deref(),
-                dry_run,
-                interactive,
-                lookup_mode,
-            )
-        }
-
         Some(Commands::Backup { action }) => match action {
             BackupAction::Create {
                 branch,

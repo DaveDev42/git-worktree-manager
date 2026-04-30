@@ -28,11 +28,9 @@ These are the management-side commands. For full flag detail, see
 | `gw status` | Show detailed info about the current worktree. |
 | `gw delete [target]` | Delete a worktree (and optionally its branch / remote branch). |
 | `gw clean` | Batch cleanup of merged or stale worktrees by filter (`--merged`, `--older-than`); `--dry-run` previews. Use `gw delete -i` for interactive selection. |
-| `gw sync [branch]` | Rebase a worktree (or `--all`) against its base branch. |
 | `gw resume [branch]` | Resume an AI session in a worktree (auto-uses `--continue` when possible). |
 | `gw shell [worktree] [cmd...]` | Open an interactive shell in a worktree, or run a one-off command there. |
 | `gw diff <a> <b>` | Compare two branches (full / `--summary` / `--files`). |
-| `gw change-base <new> [branch]` | Move a worktree onto a different base branch. |
 | `gw backup create/list/restore` | Create or restore a `git bundle` backup of a worktree. |
 | `gw stash save/list/apply` | Worktree-aware stash that survives across worktrees. |
 | `gw tree` | Visual tree of the worktree hierarchy. |
@@ -127,8 +125,8 @@ git log --oneline HEAD..base | wc -l   # commits behind base
 A non-trivial "behind" count (say, > 5) means drift worth surfacing.
 
 **Suggested action:** Surface the drift in the session greeting, e.g.
-"worktree A is 12 commits behind main; want me to `gw sync` it before we
-start?" If multiple worktrees lag, suggest `gw sync --all`.
+"worktree A is 12 commits behind main; want me to rebase it before we
+start?" If there is drift, suggest running `git rebase` inside the worktree.
 
 ### Rule: Don't kill busy siblings
 
@@ -333,19 +331,6 @@ gw shell feature-x npm test  # run command
 ```
 
 ## Git Workflow
-
-### `gw sync [branch] [OPTIONS]`
-Sync worktree with base branch (rebase).
-- `--all` — Sync all worktrees
-- `--fetch-only` — Only fetch without rebasing
-- `--ai-merge` — Use AI to resolve conflicts
-- `-w, --worktree` / `-b, --by-branch` — Target resolution
-
-### `gw change-base <new-base> [branch] [OPTIONS]`
-Change base branch for a worktree.
-- `--dry-run` — Show what would happen
-- `-i, --interactive` — Interactive rebase
-- `-w, --worktree` / `-b, --by-branch` — Target resolution
 
 ### `gw diff <branch1> <branch2> [OPTIONS]`
 Compare two branches.

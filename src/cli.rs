@@ -276,56 +276,6 @@ pub enum Commands {
         files: bool,
     },
 
-    /// Sync worktree with base branch
-    Sync {
-        /// Branch name (default: current worktree)
-        branch: Option<String>,
-
-        /// Sync all worktrees
-        #[arg(long)]
-        all: bool,
-
-        /// Only fetch updates without rebasing
-        #[arg(long)]
-        fetch_only: bool,
-
-        /// Use AI to resolve merge conflicts
-        #[arg(long)]
-        ai_merge: bool,
-
-        /// Resolve target as worktree name (instead of branch)
-        #[arg(short, long)]
-        worktree: bool,
-
-        /// Resolve target as branch name (instead of worktree)
-        #[arg(short, long, conflicts_with = "worktree")]
-        by_branch: bool,
-    },
-
-    /// Change base branch for a worktree
-    ChangeBase {
-        /// New base branch
-        new_base: String,
-        /// Branch name (default: current worktree)
-        branch: Option<String>,
-
-        /// Dry run (show what would happen)
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Interactive rebase
-        #[arg(short, long)]
-        interactive: bool,
-
-        /// Resolve target as worktree name (instead of branch)
-        #[arg(short, long)]
-        worktree: bool,
-
-        /// Resolve target as branch name (instead of worktree)
-        #[arg(short, long, conflicts_with = "worktree")]
-        by_branch: bool,
-    },
-
     /// Configuration management
     Config {
         #[command(subcommand)]

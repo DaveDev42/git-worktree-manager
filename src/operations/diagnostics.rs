@@ -283,7 +283,7 @@ fn check_behind_base(
         }
         println!(
             "   {}",
-            style("Tip: Use 'gw sync --all' to update all worktrees").dim()
+            style("Tip: Use 'git rebase' to update worktrees").dim()
         );
         *warnings += 1;
     }
@@ -402,10 +402,7 @@ fn print_recommendations(
             );
         }
         if !behind.is_empty() {
-            println!(
-                "  - Run {} to update all worktrees",
-                style("gw sync --all").cyan()
-            );
+            println!("  - Run {} to update worktrees", style("git rebase").cyan());
         }
         if !conflicted.is_empty() {
             println!("  - Resolve conflicts in conflicted worktrees");

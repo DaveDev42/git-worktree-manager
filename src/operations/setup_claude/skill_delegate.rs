@@ -138,10 +138,8 @@ Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be given per invoc
 | `gw list` | List all worktrees with status |
 | `gw status` | Show current worktree info |
 | `gw resume [branch]` | Resume AI session in worktree |
-| `gw sync [--all]` | Rebase worktree(s) onto base branch |
 | `gw clean [--merged]` | Batch cleanup of worktrees |
 | `gw diff <b1> <b2>` | Compare two branches |
-| `gw change-base <new> [branch]` | Change base branch |
 | `gw config <action>` | Configuration management |
 | `gw doctor` | Run diagnostics |
 | `gw tree` / `gw stats` | Visual hierarchy / statistics |
@@ -199,12 +197,6 @@ gw new feature-x --prompt-file /tmp/gw-prompt-$$.txt
 # ... work is done in the new worktree ...
 gh pr create                       # create PR (run inside the worktree)
 gw delete feature-x                # cleanup after merge
-```
-
-### Keep worktrees in sync
-```bash
-gw sync --all                      # rebase all worktrees onto their base
-gw sync --all --ai-merge           # use AI to resolve conflicts
 ```
 
 ### Batch cleanup

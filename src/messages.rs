@@ -39,25 +39,6 @@ pub fn worktree_dir_not_found(path: &str) -> String {
     format!("Worktree directory does not exist: {}", path)
 }
 
-pub fn rebase_failed(
-    worktree_path: &str,
-    rebase_target: &str,
-    conflicted_files: Option<&[String]>,
-) -> String {
-    let mut msg = format!(
-        "Rebase failed. Please resolve conflicts manually:\n  cd {}\n  git rebase {}",
-        worktree_path, rebase_target
-    );
-    if let Some(files) = conflicted_files {
-        msg.push_str(&format!("\n\nConflicted files ({}):", files.len()));
-        for file in files {
-            msg.push_str(&format!("\n  \u{2022} {}", file));
-        }
-        msg.push_str("\n\nTip: Use --ai-merge flag to get AI assistance with conflicts");
-    }
-    msg
-}
-
 pub fn cannot_delete_main_worktree() -> String {
     "Cannot delete main repository worktree".to_string()
 }
@@ -85,10 +66,6 @@ pub fn detached_head_warning() -> String {
 // ---------------------------------------------------------------------------
 // Status / progress messages (used in styled println! calls)
 // ---------------------------------------------------------------------------
-
-pub fn rebase_in_progress(branch: &str, target: &str) -> String {
-    format!("Rebasing {} onto {}...", branch, target)
-}
 
 pub fn deleting_local_branch(branch: &str) -> String {
     format!("Deleting local branch: {}", branch)
@@ -179,35 +156,6 @@ mod tests {
     }
 
     #[test]
-    fn test_rebase_failed_without_conflicts() {
-        let msg = rebase_failed("/tmp/wt", "main", None);
-        assert!(msg.contains("Rebase failed"));
-        assert!(msg.contains("cd /tmp/wt"));
-        assert!(msg.contains("git rebase main"));
-        assert!(!msg.contains("Conflicted files"));
-    }
-
-    #[test]
-    fn test_rebase_failed_with_conflicts() {
-        let files = vec!["src/main.rs".to_string(), "Cargo.toml".to_string()];
-        let msg = rebase_failed("/tmp/wt", "main", Some(&files));
-        assert!(msg.contains("Rebase failed"));
-        assert!(msg.contains("cd /tmp/wt"));
-        assert!(msg.contains("git rebase main"));
-        assert!(msg.contains("Conflicted files (2)"));
-        assert!(msg.contains("src/main.rs"));
-        assert!(msg.contains("Cargo.toml"));
-        assert!(msg.contains("--ai-merge"));
-    }
-
-    #[test]
-    fn test_rebase_failed_with_empty_conflicts() {
-        let files: Vec<String> = vec![];
-        let msg = rebase_failed("/tmp/wt", "main", Some(&files));
-        assert!(msg.contains("Conflicted files (0)"));
-    }
-
-    #[test]
     fn test_cannot_delete_main_worktree() {
         let msg = cannot_delete_main_worktree();
         assert!(msg.contains("Cannot delete main repository worktree"));
@@ -241,12 +189,6 @@ mod tests {
         assert!(msg.contains("detached"));
         assert!(msg.contains("--branch"));
         assert!(msg.contains("--force"));
-    }
-
-    #[test]
-    fn test_rebase_in_progress() {
-        let msg = rebase_in_progress("feat-x", "main");
-        assert!(msg.contains("Rebasing feat-x onto main"));
     }
 
     #[test]
