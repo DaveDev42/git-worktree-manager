@@ -49,6 +49,11 @@ pub fn manage_reference_content_for_test() -> &'static str {
     skill_manage::reference_content()
 }
 
+#[doc(hidden)]
+pub fn delegate_skill_content_for_test() -> &'static str {
+    skill_delegate::content()
+}
+
 /// True if our marketplace tree exists at the canonical data-local path.
 pub fn is_installed() -> bool {
     let dl = data_local_or_fallback();
