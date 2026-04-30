@@ -67,7 +67,7 @@ fn render_soft_list(out: &mut String, soft: &[BusyInfo]) {
 }
 
 /// Render the busy-status block (header + body) for read-only callers
-/// like `gw status` / `gw list`. Same body sections as `render_refusal`
+/// like `gw list`. Same body sections as `render_refusal`
 /// (Active Claude session / Lockfile holder / cwd processes) but with a
 /// neutral header and no `--force` guidance. Returns an empty string
 /// when both vectors are empty.

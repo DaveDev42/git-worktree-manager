@@ -496,8 +496,8 @@ const CLAUDE_ACTIVITY_THRESHOLD_MIN: i64 = 10;
 ///
 /// This is the single source of truth for the gate — `detect_busy_tiered`
 /// uses it for the full hard/soft dispatch in `gw delete`, and
-/// `display::get_worktree_status` uses it as the "busy" check for read-
-/// only surfaces (`gw status` / `gw list`).
+/// `display::get_worktree_status` uses it as the "busy" check for the
+/// read-only `gw list` surface.
 pub fn active_claude_sessions(worktree: &Path) -> Option<Vec<claude_session::ActiveSession>> {
     let proj_dir = claude_session::project_dir_for(worktree)?;
     let threshold = ChronoDuration::minutes(CLAUDE_ACTIVITY_THRESHOLD_MIN);
@@ -544,7 +544,7 @@ pub fn detect_busy_tiered(worktree: &Path) -> (Vec<BusyInfo>, Vec<BusyInfo>) {
 
     // Hard: active Claude sessions. The two-stage gate (jsonl event AND
     // live `claude` process) lives in `active_claude_sessions` so that
-    // read-only surfaces (`gw status` / `gw list`) share the same check.
+    // the read-only `gw list` surface shares the same check.
     if let Some(sessions) = active_claude_sessions(worktree) {
         for s in sessions {
             // session_id is a UUID; surface as cmd "claude (session <id>)" with

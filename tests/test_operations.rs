@@ -1,6 +1,6 @@
 /// Integration tests for core operations — ported from Python test_core.py.
-/// Covers: create_worktree, delete, list, status,
-/// resume, and remote-branch scenarios.
+/// Covers: create_worktree, delete, list, resume, and remote-branch
+/// scenarios.
 mod common;
 
 use common::TestRepo;

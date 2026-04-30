@@ -1,5 +1,5 @@
 /// End-to-end workflow tests.
-/// Ported from tests/e2e/test_workflows.py (13 tests).
+/// Ported from tests/e2e/test_workflows.py.
 mod common;
 
 use common::TestRepo;

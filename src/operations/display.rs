@@ -564,7 +564,7 @@ fn lookup_intended_branch(repo: &Path, current_branch: &str, path: &Path) -> Opt
 /// sections `gw delete` uses (Active Claude session / Lockfile holder /
 /// processes with cwd in this worktree), via the shared
 /// `busy_messages::render_busy_block`. Skips the `--force` guidance —
-/// `gw status` is read-only.
+/// `gw list` is read-only.
 ///
 /// No-op when there are zero busy rows. The cwd scan is `OnceLock`-cached
 /// for the process, so calling this after `get_worktree_status` adds no

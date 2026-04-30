@@ -58,7 +58,7 @@ fn both_tiers_lead_with_hard_then_show_soft() {
 }
 
 // Tests for `render_busy_block` — the read-only variant used by
-// `gw status` / `gw list`. Body sections (Active Claude session /
+// `gw list`. Body sections (Active Claude session /
 // Lockfile holder / cwd processes) are shared with `render_refusal` via
 // `render_hard_section` / `render_soft_list`; only the header tone and
 // the absence of `--force` guidance differ.
