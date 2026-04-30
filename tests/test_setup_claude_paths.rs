@@ -103,9 +103,11 @@ fn plugin_manifest_uses_cargo_version() {
     let v: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
     assert_eq!(v["name"], "gw");
     let version = v["version"].as_str().expect("version string");
-    // Version comes from CARGO_PKG_VERSION; sanity-check semver shape.
+    // Version comes from CARGO_PKG_VERSION; sanity-check the MAJOR.MINOR.PATCH
+    // core. A prerelease suffix like "-alpha.1" is allowed and ignored here.
+    let core = version.split('-').next().unwrap_or(version);
     assert!(
-        version.split('.').count() == 3,
-        "expected semver, got {version}"
+        core.split('.').count() == 3,
+        "expected semver core, got {version}"
     );
 }
