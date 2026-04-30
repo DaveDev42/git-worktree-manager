@@ -21,6 +21,70 @@ From the natural language input, determine:
 - **Branch name** — generate a short, descriptive branch name from the task (e.g., `fix-auth-token-expiration`). Use conventional prefixes: `fix-`, `feat-`, `refactor-`, `docs-`, `test-`, `chore-`.
 - **Base branch** — use the default unless the user specifies otherwise
 
+### Step 1.5: Pre-flight check
+
+Run these three checks in order *before* invoking `gw new`. They are
+procedural, not advisory — execute them the same way you execute parsing
+in Step 1.
+
+#### A.1 Stacked-base resolution
+
+Determine where the new worktree should branch from.
+
+```bash
+git rev-parse --show-toplevel 2>/dev/null
+git branch --show-current 2>/dev/null
+```
+
+- If cwd is the main repo or the default-base worktree (`main` / `master`
+  / configured default): proceed with default base, omit `--base`.
+- If cwd is inside a worktree whose branch is **not** the default base,
+  ask the user one explicit question:
+  > "You're currently inside the `<branch>` worktree. Should this new
+  > task stack on `<branch>`, or branch from the default base
+  > `<default>`?"
+  - On "stack on `<branch>`" → pass `--base <branch>` to `gw new`.
+  - On "default base" → omit `--base`.
+
+Do not guess. The cost of asking once is small; the cost of a wrong base
+is a manual rebase.
+
+#### A.2 Duplicate-task detection
+
+Cheap probes to avoid spawning a worktree for work that already exists.
+
+```bash
+gw list
+# Only if `gh` is on PATH and the repo has a GitHub remote:
+gh pr list --state all --search '<keyword>' --limit 5
+```
+
+Extract 2–3 high-signal keywords from the task description (the task-type
+prefix you generated for the branch name plus the most distinctive noun
+phrase). **Only confirm with the user if the match is unambiguous** — a
+branch / PR title that contains the same task-type prefix AND a strong
+noun match. Borderline matches are not surfaced; false-positive cost is
+higher than the friction cost.
+
+On unambiguous match, present options:
+- continue anyway (spawn fresh)
+- resume in the existing worktree (`gw resume <branch>`)
+- cancel
+
+#### A.3 Stale-cwd handling
+
+If `git rev-parse --show-toplevel` errored with ENOENT or `pwd -P`
+resolves to a path that no longer exists, the current shell is in a dead
+worktree (likely deleted by another session).
+
+This does **not** block spawn — `gw new` creates a fresh worktree
+elsewhere — but you must:
+
+- Tell the user clearly: "Current cwd `<path>` no longer exists — likely
+  deleted by another session."
+- After spawn succeeds, advise the user to `cd` into the new worktree (or
+  the main repo) before running anything else from the dead shell.
+
 ### Step 2: Confirm and execute
 
 All three prompt ingestion modes (`--prompt`, `--prompt-file`, `--prompt-stdin`) are equally safe from shell-escaping issues. Use `--prompt-file` for convenience when managing multi-line prompts in an editor or passing skill-generated files.
