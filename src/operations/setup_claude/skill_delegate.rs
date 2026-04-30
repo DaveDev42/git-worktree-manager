@@ -3,7 +3,7 @@
 pub fn content() -> &'static str {
     r#"---
 name: delegate
-description: "Delegate coding tasks to isolated git worktrees. Invoke with: /gw <natural language task description>. Also handles worktree management: list, clean, etc."
+description: "Delegate coding tasks to isolated git worktrees. Invoke with: /gw <natural language task description>. Also handles worktree management: list, delete, etc."
 allowed-tools: Bash
 ---
 
@@ -138,7 +138,6 @@ Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be given per invoc
 | `gw list` | List all worktrees with status |
 | `gw status` | Show current worktree info |
 | `gw resume [branch]` | Resume AI session in worktree |
-| `gw clean [--merged]` | Batch cleanup of worktrees |
 | `gw diff <b1> <b2>` | Compare two branches |
 | `gw config <action>` | Configuration management |
 | `gw doctor` | Run diagnostics |
@@ -201,8 +200,7 @@ gw delete feature-x                # cleanup after merge
 
 ### Batch cleanup
 ```bash
-gw clean --merged                  # delete worktrees for merged branches
-gw clean --older-than 30d --dry-run  # preview old worktree cleanup
+gw delete -i                       # interactive selection of worktrees to delete
 ```
 
 ### Global mode (across repos)
@@ -213,7 +211,7 @@ gw -g scan --dir ~/projects        # discover repositories
 
 ## Guidelines
 
-- Before running any `gw` subcommand that reads the current worktree (`gw status`, `gw list`, `gw delete` without an explicit target, etc.), make sure the shell's cwd still exists. If another session or an earlier `gw delete`/`gw clean` removed the worktree, the shell holds a stale pwd and commands behave unexpectedly. Quick guard:
+- Before running any `gw` subcommand that reads the current worktree (`gw status`, `gw list`, `gw delete` without an explicit target, etc.), make sure the shell's cwd still exists. If another session or an earlier `gw delete` removed the worktree, the shell holds a stale pwd and commands behave unexpectedly. Quick guard:
   ```bash
   [ -d "$(pwd -P 2>/dev/null)" ] || { echo "FATAL: cwd missing (worktree likely deleted). Abort."; exit 1; }
   ```
@@ -235,6 +233,6 @@ gw -g scan --dir ~/projects        # discover repositories
   - Use `--prompt-file` for complex or skill-generated prompts to manage them conveniently
   - If the user's request is vague or ambiguous, ask clarifying questions BEFORE spawning
   - Do NOT spawn a task assuming you can "correct course later" — you cannot
-- For destructive worktree operations (`gw delete`, `gw clean`), defer to the `manage` skill — in particular the don't-kill-busy-siblings rule.
+- For destructive worktree operations (`gw delete`), defer to the `manage` skill — in particular the don't-kill-busy-siblings rule.
 "#
 }

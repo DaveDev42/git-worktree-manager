@@ -4,7 +4,7 @@
 pub fn content() -> &'static str {
     r#"---
 name: manage
-description: "Manage git worktrees safely across multiple parallel sessions. Auto-applies when the user invokes gw list/delete/clean/resume."
+description: "Manage git worktrees safely across multiple parallel sessions. Auto-applies when the user invokes gw list/delete/resume."
 allowed-tools: Bash, Read, Edit
 ---
 
@@ -26,8 +26,7 @@ These are the management-side commands. For full flag detail, see
 |---------|---------|
 | `gw list` (alias `gw ls`) | List all worktrees with status indicators (active, clean, modified, stale). |
 | `gw status` | Show detailed info about the current worktree. |
-| `gw delete [target]` | Delete a worktree (and optionally its branch / remote branch). |
-| `gw clean` | Batch cleanup of merged or stale worktrees by filter (`--merged`, `--older-than`); `--dry-run` previews. Use `gw delete -i` for interactive selection. |
+| `gw delete [target]` | Delete a worktree (and optionally its branch / remote branch). Use `-i` for interactive batch selection. |
 | `gw resume [branch]` | Resume an AI session in a worktree (auto-uses `--continue` when possible). |
 | `gw shell [worktree] [cmd...]` | Open an interactive shell in a worktree, or run a one-off command there. |
 | `gw diff <a> <b>` | Compare two branches (full / `--summary` / `--files`). |
@@ -130,24 +129,24 @@ start?" If there is drift, suggest running `git rebase` inside the worktree.
 
 ### Rule: Don't kill busy siblings
 
-**Symptom:** A delete or clean operation in the main repo session removes
-a worktree that another Claude session is actively working in. The most
-common path is volunteering `--force` to "clean up" after `gw delete` or
-`gw clean` complains that a target is busy.
+**Symptom:** A delete operation in the main repo session removes a
+worktree that another Claude session is actively working in. The most
+common path is volunteering `--force` to "clean up" after `gw delete`
+complains that a target is busy.
 
 **Why it hurts:** The sibling session's review-fix loop or long-running
 task halts mid-flight. Even if the work is on a pushed branch, local
 state and any uncommitted changes are gone, and the sibling's cwd dies
 underneath it.
 
-**Healthy state:** `gw delete` and `gw clean` complete without `--force`
-— i.e. they respect the built-in busy gate. `--force` is reserved for
-cases where the user has explicitly said "force-delete this even if
-busy". Never volunteer `--force` to make an error message go away.
+**Healthy state:** `gw delete` completes without `--force` — i.e. it
+respects the built-in busy gate. `--force` is reserved for cases where
+the user has explicitly said "force-delete this even if busy". Never
+volunteer `--force` to make an error message go away.
 
-**How to detect:** Before any `gw delete <target>` or `gw clean` call,
-run `gw list` and check the candidates' busy badges. If a candidate is
-busy, do **not** add `--force`.
+**How to detect:** Before any `gw delete <target>` call, run `gw list`
+and check the candidates' busy badges. If a candidate is busy, do
+**not** add `--force`.
 
 **Suggested action:**
 - On busy: skip with a clear report — "`<branch>` is busy; skipped.
@@ -338,15 +337,6 @@ Compare two branches.
 - `-f, --files` — Show changed files only
 
 ## Maintenance
-
-### `gw clean [OPTIONS]`
-Batch cleanup of worktrees by filter. At least one filter is required.
-- `--merged` — Delete worktrees for branches already merged to base
-- `--older-than <DURATION>` — Delete worktrees older than duration (e.g., `7d`, `2w`, `1m`)
-- `--dry-run` — Preview without deleting
-- `-f, --force` — Tear through busy worktrees
-
-For interactive selection, use `gw delete -i`.
 
 ### `gw doctor`
 Run health check: git version, worktree accessibility, uncommitted changes, behind-base detection, merge conflicts, Claude Code integration.

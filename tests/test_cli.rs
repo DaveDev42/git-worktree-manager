@@ -16,14 +16,11 @@ fn test_help() {
         .stdout(predicate::str::contains("git worktree manager"))
         .stdout(predicate::str::contains("new"))
         .stdout(predicate::str::contains("list"))
-        .stdout(predicate::str::contains("merge"))
-        .stdout(predicate::str::contains("pr"))
         .stdout(predicate::str::contains("resume"))
         .stdout(predicate::str::contains("delete"))
         .stdout(predicate::str::contains("doctor"))
         .stdout(predicate::str::contains("stash"))
         .stdout(predicate::str::contains("hook"))
-        .stdout(predicate::str::contains("clean"))
         .stdout(predicate::str::contains("shell"))
         .stdout(predicate::str::contains("export"))
         .stdout(predicate::str::contains("import"))
@@ -174,17 +171,6 @@ fn test_delete_interactive_help_mentions_multiselect() {
         .assert()
         .success()
         .stdout(predicate::str::contains("--interactive"));
-}
-
-#[test]
-fn test_clean_help() {
-    cw().args(["clean", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--merged"))
-        .stdout(predicate::str::contains("--older-than"))
-        .stdout(predicate::str::contains("--dry-run"))
-        .stdout(predicate::str::contains("gw delete -i"));
 }
 
 #[test]

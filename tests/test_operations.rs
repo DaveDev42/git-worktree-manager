@@ -1,5 +1,5 @@
 /// Integration tests for core operations — ported from Python test_core.py.
-/// Covers: create_worktree, delete, clean, list, status,
+/// Covers: create_worktree, delete, list, status,
 /// resume, and remote-branch scenarios.
 mod common;
 
@@ -504,73 +504,6 @@ fn test_show_status_in_main_repo() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Worktree") || stdout.contains("worktree") || stdout.contains("main"));
-}
-
-// ===========================================================================
-// clean — no criteria
-// ===========================================================================
-
-#[test]
-fn test_clean_no_criteria() {
-    let repo = TestRepo::new();
-    let combined = repo.cw_combined(&["clean"]);
-    assert!(
-        combined.contains("filter") || combined.contains("requires"),
-        "Expected error about missing filter, got: {}",
-        combined
-    );
-    assert!(
-        combined.contains("gw delete -i"),
-        "Expected redirect to 'gw delete -i', got: {}",
-        combined
-    );
-}
-
-// ===========================================================================
-// clean — merged (dry run)
-// ===========================================================================
-
-#[test]
-fn test_clean_merged_dry_run() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["clean", "--merged", "--dry-run"]);
-    assert!(output.status.success());
-}
-
-// ===========================================================================
-// clean — merged
-// ===========================================================================
-
-#[test]
-fn test_clean_merged() {
-    let repo = TestRepo::new();
-    let _wt = repo.create_worktree("clean-merged-test");
-
-    let output = repo.cw(&["clean", "--merged"]);
-    assert!(output.status.success());
-}
-
-// ===========================================================================
-// clean — older than
-// ===========================================================================
-
-#[test]
-fn test_clean_older_than_dry_run() {
-    let repo = TestRepo::new();
-    repo.create_worktree("old-wt");
-
-    let output = repo.cw(&["clean", "--older-than", "0", "--dry-run"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // --older-than 0 means "age >= 0 days" = all worktrees
-    assert!(
-        stdout.contains("old-wt")
-            || stdout.contains("Would")
-            || stdout.contains("would")
-            || stdout.contains("dry"),
-        "Expected worktree mention in dry-run output, got: {}",
-        stdout
-    );
 }
 
 // ===========================================================================

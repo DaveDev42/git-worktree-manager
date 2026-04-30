@@ -15,8 +15,8 @@ use crate::cwshare_setup;
 use crate::error::{CwError, Result};
 use crate::hooks;
 use crate::operations::{
-    ai_tools, backup, clean, config_ops, diagnostics, display, global_ops, guard, helpers,
-    path_cmd, setup_claude, shell, spawn_spec, stash, worktree,
+    ai_tools, backup, config_ops, diagnostics, display, global_ops, guard, helpers, path_cmd,
+    setup_claude, shell, spawn_spec, stash, worktree,
 };
 use crate::resolve_prompt;
 use crate::shell_functions;
@@ -178,18 +178,6 @@ pub fn run() {
                 Err(e) => Err(e),
             }
         }
-
-        Some(Commands::Clean {
-            merged,
-            older_than,
-            dry_run,
-            force,
-            interactive,
-        }) => match clean::clean_worktrees(merged, older_than, dry_run, force, interactive) {
-            Ok(0) => Ok(()),
-            Ok(code) => Err(crate::error::CwError::ExitCode(code)),
-            Err(e) => Err(e),
-        },
 
         Some(Commands::Backup { action }) => match action {
             BackupAction::Create {

@@ -5,7 +5,6 @@ pub mod busy;
 pub mod busy_messages;
 pub mod claude_process;
 pub mod claude_session;
-pub mod clean;
 pub mod config_ops;
 pub mod delete_batch;
 pub mod diagnostics;

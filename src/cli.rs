@@ -20,35 +20,6 @@ fn parse_config_key(s: &str) -> Result<String, String> {
     Ok(s.to_string())
 }
 
-/// Parse duration strings like "30", "30d", "2w", "1m" into days.
-fn parse_duration_days(s: &str) -> Result<u64, String> {
-    let s = s.trim();
-    if s.is_empty() {
-        return Err("empty duration".into());
-    }
-
-    // Pure number = days
-    if let Ok(n) = s.parse::<u64>() {
-        return Ok(n);
-    }
-
-    let (num_str, suffix) = s.split_at(s.len() - 1);
-    let n: u64 = num_str
-        .parse()
-        .map_err(|_| format!("invalid duration: '{}'. Use e.g. 30, 7d, 2w, 1m", s))?;
-
-    match suffix {
-        "d" => Ok(n),
-        "w" => Ok(n * 7),
-        "m" => Ok(n * 30),
-        "y" => Ok(n * 365),
-        _ => Err(format!(
-            "unknown duration suffix '{}'. Use d (days), w (weeks), m (months), y (years)",
-            suffix
-        )),
-    }
-}
-
 /// Git worktree manager CLI.
 #[derive(Parser, Debug)]
 #[command(
@@ -222,32 +193,6 @@ pub enum Commands {
     List {
         #[command(flatten)]
         cache: CacheControl,
-    },
-
-    /// Batch cleanup of worktrees matching filters (`--merged`, `--older-than`).
-    ///
-    /// For interactive selection, use `gw delete -i` instead.
-    Clean {
-        /// Delete worktrees for branches already merged to base
-        #[arg(long)]
-        merged: bool,
-
-        /// Delete worktrees older than duration (e.g., 7, 30d, 2w, 1m)
-        #[arg(long, value_name = "DURATION", value_parser = parse_duration_days)]
-        older_than: Option<u64>,
-
-        /// Show what would be deleted without deleting
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Bypass the busy-detection gate: delete busy worktrees too
-        /// (default: skip worktrees another session is using)
-        #[arg(short, long)]
-        force: bool,
-
-        /// [Deprecated] Use `gw delete -i` for interactive selection.
-        #[arg(short, long, hide = true)]
-        interactive: bool,
     },
 
     /// Display worktree hierarchy as a tree
@@ -559,20 +504,4 @@ pub enum HookAction {
         #[arg(long)]
         dry_run: bool,
     },
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use clap::Parser;
-
-    /// Assert that `gw clean --merged` parses correctly.
-    #[test]
-    fn clean_accepts_merged_flag() {
-        let cli = Cli::try_parse_from(["gw", "clean", "--merged"]).expect("parses");
-        let Some(Commands::Clean { merged, .. }) = cli.command else {
-            panic!("expected Clean variant, got {:?}", cli.command);
-        };
-        assert!(merged);
-    }
 }

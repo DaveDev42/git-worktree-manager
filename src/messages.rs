@@ -79,10 +79,6 @@ pub fn removing_worktree(path: &std::path::Path) -> String {
     format!("Removing worktree: {}", path.display())
 }
 
-pub fn cleanup_complete(deleted: u32) -> String {
-    format!("* Cleanup complete! Deleted {} worktree(s)", deleted)
-}
-
 pub fn starting_ai_tool_foreground(tool_name: &str) -> String {
     format!("Starting {} (Ctrl+C to exit)...", tool_name)
 }
@@ -208,12 +204,6 @@ mod tests {
         let msg = removing_worktree(std::path::Path::new("/tmp/wt"));
         assert!(msg.contains("Removing worktree:"));
         assert!(msg.contains("/tmp/wt"));
-    }
-
-    #[test]
-    fn test_cleanup_complete() {
-        let msg = cleanup_complete(3);
-        assert!(msg.contains("3 worktree(s)"));
     }
 
     #[test]
