@@ -10,19 +10,26 @@
 git-worktree-manager/
 ├── Cargo.toml                     # Package: git-worktree-manager, bin: gw
 ├── src/
-│   ├── main.rs                    # Entry point + command routing
+│   ├── bin/
+│   │   ├── gw.rs                  # `gw` CLI entry (8 MiB stack, calls entrypoint::run)
+│   │   └── cw.rs                  # `cw` legacy alias entry (same dispatch as gw)
 │   ├── lib.rs                     # Module declarations
+│   ├── entrypoint.rs              # Single dispatch entry (run function)
 │   ├── cli.rs                     # clap derive CLI definitions
 │   ├── config.rs                  # serde-based typed config
 │   ├── constants.rs               # LaunchMethod enum, presets, sanitization
 │   ├── console.rs                 # Styled output helpers (console crate)
+│   ├── cwshare_setup.rs           # .cwshare bootstrap
 │   ├── error.rs                   # thiserror error hierarchy
 │   ├── git.rs                     # Git command wrapper
 │   ├── hooks.rs                   # Hook execution + CRUD
+│   ├── messages.rs                # Output message templates
+│   ├── prompt_source.rs           # AI prompt assembly (resolve_prompt)
 │   ├── registry.rs                # Global repository registry
 │   ├── session.rs                 # AI session metadata
 │   ├── shared_files.rs            # .cwshare file copying
 │   ├── shell_functions.rs         # Shell function generation (bash/zsh/fish)
+│   ├── tui/                       # Ratatui-based TUI (delete selector, etc.)
 │   ├── update.rs                  # Auto-update via GitHub Releases
 │   └── operations/
 │       ├── ai_tools.rs            # AI tool launcher dispatch
@@ -87,5 +94,11 @@ Same git config metadata keys and session storage paths.
 - Git operations: `std::process::Command`, not libgit2
 - Zero clippy warnings policy
 - Fully synchronous (no async runtime)
-- Subagent 호출 시 항상 `model` 명시: 단순 lookup/grep은 `haiku`, 코드 구현·디버깅·review는 `sonnet`, 어려운 설계 추론만 `opus`. 생략하면 부모 모델(Opus) 상속 → 단순 작업도 Opus 비용.
+- Subagent 호출 시 항상 `model` 명시 — 생략하면 부모 모델(Opus) 상속 → 단순 작업도 Opus 비용.
+  - 코드베이스 탐색 (3+ grep/find/read 묶음): `Explore` agent + `model=haiku`
+  - 단순 lookup / 짧은 요약: `general-purpose` + `model=haiku`
+  - 코드 구현·디버깅·리팩터·테스트 작성: `general-purpose` + `model=sonnet`
+  - 코드 review: `superpowers:code-reviewer` (정의에 model 잡혀있음 — 호출 site 명시 불필요)
+  - PR 마무리: `pr-shipper` (정의에 model 잡혀있음)
+  - 어려운 설계 추론: `Plan` 또는 `general-purpose` + `model=opus`
 
