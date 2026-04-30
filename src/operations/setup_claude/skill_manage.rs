@@ -4,7 +4,7 @@
 pub fn content() -> &'static str {
     r#"---
 name: manage
-description: "Manage git worktrees safely across multiple parallel sessions. Auto-applies when the user invokes gw list/delete/clean/sync/merge/pr/resume."
+description: "Manage git worktrees safely across multiple parallel sessions. Auto-applies when the user invokes gw list/delete/clean/sync/merge/resume."
 allowed-tools: Bash, Read, Edit
 ---
 
