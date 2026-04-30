@@ -15,7 +15,7 @@ use crate::cwshare_setup;
 use crate::error::{CwError, Result};
 use crate::hooks;
 use crate::operations::{
-    ai_tools, backup, clean, config_ops, diagnostics, display, git_ops, global_ops, guard, helpers,
+    ai_tools, backup, clean, config_ops, diagnostics, display, global_ops, guard, helpers,
     path_cmd, setup_claude, shell, spawn_spec, stash, worktree,
 };
 use crate::resolve_prompt;
@@ -130,25 +130,6 @@ pub fn run() {
             )?;
             Ok(())
         })(),
-
-        Some(Commands::Merge {
-            branch,
-            interactive,
-            dry_run,
-            push,
-            ai_merge,
-            worktree: is_worktree,
-        }) => {
-            let lookup_mode = if is_worktree { Some("worktree") } else { None };
-            git_ops::merge_worktree(
-                branch.as_deref(),
-                push,
-                interactive,
-                dry_run,
-                ai_merge,
-                lookup_mode,
-            )
-        }
 
         Some(Commands::Resume {
             branch,

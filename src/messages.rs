@@ -35,10 +35,6 @@ pub fn missing_metadata(branch: &str) -> String {
     )
 }
 
-pub fn base_repo_not_found(path: &str) -> String {
-    format!("Base repository not found at: {}", path)
-}
-
 pub fn worktree_dir_not_found(path: &str) -> String {
     format!("Worktree directory does not exist: {}", path)
 }
@@ -60,13 +56,6 @@ pub fn rebase_failed(
         msg.push_str("\n\nTip: Use --ai-merge flag to get AI assistance with conflicts");
     }
     msg
-}
-
-pub fn merge_failed(base_path: &str, feature_branch: &str) -> String {
-    format!(
-        "Fast-forward merge failed. Manual intervention required:\n  cd {}\n  git merge {}",
-        base_path, feature_branch
-    )
 }
 
 pub fn cannot_delete_main_worktree() -> String {
@@ -99,10 +88,6 @@ pub fn detached_head_warning() -> String {
 
 pub fn rebase_in_progress(branch: &str, target: &str) -> String {
     format!("Rebasing {} onto {}...", branch, target)
-}
-
-pub fn pushing_to_origin(branch: &str) -> String {
-    format!("Pushing {} to origin...", branch)
 }
 
 pub fn deleting_local_branch(branch: &str) -> String {
@@ -187,13 +172,6 @@ mod tests {
     }
 
     #[test]
-    fn test_base_repo_not_found() {
-        let msg = base_repo_not_found("/tmp/repo");
-        assert!(msg.contains("/tmp/repo"));
-        assert!(msg.contains("Base repository not found"));
-    }
-
-    #[test]
     fn test_worktree_dir_not_found() {
         let msg = worktree_dir_not_found("/tmp/worktree");
         assert!(msg.contains("/tmp/worktree"));
@@ -227,14 +205,6 @@ mod tests {
         let files: Vec<String> = vec![];
         let msg = rebase_failed("/tmp/wt", "main", Some(&files));
         assert!(msg.contains("Conflicted files (0)"));
-    }
-
-    #[test]
-    fn test_merge_failed() {
-        let msg = merge_failed("/tmp/base", "feature-api");
-        assert!(msg.contains("Fast-forward merge failed"));
-        assert!(msg.contains("cd /tmp/base"));
-        assert!(msg.contains("git merge feature-api"));
     }
 
     #[test]
@@ -277,12 +247,6 @@ mod tests {
     fn test_rebase_in_progress() {
         let msg = rebase_in_progress("feat-x", "main");
         assert!(msg.contains("Rebasing feat-x onto main"));
-    }
-
-    #[test]
-    fn test_pushing_to_origin() {
-        let msg = pushing_to_origin("feat-x");
-        assert!(msg.contains("Pushing feat-x to origin"));
     }
 
     #[test]

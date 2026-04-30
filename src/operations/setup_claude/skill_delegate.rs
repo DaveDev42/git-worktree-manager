@@ -3,7 +3,7 @@
 pub fn content() -> &'static str {
     r#"---
 name: delegate
-description: "Delegate coding tasks to isolated git worktrees. Invoke with: /gw <natural language task description>. Also handles worktree management: list, sync, clean, PR, merge, etc."
+description: "Delegate coding tasks to isolated git worktrees. Invoke with: /gw <natural language task description>. Also handles worktree management: list, sync, clean, etc."
 allowed-tools: Bash
 ---
 
@@ -138,7 +138,6 @@ Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be given per invoc
 | `gw list` | List all worktrees with status |
 | `gw status` | Show current worktree info |
 | `gw resume [branch]` | Resume AI session in worktree |
-| `gw merge [branch]` | Merge branch into base |
 | `gw sync [--all]` | Rebase worktree(s) onto base branch |
 | `gw clean [--merged]` | Batch cleanup of worktrees |
 | `gw diff <b1> <b2>` | Compare two branches |

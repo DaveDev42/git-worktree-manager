@@ -4,7 +4,7 @@
 pub fn content() -> &'static str {
     r#"---
 name: manage
-description: "Manage git worktrees safely across multiple parallel sessions. Auto-applies when the user invokes gw list/delete/clean/sync/merge/resume."
+description: "Manage git worktrees safely across multiple parallel sessions. Auto-applies when the user invokes gw list/delete/clean/sync/resume."
 allowed-tools: Bash, Read, Edit
 ---
 
@@ -12,8 +12,8 @@ allowed-tools: Bash, Read, Edit
 
 This skill helps you (Claude) operate the `gw` (git-worktree-manager) management
 commands safely when the user is working across multiple parallel worktrees.
-Use it whenever the user asks about listing, deleting, syncing, merging,
-opening PRs, resuming sessions, or otherwise inspecting worktree state. It also
+Use it whenever the user asks about listing, deleting, syncing,
+resuming sessions, or otherwise inspecting worktree state. It also
 defines a health rulebook (problems to watch for) and a catalog of Claude Code
 hooks you may suggest installing on the user's consent.
 
@@ -29,7 +29,6 @@ These are the management-side commands. For full flag detail, see
 | `gw delete [target]` | Delete a worktree (and optionally its branch / remote branch). |
 | `gw clean` | Batch cleanup of merged or stale worktrees by filter (`--merged`, `--older-than`); `--dry-run` previews. Use `gw delete -i` for interactive selection. |
 | `gw sync [branch]` | Rebase a worktree (or `--all`) against its base branch. |
-| `gw merge [branch]` | Merge a feature branch into its base branch. |
 | `gw resume [branch]` | Resume an AI session in a worktree (auto-uses `--continue` when possible). |
 | `gw shell [worktree] [cmd...]` | Open an interactive shell in a worktree, or run a one-off command there. |
 | `gw diff <a> <b>` | Compare two branches (full / `--summary` / `--files`). |
@@ -334,14 +333,6 @@ gw shell feature-x npm test  # run command
 ```
 
 ## Git Workflow
-
-### `gw merge [branch] [OPTIONS]`
-Merge feature branch into base branch.
-- `-i, --interactive` — Interactive rebase
-- `--dry-run` — Show what would happen
-- `--push` — Push to remote after merge
-- `--ai-merge` — Use AI to resolve merge conflicts
-- `-w, --worktree` — Resolve as worktree name
 
 ### `gw sync [branch] [OPTIONS]`
 Sync worktree with base branch (rebase).

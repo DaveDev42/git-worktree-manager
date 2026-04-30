@@ -123,32 +123,6 @@ pub enum Commands {
         prompt_stdin: bool,
     },
 
-    /// Merge feature branch into base branch
-    Merge {
-        /// Branch name (default: current worktree branch)
-        branch: Option<String>,
-
-        /// Interactive rebase
-        #[arg(short, long)]
-        interactive: bool,
-
-        /// Dry run (show what would happen)
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Push to remote after merge
-        #[arg(long)]
-        push: bool,
-
-        /// Use AI to resolve merge conflicts
-        #[arg(long)]
-        ai_merge: bool,
-
-        /// Resolve target as worktree name (instead of branch)
-        #[arg(short, long)]
-        worktree: bool,
-    },
-
     /// Resume AI work in a worktree
     Resume {
         /// Branch name to resume (default: current worktree)
