@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.0.42](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.41...v0.0.42) (2026-04-30)
+
+
+### Features
+
+* **spawn-ai:** enable no-arg recovery from corrupted launcher line ([#125](https://github.com/DaveDev42/git-worktree-manager/issues/125)) ([48e3c4f](https://github.com/DaveDev42/git-worktree-manager/commit/48e3c4fbbaf2831f462d444345c933f007440a44))
+* **tui:** show relative age and busy badge in delete -i selector ([#116](https://github.com/DaveDev42/git-worktree-manager/issues/116)) ([dea9e43](https://github.com/DaveDev42/git-worktree-manager/commit/dea9e43ca5271e2c06d11a65f27c820675126f78))
+
+
+### Bug Fixes
+
+* **test:** isolate external_process busy-detection test into its own binary ([#118](https://github.com/DaveDev42/git-worktree-manager/issues/118)) ([730329c](https://github.com/DaveDev42/git-worktree-manager/commit/730329c042559346913add76d0d8526c9f23f54f))
+
 ## [0.0.41](https://github.com/DaveDev42/git-worktree-manager/compare/v0.0.40...v0.0.41) (2026-04-28)
 
 
