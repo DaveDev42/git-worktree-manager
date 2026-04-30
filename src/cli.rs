@@ -132,12 +132,6 @@ pub enum Commands {
         args: Vec<String>,
     },
 
-    /// Show current worktree status
-    Status {
-        #[command(flatten)]
-        cache: CacheControl,
-    },
-
     /// Delete one or more worktrees.
     ///
     /// With no arguments: deletes the current worktree (must be inside one).
@@ -193,32 +187,6 @@ pub enum Commands {
     List {
         #[command(flatten)]
         cache: CacheControl,
-    },
-
-    /// Display worktree hierarchy as a tree
-    Tree {
-        #[command(flatten)]
-        cache: CacheControl,
-    },
-
-    /// Show worktree statistics
-    Stats {
-        #[command(flatten)]
-        cache: CacheControl,
-    },
-
-    /// Compare two branches
-    Diff {
-        /// First branch
-        branch1: String,
-        /// Second branch
-        branch2: String,
-        /// Show statistics only
-        #[arg(short, long)]
-        summary: bool,
-        /// Show changed files only
-        #[arg(short, long)]
-        files: bool,
     },
 
     /// Configuration management

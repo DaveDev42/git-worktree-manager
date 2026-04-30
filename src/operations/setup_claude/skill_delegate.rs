@@ -136,12 +136,9 @@ Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be given per invoc
 | `gw new <branch> [--prompt-file <path> \| --prompt "..." \| --prompt-stdin]` | Create worktree + optionally launch AI with task |
 | `gw delete <branch>` | Delete worktree and branch |
 | `gw list` | List all worktrees with status |
-| `gw status` | Show current worktree info |
 | `gw resume [branch]` | Resume AI session in worktree |
-| `gw diff <b1> <b2>` | Compare two branches |
 | `gw config <action>` | Configuration management |
 | `gw doctor` | Run diagnostics |
-| `gw tree` / `gw stats` | Visual hierarchy / statistics |
 | `gw backup <action>` | Backup and restore worktrees |
 | `gw stash <action>` | Worktree-aware stash management |
 | `gw shell [worktree]` | Open shell in worktree |
@@ -211,7 +208,7 @@ gw -g scan --dir ~/projects        # discover repositories
 
 ## Guidelines
 
-- Before running any `gw` subcommand that reads the current worktree (`gw status`, `gw list`, `gw delete` without an explicit target, etc.), make sure the shell's cwd still exists. If another session or an earlier `gw delete` removed the worktree, the shell holds a stale pwd and commands behave unexpectedly. Quick guard:
+- Before running any `gw` subcommand that reads the current worktree (`gw list`, `gw delete` without an explicit target, etc.), make sure the shell's cwd still exists. If another session or an earlier `gw delete` removed the worktree, the shell holds a stale pwd and commands behave unexpectedly. Quick guard:
   ```bash
   [ -d "$(pwd -P 2>/dev/null)" ] || { echo "FATAL: cwd missing (worktree likely deleted). Abort."; exit 1; }
   ```

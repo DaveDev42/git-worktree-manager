@@ -25,15 +25,11 @@ These are the management-side commands. For full flag detail, see
 | Command | Purpose |
 |---------|---------|
 | `gw list` (alias `gw ls`) | List all worktrees with status indicators (active, clean, modified, stale). |
-| `gw status` | Show detailed info about the current worktree. |
 | `gw delete [target]` | Delete a worktree (and optionally its branch / remote branch). Use `-i` for interactive batch selection. |
 | `gw resume [branch]` | Resume an AI session in a worktree (auto-uses `--continue` when possible). |
 | `gw shell [worktree] [cmd...]` | Open an interactive shell in a worktree, or run a one-off command there. |
-| `gw diff <a> <b>` | Compare two branches (full / `--summary` / `--files`). |
 | `gw backup create/list/restore` | Create or restore a `git bundle` backup of a worktree. |
 | `gw stash save/list/apply` | Worktree-aware stash that survives across worktrees. |
-| `gw tree` | Visual tree of the worktree hierarchy. |
-| `gw stats` | Worktree count, age, on-disk size. |
 
 `gw new` (creating a worktree to delegate work into) is owned by the sibling
 `delegate` skill — defer to that skill for new-task workflows.
@@ -61,7 +57,7 @@ what looks like permission/path bugs but is really a missing cwd.
 
 **Healthy state:** `pwd` resolves to a real directory, and
 `git rev-parse --show-toplevel` succeeds and matches a registered worktree
-(visible in `gw status` / `gw list`).
+(visible in `gw list`).
 
 **How to detect:** At session start, or as soon as a command fails with an
 ENOENT-shaped error, run:
@@ -229,25 +225,6 @@ runs on every Bash invocation, so the latency budget matters.
 }
 ```
 
-### Hook 3 — Stop summary (optional)
-
-Prints a single line of worktree state when a turn ends: "uncommitted N
-files, base differs by X commits". Informational only — does not block
-or modify anything. Mention only on direct request from the user; do not
-volunteer it.
-
-```jsonc
-{
-  "hooks": {
-    "Stop": [
-      { "matcher": "*", "hooks": [
-        { "type": "command", "command": "gw status --on-stop --quiet" }
-      ]}
-    ]
-  }
-}
-```
-
 ## 4. When to suggest, when to stop
 
 Read this section before recommending any hook. It is addressed to you,
@@ -264,7 +241,6 @@ the in-session Claude.
 - **Hook 2** (PreToolUse guard): mention only after the user has
   expressed interest in stronger pre-publish safety after seeing Hook 1's
   value. Do not volunteer it unprompted on a fresh project.
-- **Hook 3** (Stop summary): mention only on direct request.
 - **NEVER** edit `~/.claude/settings.json` or
   `~/.claude/settings.local.json`. Always edit the project-local file at
   `.claude/settings.json` (creating it if absent).
@@ -312,9 +288,6 @@ Delete a worktree.
 ### `gw list`
 List all worktrees with status indicators (active, clean, modified, stale). Alias: `gw ls`.
 
-### `gw status`
-Show detailed info about the current worktree.
-
 ### `gw resume [branch] [OPTIONS]`
 Resume AI work in a worktree. Auto-detects existing Claude sessions and uses `--continue`.
 - `-T, --term <METHOD>` — Terminal launch method (same format as `gw new`)
@@ -329,13 +302,6 @@ gw shell feature-x           # interactive shell
 gw shell feature-x npm test  # run command
 ```
 
-## Git Workflow
-
-### `gw diff <branch1> <branch2> [OPTIONS]`
-Compare two branches.
-- `-s, --summary` — Show statistics only
-- `-f, --files` — Show changed files only
-
 ## Maintenance
 
 ### `gw doctor`
@@ -343,12 +309,6 @@ Run health check: git version, worktree accessibility, uncommitted changes, behi
 
 ### `gw upgrade`
 Check for updates and install latest version from GitHub Releases.
-
-### `gw tree`
-Display worktree hierarchy as a visual tree.
-
-### `gw stats`
-Show worktree statistics (count, age, size).
 
 ## Backup & Stash
 

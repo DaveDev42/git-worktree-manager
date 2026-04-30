@@ -24,28 +24,6 @@ fn test_full_workflow_new_list_delete() {
 }
 
 #[test]
-fn test_workflow_new_status() {
-    let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "status-test", "--no-term"]));
-
-    let status = repo.cw_stdout(&["status"]);
-    assert!(
-        status.contains("Worktrees") || status.contains("worktree"),
-        "status should show worktree info"
-    );
-}
-
-#[test]
-fn test_workflow_new_tree() {
-    let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "tree-test", "--no-term"]));
-
-    let tree = repo.cw_stdout(&["tree"]);
-    assert!(tree.contains("tree-test"));
-    assert!(tree.contains("base repository"));
-}
-
-#[test]
 fn test_workflow_multiple_worktrees() {
     let repo = TestRepo::new();
     assert!(repo.cw_ok(&["new", "feat-a", "--no-term"]));

@@ -478,35 +478,6 @@ fn test_list_in_repo() {
 }
 
 // ===========================================================================
-// status
-// ===========================================================================
-
-#[test]
-fn test_status_in_repo() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["status"]);
-    assert!(output.status.success());
-}
-
-#[test]
-fn test_show_status_in_worktree() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("status-test");
-
-    let stdout = TestRepo::cw_stdout_at(&wt, &["status"]);
-    assert!(stdout.contains("status-test"));
-}
-
-#[test]
-fn test_show_status_in_main_repo() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["status"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Worktree") || stdout.contains("worktree") || stdout.contains("main"));
-}
-
-// ===========================================================================
 // resume — current worktree
 // ===========================================================================
 
@@ -620,27 +591,6 @@ fn test_get_worktree_status_merged() {
 }
 
 // ===========================================================================
-// worktree status detection — merged shows icon in tree
-// ===========================================================================
-
-#[test]
-fn test_get_worktree_status_merged_tree() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("merged-tree-test");
-
-    // Make a commit and merge into main
-    TestRepo::commit_file_at(&wt, "feature.txt", "work", "feat: work");
-    repo.git(&["merge", "merged-tree-test"]);
-
-    let stdout = repo.cw_stdout(&["tree"]);
-    assert!(
-        stdout.contains("✓") || stdout.contains("merged"),
-        "Expected merged icon or status in tree output, got: {}",
-        stdout
-    );
-}
-
-// ===========================================================================
 // worktree status detection — clean
 // ===========================================================================
 
@@ -721,32 +671,6 @@ fn test_prune_empty() {
             || stdout.contains("Prune")
             || stdout.contains("prune")
     );
-}
-
-// ===========================================================================
-// tree (basic)
-// ===========================================================================
-
-#[test]
-fn test_tree_in_repo() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["tree"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("(base repository)"));
-}
-
-// ===========================================================================
-// stats (no worktrees)
-// ===========================================================================
-
-#[test]
-fn test_stats_no_worktrees() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["stats"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("No feature worktrees found"));
 }
 
 // ===========================================================================
@@ -843,22 +767,4 @@ fn test_create_worktree_from_remote_stores_metadata() {
     // Verify metadata is stored
     let base_branch = repo.git_stdout(&["config", "--get", "branch.meta-test.worktreeBase"]);
     assert_eq!(base_branch.trim(), "main");
-}
-
-// ===========================================================================
-// get_worktree_status — active (running from within worktree)
-// ===========================================================================
-
-#[test]
-fn test_get_worktree_status_active() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("active-test");
-
-    // Run status from inside the worktree
-    let stdout = TestRepo::cw_stdout_at(&wt, &["status"]);
-    assert!(
-        stdout.contains("active-test") || stdout.contains("active") || stdout.contains("Active"),
-        "Expected active worktree info, got: {}",
-        stdout
-    );
 }

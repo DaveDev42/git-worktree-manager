@@ -281,25 +281,6 @@ fn test_doctor_help() {
 }
 
 #[test]
-fn test_tree_help() {
-    cw().args(["tree", "--help"]).assert().success();
-}
-
-#[test]
-fn test_stats_help() {
-    cw().args(["stats", "--help"]).assert().success();
-}
-
-#[test]
-fn test_diff_help() {
-    cw().args(["diff", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--summary"))
-        .stdout(predicate::str::contains("--files"));
-}
-
-#[test]
 fn test_global_flag() {
     // -g flag should be accepted (even without proper context)
     cw().args(["-g", "--help"])

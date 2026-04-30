@@ -72,16 +72,6 @@ pub fn run() {
                 display::list_worktrees(no_cache)
             }
         }
-        Some(Commands::Status { cache }) => display::show_status(cache.no_cache),
-        Some(Commands::Tree { cache }) => display::show_tree(cache.no_cache),
-        Some(Commands::Stats { cache }) => display::show_stats(cache.no_cache),
-        Some(Commands::Diff {
-            branch1,
-            branch2,
-            summary,
-            files,
-        }) => display::diff_worktrees(&branch1, &branch2, summary, files),
-
         Some(Commands::Config { action }) => match action {
             ConfigAction::Show => config::show_config().map(|output| println!("{}", output)),
             ConfigAction::List => config::list_config(),
