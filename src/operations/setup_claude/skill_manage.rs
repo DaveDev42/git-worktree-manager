@@ -132,6 +132,33 @@ A non-trivial "behind" count (say, > 5) means drift worth surfacing.
 "worktree A is 12 commits behind main; want me to `gw sync` it before we
 start?" If multiple worktrees lag, suggest `gw sync --all`.
 
+### Rule: Don't kill busy siblings
+
+**Symptom:** A delete or clean operation in the main repo session removes
+a worktree that another Claude session is actively working in. The most
+common path is volunteering `--force` to "clean up" after `gw delete` or
+`gw clean` complains that a target is busy.
+
+**Why it hurts:** The sibling session's review-fix loop or long-running
+task halts mid-flight. Even if the work is on a pushed branch, local
+state and any uncommitted changes are gone, and the sibling's cwd dies
+underneath it.
+
+**Healthy state:** `gw delete` and `gw clean` complete without `--force`
+— i.e. they respect the built-in busy gate. `--force` is reserved for
+cases where the user has explicitly said "force-delete this even if
+busy". Never volunteer `--force` to make an error message go away.
+
+**How to detect:** Before any `gw delete <target>` or `gw clean` call,
+run `gw list` and check the candidates' busy badges. If a candidate is
+busy, do **not** add `--force`.
+
+**Suggested action:**
+- On busy: skip with a clear report — "`<branch>` is busy; skipped.
+  Re-run with `--force` only if you want to override."
+- Never volunteer `--force` to silence the busy gate. Wait for the user
+  to say it explicitly.
+
 ### Rule: Test/lint convention gap
 
 **Symptom:** The project's `CLAUDE.md` is missing or doesn't list how to
