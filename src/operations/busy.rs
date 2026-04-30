@@ -449,8 +449,8 @@ pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
 ///
 /// This trades coverage for speed: worktrees entered via external `cd`
 /// without a `gw shell`/`gw start` session will not be flagged as busy.
-/// Commands that need strong busy guarantees (`gw delete`, `gw clean`)
-/// continue to use [`detect_busy`].
+/// Commands that need strong busy guarantees (`gw delete`) continue to
+/// use [`detect_busy`].
 ///
 /// Like [`detect_busy`], this calls [`lockfile::read_and_clean_stale`]
 /// and may silently remove a stale `<worktree>/.git/gw-session.lock` as

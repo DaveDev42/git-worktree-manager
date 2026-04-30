@@ -200,8 +200,8 @@ fn count(entries: &[PlanEntry]) -> PlanCounts {
     c
 }
 
-/// Print the batch summary. Goes to stdout to match the convention used by
-/// `gw clean` (summary/progress → stdout, errors/prompts → stderr).
+/// Print the batch summary. Summary/progress goes to stdout; errors and
+/// prompts go to stderr.
 pub fn print_summary(entries: &[PlanEntry], dry_run: bool) {
     let counts = count(entries);
     let header = if dry_run {

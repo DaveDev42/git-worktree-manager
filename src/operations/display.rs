@@ -59,8 +59,7 @@ pub fn get_worktree_status(
     // takes ~1.5s on macOS and dominates `gw list` latency. This narrows
     // exclusion to ancestors only (no siblings) since the fast path must
     // avoid `self_siblings`, which internally triggers the cwd scan.
-    // Destructive commands (`gw delete`, `gw clean`) still use the full
-    // `detect_busy`.
+    // Destructive commands (`gw delete`) still use the full `detect_busy`.
     if !crate::operations::busy::detect_busy_lockfile_only(path).is_empty() {
         return "busy".to_string();
     }
