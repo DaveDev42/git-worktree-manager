@@ -245,5 +245,6 @@ gw -g scan --dir ~/projects        # discover repositories
   - Use `--prompt-file` for complex or skill-generated prompts to manage them conveniently
   - If the user's request is vague or ambiguous, ask clarifying questions BEFORE spawning
   - Do NOT spawn a task assuming you can "correct course later" — you cannot
+- For destructive worktree operations (`gw delete`, `gw clean`), defer to the `manage` skill — in particular the don't-kill-busy-siblings rule.
 "#
 }
