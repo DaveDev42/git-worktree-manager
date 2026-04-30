@@ -30,7 +30,6 @@ These are the management-side commands. For full flag detail, see
 | `gw clean` | Batch cleanup of merged or stale worktrees by filter (`--merged`, `--older-than`); `--dry-run` previews. Use `gw delete -i` for interactive selection. |
 | `gw sync [branch]` | Rebase a worktree (or `--all`) against its base branch. |
 | `gw merge [branch]` | Merge a feature branch into its base branch. |
-| `gw pr [branch]` | Create a GitHub Pull Request from a worktree. |
 | `gw resume [branch]` | Resume an AI session in a worktree (auto-uses `--continue` when possible). |
 | `gw shell [worktree] [cmd...]` | Open an interactive shell in a worktree, or run a one-off command there. |
 | `gw diff <a> <b>` | Compare two branches (full / `--summary` / `--files`). |
@@ -335,14 +334,6 @@ gw shell feature-x npm test  # run command
 ```
 
 ## Git Workflow
-
-### `gw pr [branch] [OPTIONS]`
-Create GitHub Pull Request from worktree.
-- `-t, --title <TITLE>` — PR title
-- `-B, --body <BODY>` — PR body
-- `-d, --draft` — Create as draft PR
-- `--no-push` — Skip pushing to remote
-- `-w, --worktree` / `-b, --by-branch` — Target resolution
 
 ### `gw merge [branch] [OPTIONS]`
 Merge feature branch into base branch.

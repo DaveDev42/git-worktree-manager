@@ -69,16 +69,6 @@ pub fn merge_failed(base_path: &str, feature_branch: &str) -> String {
     )
 }
 
-pub fn pr_creation_failed(stderr: &str) -> String {
-    format!("Failed to create pull request: {}", stderr)
-}
-
-pub fn gh_cli_not_found() -> String {
-    "GitHub CLI (gh) is required to create pull requests.\n\
-     Install it from: https://cli.github.com/"
-        .to_string()
-}
-
 pub fn cannot_delete_main_worktree() -> String {
     "Cannot delete main repository worktree".to_string()
 }
@@ -245,20 +235,6 @@ mod tests {
         assert!(msg.contains("Fast-forward merge failed"));
         assert!(msg.contains("cd /tmp/base"));
         assert!(msg.contains("git merge feature-api"));
-    }
-
-    #[test]
-    fn test_pr_creation_failed() {
-        let msg = pr_creation_failed("permission denied");
-        assert!(msg.contains("Failed to create pull request"));
-        assert!(msg.contains("permission denied"));
-    }
-
-    #[test]
-    fn test_gh_cli_not_found() {
-        let msg = gh_cli_not_found();
-        assert!(msg.contains("GitHub CLI (gh)"));
-        assert!(msg.contains("https://cli.github.com/"));
     }
 
     #[test]

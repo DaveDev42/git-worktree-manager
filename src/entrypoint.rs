@@ -131,26 +131,6 @@ pub fn run() {
             Ok(())
         })(),
 
-        Some(Commands::Pr {
-            branch,
-            title,
-            body,
-            draft,
-            no_push,
-            worktree: is_worktree,
-            by_branch,
-        }) => {
-            let lookup_mode = resolve_lookup_mode(is_worktree, by_branch);
-            git_ops::create_pr_worktree(
-                branch.as_deref(),
-                !no_push,
-                title.as_deref(),
-                body.as_deref(),
-                draft,
-                lookup_mode,
-            )
-        }
-
         Some(Commands::Merge {
             branch,
             interactive,

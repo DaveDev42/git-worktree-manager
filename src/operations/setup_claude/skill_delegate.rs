@@ -138,7 +138,6 @@ Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be given per invoc
 | `gw list` | List all worktrees with status |
 | `gw status` | Show current worktree info |
 | `gw resume [branch]` | Resume AI session in worktree |
-| `gw pr [branch]` | Create GitHub Pull Request |
 | `gw merge [branch]` | Merge branch into base |
 | `gw sync [--all]` | Rebase worktree(s) onto base branch |
 | `gw clean [--merged]` | Batch cleanup of worktrees |
@@ -199,7 +198,7 @@ PROMPT
 # `-T` omitted — uses the default launcher from `gw config get launch.method`.
 gw new feature-x --prompt-file /tmp/gw-prompt-$$.txt
 # ... work is done in the new worktree ...
-gw pr feature-x                    # create PR
+gh pr create                       # create PR (run inside the worktree)
 gw delete feature-x                # cleanup after merge
 ```
 

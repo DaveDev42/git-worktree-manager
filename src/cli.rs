@@ -123,36 +123,6 @@ pub enum Commands {
         prompt_stdin: bool,
     },
 
-    /// Create GitHub Pull Request from worktree
-    Pr {
-        /// Branch name (default: current worktree branch)
-        branch: Option<String>,
-
-        /// PR title
-        #[arg(short, long)]
-        title: Option<String>,
-
-        /// PR body
-        #[arg(short = 'B', long)]
-        body: Option<String>,
-
-        /// Create as draft PR
-        #[arg(short, long)]
-        draft: bool,
-
-        /// Skip pushing to remote
-        #[arg(long)]
-        no_push: bool,
-
-        /// Resolve target as worktree name (instead of branch)
-        #[arg(short, long)]
-        worktree: bool,
-
-        /// Resolve target as branch name (instead of worktree)
-        #[arg(short = 'b', long = "by-branch", conflicts_with = "worktree")]
-        by_branch: bool,
-    },
-
     /// Merge feature branch into base branch
     Merge {
         /// Branch name (default: current worktree branch)

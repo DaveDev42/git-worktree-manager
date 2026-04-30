@@ -159,17 +159,6 @@ fn test_new_bg_fg_conflict() {
 }
 
 #[test]
-fn test_pr_help() {
-    cw().args(["pr", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--title"))
-        .stdout(predicate::str::contains("--body"))
-        .stdout(predicate::str::contains("--draft"))
-        .stdout(predicate::str::contains("--no-push"));
-}
-
-#[test]
 fn test_merge_help() {
     cw().args(["merge", "--help"])
         .assert()
@@ -465,15 +454,6 @@ fn test_change_base_interactive_flag() {
         .success()
         .stdout(predicate::str::contains("--interactive"))
         .stdout(predicate::str::contains("-i"));
-}
-
-#[test]
-fn test_pr_worktree_disambiguation_flag() {
-    cw().args(["pr", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--worktree"))
-        .stdout(predicate::str::contains("-w"));
 }
 
 #[test]
