@@ -3,7 +3,7 @@
 pub fn content() -> &'static str {
     r#"---
 name: delegate
-description: "Delegate coding tasks to isolated git worktrees. Invoke with: /gw <natural language task description>. Also handles worktree management: list, sync, clean, etc."
+description: "Delegate coding tasks to isolated git worktrees. Invoke with: /gw <natural language task description>. Also handles worktree management: list, clean, etc."
 allowed-tools: Bash
 ---
 

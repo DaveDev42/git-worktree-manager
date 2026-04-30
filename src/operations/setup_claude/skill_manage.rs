@@ -4,7 +4,7 @@
 pub fn content() -> &'static str {
     r#"---
 name: manage
-description: "Manage git worktrees safely across multiple parallel sessions. Auto-applies when the user invokes gw list/delete/clean/sync/resume."
+description: "Manage git worktrees safely across multiple parallel sessions. Auto-applies when the user invokes gw list/delete/clean/resume."
 allowed-tools: Bash, Read, Edit
 ---
 
@@ -12,8 +12,8 @@ allowed-tools: Bash, Read, Edit
 
 This skill helps you (Claude) operate the `gw` (git-worktree-manager) management
 commands safely when the user is working across multiple parallel worktrees.
-Use it whenever the user asks about listing, deleting, syncing,
-resuming sessions, or otherwise inspecting worktree state. It also
+Use it whenever the user asks about listing, deleting, resuming
+sessions, or otherwise inspecting worktree state. It also
 defines a health rulebook (problems to watch for) and a catalog of Claude Code
 hooks you may suggest installing on the user's consent.
 
