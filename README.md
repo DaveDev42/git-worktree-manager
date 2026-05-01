@@ -4,7 +4,9 @@
 [![CI](https://github.com/DaveDev42/git-worktree-manager/actions/workflows/test.yml/badge.svg)](https://github.com/DaveDev42/git-worktree-manager/actions)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](LICENSE)
 
-`gw` 1.0 is a lean CLI tool that pairs git worktrees with AI coding assistants. Inspired by [mr (myrepos)](https://myrepos.branchable.com/), it uses cwd-based scope discovery — no global registry, no cross-repo flags — so commands do exactly what you expect relative to where you run them. Target resolution is strict and consistent: worktree name → branch name → path. Single static binary (~1.9MB), ~3ms startup, supports macOS (ARM64/x86), Linux (ARM64/x86), and Windows (x86_64).
+`gw` 1.0 is a lean CLI tool that pairs git worktrees with AI coding assistants. Inspired by [mr (myrepos)](https://myrepos.branchable.com/), it uses cwd-based scope discovery — no global registry, no cross-repo flags — so commands do exactly what you expect relative to where you run them. Target resolution is strict and consistent: worktree name → branch name → path.
+
+Single static binary (~1.9MB), ~3ms startup. Supports macOS (ARM64/x86), Linux (ARM64/x86), and Windows (x86_64).
 
 Successor to [claude-worktree](https://github.com/DaveDev42/claude-worktree) (Python), rewritten in Rust.
 
@@ -95,7 +97,7 @@ gw exec fix-auth -- git status
 
 ### Scope discovery
 
-`gw run`, `gw list`, `gw ls`, and other scope-wide commands discover worktrees relative to the current working directory — walking up to find a `.cwconfig.json`-rooted scope, or walking down from cwd. There is no global registry and no cross-repo flags.
+`gw run`, `gw list`, `gw ls`, and other scope-wide commands discover worktrees relative to the current working directory: it walks up first to find a `.cwconfig.json`-rooted scope, falling back to a downward walk from cwd if none is found. There is no global registry and no cross-repo flags.
 
 ### Target resolution
 
@@ -155,7 +157,7 @@ gw new fix-auth --no-term           # Skip AI tool launch entirely
 | **Zellij** | `zellij`, `zellij-tab`, `zellij-pane-h`, `zellij-pane-v` |
 | **WezTerm** | `wezterm-window`, `wezterm-tab`, `wezterm-tab-bg`, `wezterm-pane-h`, `wezterm-pane-v` |
 
-Each launcher also has a short alias (e.g., `t` for tmux, `i-t` for iterm-tab).
+Each launcher also has a short alias (e.g., `t` for tmux, `i-t` for iterm-tab). Run `gw new --help` for the full alias list.
 
 ## Claude Code Integration
 
@@ -198,7 +200,7 @@ Generate shell completions separately with `gw --generate-completion <bash|zsh|f
 
 ## Configuration
 
-Config is resolved in layers: built-in defaults ← `~/.config/git-worktree-manager/config.json` ← repo-local `.cwconfig.json`. Repo-local values take precedence. There are no `gw config` subcommands — edit the JSON files directly.
+Config is resolved in layers (later layers override earlier ones): built-in defaults → `~/.config/git-worktree-manager/config.json` → repo-local `.cwconfig.json`. There are no `gw config` subcommands — edit the JSON files directly.
 
 Also reads legacy `~/.config/claude-worktree/config.json` from the Python predecessor.
 
