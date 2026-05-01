@@ -117,16 +117,6 @@ pub enum Commands {
         by_branch: bool,
     },
 
-    /// Open interactive shell or execute command in a worktree
-    Shell {
-        /// Worktree branch to shell into
-        worktree: Option<String>,
-
-        /// Command and arguments to execute
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
-
     /// Delete one or more worktrees.
     ///
     /// With no arguments: deletes the current worktree (must be inside one).

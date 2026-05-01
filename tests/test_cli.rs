@@ -23,7 +23,7 @@ fn test_help() {
         .stdout(predicate::str::contains("delete"))
         .stdout(predicate::str::contains("doctor"))
         .stdout(predicate::str::contains("hook"))
-        .stdout(predicate::str::contains("shell"));
+        .stdout(predicate::str::contains("shell-setup"));
 }
 
 #[test]
@@ -209,11 +209,6 @@ fn test_delete_interactive_conflicts_with_positional() {
         msg.contains("cannot be used") || msg.contains("conflict"),
         "expected conflict error, got: {msg}"
     );
-}
-
-#[test]
-fn test_shell_help() {
-    cw().args(["shell", "--help"]).assert().success();
 }
 
 #[test]

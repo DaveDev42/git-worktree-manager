@@ -148,7 +148,7 @@ if [ -n "$BASH_VERSION" ]; then
             local max_pos=1
 
             case "$subcmd" in
-                pr|merge|resume|shell|delete|sync)
+                pr|merge|resume|delete|sync)
                     max_pos=1
                     ;;
                 *)
@@ -207,7 +207,7 @@ if [ -n "$ZSH_VERSION" ]; then
             local -i max_pos=0
 
             case "$subcmd" in
-                pr|merge|resume|shell|delete|sync)
+                pr|merge|resume|delete|sync)
                     max_pos=1
                     ;;
             esac
@@ -358,7 +358,7 @@ complete -c cw-cd -w gw-cd
 gw --generate-completion fish 2>/dev/null | source
 
 # Branch completion for subcommands with positional branch args
-for cmd in pr merge resume shell delete sync
+for cmd in pr merge resume delete sync
     complete -c gw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _path --list-branches 2>/dev/null)'
     complete -c cw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _path --list-branches 2>/dev/null)'
 end

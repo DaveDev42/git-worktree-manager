@@ -1,7 +1,7 @@
 //! Busy detection: determine whether a worktree is currently in use.
 //!
 //! Two signals are combined:
-//!   1. Session lockfile (explicit — `gw shell`/`gw start` write one)
+//!   1. Session lockfile (explicit — `gw start` / AI-tool sessions write one)
 //!   2. Process cwd scan (implicit — catches external `cd` + tool usage)
 //!
 //! The current process and its ancestor chain are excluded so that Claude
@@ -448,7 +448,7 @@ pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
 /// display paths use this variant.
 ///
 /// This trades coverage for speed: worktrees entered via external `cd`
-/// without a `gw shell`/`gw start` session will not be flagged as busy.
+/// without a `gw start` session will not be flagged as busy.
 /// Commands that need strong busy guarantees (`gw delete`) continue to
 /// use [`detect_busy`].
 ///
@@ -461,7 +461,7 @@ pub fn detect_busy_lockfile_only(worktree: &Path) -> Vec<BusyInfo> {
     // Skip self_siblings: it internally triggers cwd_scan (lsof / /proc walk)
     // which is exactly what this fast path exists to avoid. Pipeline co-members
     // of this gw invocation are short-lived CLI tools (e.g. `gw list | head`)
-    // that never call `gw shell`/`gw start`, so they cannot own a lockfile.
+    // that never call `gw start`, so they cannot own a lockfile.
     // Ancestor-only exclusion is sufficient in practice — and in the rare case
     // where a true sibling (e.g. a backgrounded `gw start`) does own a
     // lockfile, reporting its worktree as busy is correct, not a false positive.

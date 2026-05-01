@@ -27,7 +27,6 @@ These are the management-side commands. For full flag detail, see
 | `gw list` (alias `gw ls`) | List all worktrees with status indicators (active, clean, modified, stale). |
 | `gw delete [target]` | Delete a worktree (and optionally its branch / remote branch). Use `-i` for interactive batch selection. |
 | `gw resume [branch]` | Resume an AI session in a worktree (auto-uses `--continue` when possible). |
-| `gw shell [worktree] [cmd...]` | Open an interactive shell in a worktree, or run a one-off command there. |
 
 `gw new` (creating a worktree to delegate work into) is owned by the sibling
 `delegate` skill — defer to that skill for new-task workflows.
@@ -292,13 +291,6 @@ Resume AI work in a worktree. Auto-detects existing Claude sessions and uses `--
 - `--bg` — Launch AI tool in background
 - `-w, --worktree` — Resolve as worktree name
 - `-b, --by-branch` — Resolve as branch name
-
-### `gw shell [worktree] [COMMAND...]`
-Open interactive shell in a worktree, or execute a command.
-```bash
-gw shell feature-x           # interactive shell
-gw shell feature-x npm test  # run command
-```
 
 ## Maintenance
 

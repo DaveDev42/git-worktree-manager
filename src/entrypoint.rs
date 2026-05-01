@@ -15,8 +15,8 @@ use crate::cwshare_setup;
 use crate::error::{CwError, Result};
 use crate::hooks;
 use crate::operations::{
-    ai_tools, diagnostics, display, global_ops, guard, helpers, path_cmd, setup_claude, shell,
-    spawn_spec, worktree,
+    ai_tools, diagnostics, display, global_ops, guard, helpers, path_cmd, setup_claude, spawn_spec,
+    worktree,
 };
 use crate::resolve_prompt;
 use crate::shell_functions;
@@ -116,11 +116,6 @@ pub fn run() {
         }) => {
             let lookup_mode = resolve_lookup_mode(is_worktree, by_branch);
             ai_tools::resume_worktree(branch.as_deref(), term.as_deref(), lookup_mode, bg, fg)
-        }
-
-        Some(Commands::Shell { worktree, args }) => {
-            let cmd = if args.is_empty() { None } else { Some(args) };
-            shell::shell_worktree(worktree.as_deref(), cmd)
         }
 
         Some(Commands::Delete {
