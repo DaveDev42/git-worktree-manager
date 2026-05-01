@@ -69,7 +69,7 @@ fn ls_emits_tsv_for_a_repo_with_one_worktree() {
         .expect("feat-a line");
     let last_col = wt_line.split('\t').next_back().unwrap();
     assert!(
-        last_col.starts_with('/'),
+        std::path::Path::new(last_col).is_absolute(),
         "last column should be an absolute path, got: {:?}",
         last_col
     );
