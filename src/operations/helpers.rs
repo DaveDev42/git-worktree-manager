@@ -15,6 +15,18 @@ pub struct ResolvedTarget {
     pub repo: PathBuf,
 }
 
+/// Strictly-resolved worktree target: name, branch, and path.
+///
+/// Produced by [`resolve_target_strict`].
+pub struct StrictTarget {
+    /// Basename of the worktree directory (e.g. `"repo-feat-x"`).
+    pub name: String,
+    /// Short branch name (e.g. `"feat-x"`), with `refs/heads/` prefix stripped.
+    pub branch: String,
+    /// Absolute path to the worktree directory.
+    pub path: PathBuf,
+}
+
 /// Parse 'repo:branch' notation.
 pub fn parse_repo_branch_target(target: &str) -> (Option<&str>, &str) {
     if let Some((repo, branch)) = target.split_once(':') {
@@ -182,6 +194,85 @@ pub fn get_worktree_metadata(branch: &str, repo: &Path) -> Result<(String, PathB
     eprintln!("  Inferred base path: {}", inferred_base_path.display());
 
     Ok((base, inferred_base_path))
+}
+
+/// Strict target resolution: exact worktree name → exact branch name → exact path.
+///
+/// Unlike [`resolve_worktree_target`], this function performs no fuzzy matching
+/// and no metadata look-ups. It calls [`git::parse_worktrees`] once and applies
+/// three ordered exact-match rules:
+///
+/// 1. **Worktree name** — basename of the worktree directory equals `target`.
+/// 2. **Branch name** — short branch name (after stripping `refs/heads/`) equals `target`.
+/// 3. **Absolute path** — the worktree path equals `target`.
+///
+/// Returns [`CwError::Other`] when no worktree matches.
+pub fn resolve_target_strict(repo_root: &Path, target: &str) -> Result<StrictTarget> {
+    let worktrees = git::parse_worktrees(repo_root)?;
+
+    // Pre-compute the main worktree path so we can skip it when doing name
+    // lookup (the main repo's basename is rarely meaningful as a worktree name).
+    let main_path = worktrees
+        .first()
+        .map(|(_, p)| git::canonicalize_or(p))
+        .unwrap_or_default();
+
+    // Helper: build a StrictTarget from a raw parse_worktrees entry.
+    let make = |(branch_raw, path): &(String, PathBuf)| -> StrictTarget {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let branch = git::normalize_branch_name(branch_raw).to_string();
+        StrictTarget {
+            name,
+            branch,
+            path: path.clone(),
+        }
+    };
+
+    // 1) Exact worktree name (basename of path).
+    for entry in &worktrees {
+        let (_, path) = entry;
+        // Skip main repo entry
+        if git::canonicalize_or(path) == main_path {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or_default();
+        if name == target {
+            return Ok(make(entry));
+        }
+    }
+
+    // 2) Exact branch name (refs/heads/ prefix stripped).
+    for entry in &worktrees {
+        let (branch_raw, path) = entry;
+        if git::canonicalize_or(path) == main_path {
+            continue;
+        }
+        if git::normalize_branch_name(branch_raw) == target {
+            return Ok(make(entry));
+        }
+    }
+
+    // 3) Exact absolute path (canonicalize both sides to handle symlinks).
+    let abs = PathBuf::from(target);
+    let abs_resolved = git::canonicalize_or(&abs);
+    for entry in &worktrees {
+        let (_, path) = entry;
+        let path_resolved = git::canonicalize_or(path);
+        if path_resolved == abs_resolved {
+            return Ok(make(entry));
+        }
+    }
+
+    Err(CwError::Other(format!(
+        "no worktree matches '{}': not a worktree name, branch, or path",
+        target
+    )))
 }
 
 /// Build a hook context HashMap with standard fields.
