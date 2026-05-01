@@ -1,4 +1,11 @@
 //! Integration tests for `gw spawn` / `spawn_in_worktree`.
+//!
+//! Unix-only: the AI tool stub is a shell script invoked via `bash -lc`, and
+//! we mark it executable with `PermissionsExt::from_mode`. The Windows
+//! foreground launcher uses `cmd /C`, which is a separate code path not
+//! exercised here.
+
+#![cfg(unix)]
 
 mod common;
 use common::TestRepo;
