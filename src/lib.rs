@@ -12,6 +12,7 @@ pub mod hooks;
 pub mod messages;
 pub mod operations;
 pub mod prompt_source;
+pub mod repo_config;
 pub mod scope;
 pub mod session;
 pub mod shared_files;
