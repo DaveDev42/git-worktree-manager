@@ -9,11 +9,13 @@ use std::process::Command;
 use crate::error::Result;
 
 /// Run the configured hook for `event` (one of `"post_new"`, `"pre_rm"`),
-/// resolving the hook command from the layered config rooted at `cwd`.
+/// resolving the hook command from the layered config rooted at the main
+/// repo (resolved from `cwd` via `git::get_main_repo_root`, falling back to
+/// `cwd` if that fails). The hook runs with `cwd` as its working directory.
 ///
 /// No-op (returns `Ok(())`) when the event name is unknown or the hook is
-/// unset. Hook is run as `sh -c <cmd>` with `cwd` as the current directory.
-/// A non-zero exit propagates as `CwError::Other`.
+/// unset. Hook is run as `sh -c <cmd>`. A non-zero exit propagates as
+/// `CwError::Other`.
 pub fn run_event(event: &str, cwd: &Path) -> Result<()> {
     // Worktrees are siblings of the main repo (default ../<repo>-<branch>),
     // so walking up from `cwd` would never find the main repo's .cwconfig.json.
