@@ -151,20 +151,6 @@ if [ -n "$BASH_VERSION" ]; then
                 pr|merge|resume|shell|delete|sync)
                     max_pos=1
                     ;;
-                backup)
-                    if [[ ${COMP_WORDS[2]} =~ ^(create|list|restore)$ ]]; then
-                        start_idx=3; max_pos=1
-                    else
-                        max_pos=0
-                    fi
-                    ;;
-                stash)
-                    if [[ ${COMP_WORDS[2]} == "apply" ]]; then
-                        start_idx=3; max_pos=1
-                    else
-                        max_pos=0
-                    fi
-                    ;;
                 *)
                     max_pos=0
                     ;;
@@ -223,15 +209,6 @@ if [ -n "$ZSH_VERSION" ]; then
             case "$subcmd" in
                 pr|merge|resume|shell|delete|sync)
                     max_pos=1
-                    ;;
-                backup)
-                    case "${words[3]}" in create|list|restore)
-                        start_idx=4; max_pos=1 ;; esac
-                    ;;
-                stash)
-                    if [[ ${words[3]} == "apply" ]]; then
-                        start_idx=4; max_pos=1
-                    fi
                     ;;
             esac
 
@@ -385,12 +362,6 @@ for cmd in pr merge resume shell delete sync
     complete -c gw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _path --list-branches 2>/dev/null)'
     complete -c cw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _path --list-branches 2>/dev/null)'
 end
-
-# Branch completion for nested subcommands: backup create/list/restore, stash apply
-complete -c gw -f -n '__fish_seen_subcommand_from backup; and __fish_seen_subcommand_from create list restore' -a '(gw _path --list-branches 2>/dev/null)'
-complete -c cw -f -n '__fish_seen_subcommand_from backup; and __fish_seen_subcommand_from create list restore' -a '(gw _path --list-branches 2>/dev/null)'
-complete -c gw -f -n '__fish_seen_subcommand_from stash; and __fish_seen_subcommand_from apply' -a '(gw _path --list-branches 2>/dev/null)'
-complete -c cw -f -n '__fish_seen_subcommand_from stash; and __fish_seen_subcommand_from apply' -a '(gw _path --list-branches 2>/dev/null)'
 
 # --term/-T value completion for new/resume commands
 function __gw_prev_arg_is_term

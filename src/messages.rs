@@ -43,17 +43,6 @@ pub fn cannot_delete_main_worktree() -> String {
     "Cannot delete main repository worktree".to_string()
 }
 
-pub fn stash_not_found(stash_ref: &str) -> String {
-    format!(
-        "Stash '{}' not found. Use 'gw stash list' to see available stashes.",
-        stash_ref
-    )
-}
-
-pub fn backup_not_found(backup_id: &str, branch: &str) -> String {
-    format!("Backup '{}' not found for branch '{}'", backup_id, branch)
-}
-
 pub fn detached_head_warning() -> String {
     "Worktree is detached or branch not found. Specify branch with --branch or skip with --force."
         .to_string()
@@ -151,21 +140,6 @@ mod tests {
     fn test_cannot_delete_main_worktree() {
         let msg = cannot_delete_main_worktree();
         assert!(msg.contains("Cannot delete main repository worktree"));
-    }
-
-    #[test]
-    fn test_stash_not_found() {
-        let msg = stash_not_found("stash@{0}");
-        assert!(msg.contains("stash@{0}"));
-        assert!(msg.contains("gw stash list"));
-    }
-
-    #[test]
-    fn test_backup_not_found() {
-        let msg = backup_not_found("abc123", "feature-x");
-        assert!(msg.contains("abc123"));
-        assert!(msg.contains("feature-x"));
-        assert!(msg.contains("not found"));
     }
 
     #[test]

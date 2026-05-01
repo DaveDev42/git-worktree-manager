@@ -28,8 +28,6 @@ These are the management-side commands. For full flag detail, see
 | `gw delete [target]` | Delete a worktree (and optionally its branch / remote branch). Use `-i` for interactive batch selection. |
 | `gw resume [branch]` | Resume an AI session in a worktree (auto-uses `--continue` when possible). |
 | `gw shell [worktree] [cmd...]` | Open an interactive shell in a worktree, or run a one-off command there. |
-| `gw backup create/list/restore` | Create or restore a `git bundle` backup of a worktree. |
-| `gw stash save/list/apply` | Worktree-aware stash that survives across worktrees. |
 
 `gw new` (creating a worktree to delegate work into) is owned by the sibling
 `delegate` skill — defer to that skill for new-task workflows.
@@ -309,26 +307,6 @@ Run health check: git version, worktree accessibility, uncommitted changes, behi
 
 ### `gw upgrade`
 Check for updates and install latest version from GitHub Releases.
-
-## Backup & Stash
-
-### `gw backup create [branch] [--all]`
-Create git bundle backup of worktree(s).
-
-### `gw backup list [branch] [--all]`
-List available backups.
-
-### `gw backup restore <branch> [--path <PATH>] [--id <ID>]`
-Restore worktree from backup.
-
-### `gw stash save [message]`
-Save changes to worktree-aware stash.
-
-### `gw stash list`
-List stashes organized by worktree/branch.
-
-### `gw stash apply <target-branch> [-s <stash-ref>]`
-Apply stash to a different worktree.
 
 ## Configuration
 

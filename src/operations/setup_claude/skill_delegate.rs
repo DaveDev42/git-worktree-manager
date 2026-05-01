@@ -138,8 +138,6 @@ Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be given per invoc
 | `gw list` | List all worktrees with status |
 | `gw resume [branch]` | Resume AI session in worktree |
 | `gw doctor` | Run diagnostics |
-| `gw backup <action>` | Backup and restore worktrees |
-| `gw stash <action>` | Worktree-aware stash management |
 | `gw shell [worktree]` | Open shell in worktree |
 
 ## Delegate a task to a new worktree
