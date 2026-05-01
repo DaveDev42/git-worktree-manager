@@ -381,6 +381,7 @@ pub fn get_ai_tool_command() -> Result<Vec<String>> {
     get_ai_tool_command_for_cwd(&cwd)
 }
 
+/// Like [`get_ai_tool_command`] but resolves config from `cwd` so a repo-local `.cwconfig.json` can override the global `ai_tool` block.
 pub fn get_ai_tool_command_for_cwd(cwd: &Path) -> Result<Vec<String>> {
     // Check environment variable first
     if let Ok(env_tool) = std::env::var("CW_AI_TOOL") {
@@ -416,6 +417,7 @@ pub fn get_ai_tool_resume_command() -> Result<Vec<String>> {
     get_ai_tool_resume_command_for_cwd(&cwd)
 }
 
+/// Like [`get_ai_tool_resume_command`] but resolves config from `cwd` so a repo-local `.cwconfig.json` can override the global `ai_tool` block.
 pub fn get_ai_tool_resume_command_for_cwd(cwd: &Path) -> Result<Vec<String>> {
     if let Ok(env_tool) = std::env::var("CW_AI_TOOL") {
         if env_tool.trim().is_empty() {
@@ -464,6 +466,7 @@ pub fn get_ai_tool_merge_command(prompt: &str) -> Result<Vec<String>> {
     get_ai_tool_merge_command_for_cwd(&cwd, prompt)
 }
 
+/// Like [`get_ai_tool_merge_command`] but resolves config from `cwd` so a repo-local `.cwconfig.json` can override the global `ai_tool` block.
 pub fn get_ai_tool_merge_command_for_cwd(cwd: &Path, prompt: &str) -> Result<Vec<String>> {
     if let Ok(env_tool) = std::env::var("CW_AI_TOOL") {
         if env_tool.trim().is_empty() {
@@ -532,6 +535,7 @@ pub fn get_ai_tool_delegate_command(prompt: &str) -> Result<Vec<String>> {
     get_ai_tool_delegate_command_for_cwd(&cwd, prompt)
 }
 
+/// Like [`get_ai_tool_delegate_command`] but resolves config from `cwd` so a repo-local `.cwconfig.json` can override the global `ai_tool` block.
 pub fn get_ai_tool_delegate_command_for_cwd(cwd: &Path, prompt: &str) -> Result<Vec<String>> {
     let mut cmd = get_ai_tool_command_for_cwd(cwd)?;
     if cmd.is_empty() {
@@ -547,6 +551,7 @@ pub fn is_claude_tool() -> Result<bool> {
     is_claude_tool_for_cwd(&cwd)
 }
 
+/// Like [`is_claude_tool`] but resolves config from `cwd` so a repo-local `.cwconfig.json` can override the global `ai_tool` block.
 pub fn is_claude_tool_for_cwd(cwd: &Path) -> Result<bool> {
     if let Ok(env_tool) = std::env::var("CW_AI_TOOL") {
         let first_word = env_tool.split_whitespace().next().unwrap_or("");
@@ -713,6 +718,7 @@ pub fn get_default_launch_method() -> Result<LaunchMethod> {
     get_default_launch_method_for_cwd(&cwd)
 }
 
+/// Like [`get_default_launch_method`] but resolves config from `cwd` so a repo-local `.cwconfig.json` can override the global `launch` block.
 pub fn get_default_launch_method_for_cwd(cwd: &Path) -> Result<LaunchMethod> {
     // 1. Environment variable
     if let Ok(env_val) = std::env::var("CW_LAUNCH_METHOD") {

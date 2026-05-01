@@ -103,3 +103,33 @@ fn missing_global_and_repo_returns_defaults() {
     let default = git_worktree_manager::config::Config::default();
     assert_eq!(cfg.ai_tool.command, default.ai_tool.command);
 }
+
+/// Confirms `deep_merge` semantics flow through `load_effective_config_with_global`:
+/// repo overrides `ai_tool.command` while keeping the global `ai_tool.args`.
+#[test]
+fn nested_keys_merge_independently() {
+    let global_dir = tempdir().unwrap();
+    let global_path = global_dir.path().join("config.json");
+    std::fs::write(
+        &global_path,
+        r#"{"ai_tool":{"command":"claude","args":["--verbose","--debug"]}}"#,
+    )
+    .unwrap();
+
+    let repo = tempdir().unwrap();
+    std::fs::write(
+        repo.path().join(".cwconfig.json"),
+        r#"{"ai_tool":{"command":"codex"}}"#,
+    )
+    .unwrap();
+
+    let cfg =
+        git_worktree_manager::config::load_effective_config_with_global(repo.path(), &global_path)
+            .unwrap();
+    assert_eq!(cfg.ai_tool.command, "codex", "repo overrides command");
+    assert_eq!(
+        cfg.ai_tool.args,
+        vec!["--verbose", "--debug"],
+        "global args survive when repo doesn't override them"
+    );
+}
