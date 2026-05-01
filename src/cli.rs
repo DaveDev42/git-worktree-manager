@@ -112,7 +112,8 @@ pub enum Commands {
             .required(false)
     ))]
     Spawn {
-        /// Worktree target (default: current worktree).
+        /// Worktree target — exact worktree name, branch name, or path.
+        /// Default: current worktree.
         target: Option<String>,
 
         /// Initial prompt to pass to the AI tool.

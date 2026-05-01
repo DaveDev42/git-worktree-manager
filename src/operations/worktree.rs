@@ -208,7 +208,7 @@ pub fn create_worktree(
                 fg,
             );
         } else {
-            let _ = super::ai_tools::spawn_in_worktree(&worktree_path, branch_name, initial_prompt);
+            let _ = super::ai_tools::spawn_in_worktree(&worktree_path, initial_prompt);
         }
     }
 

@@ -124,12 +124,7 @@ pub fn run() {
                 }
                 None => crate::git::get_repo_root(Some(&cwd))?,
             };
-            let name = target_path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("?")
-                .to_string();
-            ai_tools::spawn_in_worktree(&target_path, &name, resolved_prompt.as_deref())
+            ai_tools::spawn_in_worktree(&target_path, resolved_prompt.as_deref())
         })(),
 
         Some(Commands::Rm {
