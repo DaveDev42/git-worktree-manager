@@ -15,19 +15,6 @@ pub struct ResolvedTarget {
     pub repo: PathBuf,
 }
 
-// Thread-local global mode flag.
-std::thread_local! {
-    static GLOBAL_MODE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-pub fn set_global_mode(enabled: bool) {
-    GLOBAL_MODE.with(|g| g.set(enabled));
-}
-
-pub fn is_global_mode() -> bool {
-    GLOBAL_MODE.with(|g| g.get())
-}
-
 /// Parse 'repo:branch' notation.
 pub fn parse_repo_branch_target(target: &str) -> (Option<&str>, &str) {
     if let Some((repo, branch)) = target.split_once(':') {
@@ -63,12 +50,6 @@ pub fn resolve_worktree_target(
     target: Option<&str>,
     lookup_mode: Option<&str>,
 ) -> Result<ResolvedTarget> {
-    if target.is_none() && is_global_mode() {
-        return Err(CwError::WorktreeNotFound(
-            "Global mode requires an explicit target (branch or worktree name).".to_string(),
-        ));
-    }
-
     if target.is_none() {
         // Use current directory
         let cwd = std::env::current_dir()?;
@@ -82,11 +63,6 @@ pub fn resolve_worktree_target(
     }
 
     let target = target.unwrap();
-
-    // Global mode: search all registered repositories
-    if is_global_mode() {
-        return resolve_global_target(target, lookup_mode);
-    }
 
     let main_repo = git::get_main_repo_root(None)?;
 
@@ -147,51 +123,6 @@ pub fn resolve_worktree_target(
             target,
         ))),
     }
-}
-
-/// Global mode target resolution.
-fn resolve_global_target(target: &str, lookup_mode: Option<&str>) -> Result<ResolvedTarget> {
-    let repos = crate::registry::get_all_registered_repos();
-    let (repo_filter, branch_target) = parse_repo_branch_target(target);
-
-    for (name, repo_path) in &repos {
-        if let Some(filter) = repo_filter {
-            if name != filter {
-                continue;
-            }
-        }
-        if !repo_path.exists() {
-            continue;
-        }
-
-        // Try branch lookup (skip if lookup_mode is "worktree")
-        if lookup_mode != Some("worktree") {
-            if let Ok(Some(path)) = git::find_worktree_by_intended_branch(repo_path, branch_target)
-            {
-                let repo = git::get_repo_root(Some(&path)).unwrap_or(repo_path.clone());
-                return Ok(ResolvedTarget {
-                    path,
-                    branch: branch_target.to_string(),
-                    repo,
-                });
-            }
-        }
-
-        // Try worktree name lookup (skip if lookup_mode is "branch")
-        if lookup_mode != Some("branch") {
-            if let Ok(Some(path)) = git::find_worktree_by_name(repo_path, branch_target) {
-                let branch = get_branch_for_worktree(repo_path, &path)
-                    .unwrap_or_else(|| branch_target.to_string());
-                let repo = git::get_repo_root(Some(&path)).unwrap_or(repo_path.clone());
-                return Ok(ResolvedTarget { path, branch, repo });
-            }
-        }
-    }
-
-    Err(CwError::WorktreeNotFound(format!(
-        "'{}' not found in any registered repository.",
-        target
-    )))
 }
 
 /// Get worktree metadata (base branch and base repository path).

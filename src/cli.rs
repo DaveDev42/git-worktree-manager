@@ -25,10 +25,6 @@ pub struct CacheControl {
     arg_required_else_help = true,
 )]
 pub struct Cli {
-    /// Run in global mode (across all registered repositories)
-    #[arg(short = 'g', long = "global", global = true)]
-    pub global: bool,
-
     /// Generate shell completions for the given shell
     #[arg(long, value_name = "SHELL", value_parser = clap::builder::PossibleValuesParser::new(["bash", "zsh", "fish", "powershell", "elvish"]))]
     pub generate_completion: Option<String>,

@@ -15,8 +15,7 @@ use crate::cwshare_setup;
 use crate::error::{CwError, Result};
 use crate::hooks;
 use crate::operations::{
-    ai_tools, diagnostics, display, global_ops, guard, helpers, path_cmd, setup_claude, spawn_spec,
-    worktree,
+    ai_tools, diagnostics, display, guard, helpers, path_cmd, setup_claude, spawn_spec, worktree,
 };
 use crate::resolve_prompt;
 use crate::shell_functions;
@@ -59,17 +58,8 @@ pub fn run() {
         config::prompt_shell_completion_setup();
     }
 
-    helpers::set_global_mode(cli.global);
-
     let result = match cli.command {
-        Some(Commands::List { cache }) => {
-            let no_cache = cache.no_cache;
-            if cli.global {
-                global_ops::global_list_worktrees(no_cache)
-            } else {
-                display::list_worktrees(no_cache)
-            }
-        }
+        Some(Commands::List { cache }) => display::list_worktrees(cache.no_cache),
         Some(Commands::New {
             name,
             path,
@@ -195,7 +185,7 @@ pub fn run() {
             branch,
             list_branches,
             interactive,
-        }) => path_cmd::worktree_path(branch.as_deref(), cli.global, list_branches, interactive),
+        }) => path_cmd::worktree_path(branch.as_deref(), list_branches, interactive),
 
         Some(Commands::ShellFunction { shell }) => match shell_functions::generate(&shell) {
             Some(output) => {

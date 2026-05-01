@@ -327,13 +327,6 @@ Manually run hooks for an event.
 
 **Available events:** `worktree.pre_create`, `worktree.post_create`, `worktree.pre_delete`, `worktree.post_delete`, `merge.pre`, `merge.post`, `pr.pre`, `pr.post`, `resume.pre`, `resume.post`, `sync.pre`, `sync.post`
 
-## Global Mode
-
-Add `-g` or `--global` to any command to operate across all registered repositories.
-
-### `gw -g list`
-List worktrees across all registered repos.
-
 ## Shell Integration
 
 ### `gw shell-setup`
@@ -343,7 +336,6 @@ Interactive setup for shell integration (gw-cd function).
 Shell function to navigate to worktree by branch name. Supports:
 - `gw-cd` — interactive selector
 - `gw-cd feature-x` — direct navigation
-- `gw-cd -g feature-x` — global (across repos)
 - `gw-cd repo:branch` — repo-scoped navigation
 
 ## Terminal Launch Methods
@@ -388,6 +380,6 @@ Used with `-T` flag on `gw new` and `gw resume`. Supports `method:session-name` 
 These hidden commands output newline-separated values, useful for scripting:
 - `gw _term-values` — List all valid `--term` values (canonical + aliases)
 - `gw _hook-events` — List all valid hook event names
-- `gw _path --list-branches [-g]` — List worktree branch names
+- `gw _path --list-branches` — List worktree branch names
 "#
 }

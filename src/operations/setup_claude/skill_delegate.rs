@@ -196,11 +196,6 @@ gw delete feature-x                # cleanup after merge
 gw delete -i                       # interactive selection of worktrees to delete
 ```
 
-### Global mode (across repos)
-```bash
-gw -g list                         # list worktrees across all repos
-```
-
 ## Guidelines
 
 - Before running any `gw` subcommand that reads the current worktree (`gw list`, `gw delete` without an explicit target, etc.), make sure the shell's cwd still exists. If another session or an earlier `gw delete` removed the worktree, the shell holds a stale pwd and commands behave unexpectedly. Quick guard:

@@ -217,15 +217,6 @@ fn test_doctor_help() {
 }
 
 #[test]
-fn test_global_flag() {
-    // -g flag should be accepted (even without proper context)
-    cw().args(["-g", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--global"));
-}
-
-#[test]
 fn test_list_alias_ls() {
     // "ls" should work as alias for "list"
     cw().args(["ls", "--help"]).assert().success();
