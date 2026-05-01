@@ -139,6 +139,8 @@ pub enum Commands {
     List,
 
     /// Print all worktrees as TSV (for scripts)
+    ///
+    /// Columns: worktree_id, branch, status, age, repo_root, path
     Ls,
 
     /// Run diagnostics

@@ -332,6 +332,7 @@ pub fn list_worktrees_tsv() -> Result<()> {
             .collect();
 
         // Parallel status computation (same pattern as the static path in render_repo_section).
+        // IndexedParallelIterator preserves source-vec order on collect — required for the zip below.
         let rows: Vec<WorktreeRow> = inputs
             .into_par_iter()
             .map(|i| {
