@@ -454,5 +454,5 @@ fn resolve_delete_target(
     });
 
     let strict = super::helpers::resolve_target_strict(main_repo, &target)?;
-    Ok((strict.path, Some(strict.branch)))
+    Ok((strict.path, strict.branch))
 }

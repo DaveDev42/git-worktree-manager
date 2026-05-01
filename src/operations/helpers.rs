@@ -23,7 +23,8 @@ pub struct StrictTarget {
     /// Basename of the worktree directory (e.g. `"repo-feat-x"`).
     pub name: String,
     /// Short branch name (e.g. `"feat-x"`), with `refs/heads/` prefix stripped.
-    pub branch: String,
+    /// `None` for detached-HEAD worktrees.
+    pub branch: Option<String>,
     /// Absolute path to the worktree directory.
     pub path: PathBuf,
 }
@@ -224,7 +225,12 @@ pub fn resolve_target_strict(repo_root: &Path, target: &str) -> Result<StrictTar
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let branch = git::normalize_branch_name(branch_raw).to_string();
+        let normalized = git::normalize_branch_name(branch_raw);
+        let branch = if normalized == "(detached)" {
+            None
+        } else {
+            Some(normalized.to_string())
+        };
         StrictTarget {
             name,
             branch,

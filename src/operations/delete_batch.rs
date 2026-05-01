@@ -120,7 +120,7 @@ fn resolve_one(input: &str, main_repo: &Path) -> Option<Resolved> {
         Ok(strict) => Some(Resolved {
             input: input.to_string(),
             path: strict.path,
-            branch: Some(strict.branch),
+            branch: strict.branch,
         }),
         Err(_) => None,
     }

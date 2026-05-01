@@ -178,7 +178,14 @@ pub fn resume_worktree(
         let main_repo = git::get_main_repo_root(None)?;
         let strict = resolve_target_strict(&main_repo, target)?;
         let repo = git::get_repo_root(Some(&strict.path))?;
-        (strict.path, strict.branch, repo)
+        let branch_name = strict.branch.unwrap_or_else(|| {
+            strict
+                .path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "(detached)".into())
+        });
+        (strict.path, branch_name, repo)
     } else {
         // No target — use current working directory.
         let resolved = resolve_worktree_target(None, None)?;
