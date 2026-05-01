@@ -189,7 +189,7 @@ fn resolve_global_target(target: &str, lookup_mode: Option<&str>) -> Result<Reso
     }
 
     Err(CwError::WorktreeNotFound(format!(
-        "'{}' not found in any registered repository. Run 'gw scan' to register repos.",
+        "'{}' not found in any registered repository.",
         target
     )))
 }

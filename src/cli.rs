@@ -180,16 +180,6 @@ pub enum Commands {
         action: HookAction,
     },
 
-    /// Scan for repositories (global mode)
-    Scan {
-        /// Base directory to scan (default: home directory)
-        #[arg(short, long, value_hint = ValueHint::DirPath)]
-        dir: Option<std::path::PathBuf>,
-    },
-
-    /// Clean up stale registry entries (global mode)
-    Prune,
-
     /// Run diagnostics
     Doctor {
         /// Hook-friendly mode: emit a single-line summary and exit 0.

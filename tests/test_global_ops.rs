@@ -1,4 +1,4 @@
-/// Tests for global worktree operations (`gw -g list`, `gw scan`, `gw prune`).
+/// Tests for global worktree operations (`gw -g list`).
 mod common;
 
 use assert_cmd::Command;
@@ -155,80 +155,6 @@ fn test_global_list_after_worktree_deleted() {
 }
 
 // ===========================================================================
-// gw scan
-// ===========================================================================
-
-#[test]
-fn test_global_scan_succeeds() {
-    // Scan command should succeed (scans from home dir by default)
-    let repo = TestRepo::new();
-    let output = repo.cw(&["scan"]);
-    assert!(
-        output.status.success(),
-        "scan command should succeed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Scanning") || stdout.contains("repository") || stdout.contains("No repo"),
-        "Expected scan output, got: {}",
-        stdout
-    );
-}
-
-#[test]
-fn test_global_scan_help() {
-    cw().args(["scan", "--help"]).assert().success().stdout(
-        predicate::str::contains("scan")
-            .or(predicate::str::contains("Scan"))
-            .or(predicate::str::contains("repositor")),
-    );
-}
-
-// ===========================================================================
-// gw prune
-// ===========================================================================
-
-#[test]
-fn test_global_prune_clean() {
-    // When registry is clean, prune should report nothing to do
-    let repo = TestRepo::new();
-    let output = repo.cw(&["prune"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("clean") || stdout.contains("nothing") || stdout.contains("Pruning"),
-        "Expected clean prune message, got: {}",
-        stdout
-    );
-}
-
-#[test]
-fn test_global_prune_removes_stale() {
-    // Register a repo, remove its directory, then prune should clean it
-    let repo = TestRepo::new();
-    let _wt = repo.create_worktree("prune-test");
-
-    // First prune should be clean
-    let output1 = repo.cw(&["prune"]);
-    assert!(output1.status.success());
-
-    // Prune again should still succeed
-    let output2 = repo.cw(&["prune"]);
-    assert!(output2.status.success());
-}
-
-#[test]
-fn test_global_prune_help() {
-    cw().args(["prune", "--help"]).assert().success().stdout(
-        predicate::str::contains("prune")
-            .or(predicate::str::contains("Prune"))
-            .or(predicate::str::contains("registry"))
-            .or(predicate::str::contains("stale")),
-    );
-}
-
-// ===========================================================================
 // gw -g flag behavior
 // ===========================================================================
 
@@ -338,35 +264,4 @@ fn test_global_list_multiple_worktrees_same_repo() {
         "Expected multi-b in list, got: {}",
         stdout
     );
-}
-
-// ===========================================================================
-// Additional edge cases
-// ===========================================================================
-
-#[test]
-fn test_global_prune_output_format() {
-    // Prune output should contain the "Pruning registry..." header
-    let repo = TestRepo::new();
-    let output = repo.cw(&["prune"]);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Pruning") || stdout.contains("pruning"),
-        "Expected pruning header, got: {}",
-        stdout
-    );
-}
-
-#[test]
-fn test_global_scan_exit_code_zero() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["scan"]);
-    assert_eq!(output.status.code(), Some(0));
-}
-
-#[test]
-fn test_global_prune_exit_code_zero() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["prune"]);
-    assert_eq!(output.status.code(), Some(0));
 }

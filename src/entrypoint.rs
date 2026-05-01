@@ -174,8 +174,6 @@ pub fn run() {
             HookAction::Run { event, dry_run } => run_hooks_manual(&event, dry_run),
         },
 
-        Some(Commands::Scan { dir }) => global_ops::global_scan(dir.as_deref()),
-        Some(Commands::Prune) => global_ops::global_prune(),
         Some(Commands::Doctor {
             session_start,
             quiet,

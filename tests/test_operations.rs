@@ -643,24 +643,6 @@ fn test_diff_nonexistent_branch() {
 }
 
 // ===========================================================================
-// prune — empty
-// ===========================================================================
-
-#[test]
-fn test_prune_empty() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["prune"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("stale")
-            || stdout.contains("No stale")
-            || stdout.contains("Prune")
-            || stdout.contains("prune")
-    );
-}
-
-// ===========================================================================
 // delete — from inside worktree (current directory)
 // ===========================================================================
 

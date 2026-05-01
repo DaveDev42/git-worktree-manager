@@ -398,7 +398,7 @@ fn print_recommendations(
         if stale_count > 0 {
             println!(
                 "  - Run {} to clean up stale worktrees",
-                style("gw prune").cyan()
+                style("gw delete").cyan()
             );
         }
         if !behind.is_empty() {

@@ -334,12 +334,6 @@ Add `-g` or `--global` to any command to operate across all registered repositor
 ### `gw -g list`
 List worktrees across all registered repos.
 
-### `gw scan [--dir <DIR>]`
-Scan for and register git repositories.
-
-### `gw prune`
-Clean up stale registry entries.
-
 ## Shell Integration
 
 ### `gw shell-setup`

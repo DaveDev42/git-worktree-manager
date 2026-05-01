@@ -78,23 +78,3 @@ fn test_repo_entry_serialization() {
     let deserialized: registry::RepoEntry = serde_json::from_str(&json).unwrap();
     assert_eq!(deserialized.name, "myproject");
 }
-
-// Integration tests via CLI
-mod common;
-use common::TestRepo;
-
-#[test]
-fn test_scan_cli() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["scan"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Scanning") || stdout.contains("repository"));
-}
-
-#[test]
-fn test_prune_cli() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["prune"]);
-    assert!(output.status.success());
-}
