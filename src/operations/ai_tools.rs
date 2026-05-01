@@ -5,9 +5,7 @@ use std::path::Path;
 
 use console::style;
 
-use crate::config::{
-    self, get_ai_tool_command, get_ai_tool_resume_command, is_claude_tool, parse_term_option,
-};
+use crate::config::{self, get_ai_tool_command, get_ai_tool_resume_command, is_claude_tool};
 use crate::constants::{
     format_config_key, LaunchMethod, CONFIG_KEY_BASE_BRANCH, MAX_SESSION_NAME_LENGTH,
 };
@@ -107,42 +105,17 @@ fn dispatch_launch(
 }
 
 /// Launch AI coding assistant in the specified directory.
-#[allow(clippy::too_many_arguments)]
-pub fn launch_ai_tool(
-    path: &Path,
-    term: Option<&str>,
-    resume: bool,
-    prompt: Option<&str>,
-    initial_prompt: Option<&str>,
-    bg: bool,
-    fg: bool,
-) -> Result<()> {
-    let (mut method, session_name) = parse_term_option(term)?;
-    if bg {
-        if let Some(m) = method.to_bg() {
-            method = m;
-        }
-    } else if fg {
-        if let Some(m) = method.to_fg() {
-            method = m;
-        }
-    }
+pub fn launch_ai_tool(path: &Path, resume: bool) -> Result<()> {
+    let method = config::get_default_launch_method()?;
 
     // Determine command
-    let ai_cmd_parts = if let Some(p) = prompt {
-        config::get_ai_tool_merge_command(p)?
-    } else if let Some(ip) = initial_prompt {
-        config::get_ai_tool_delegate_command(ip)?
-    } else if resume {
+    let ai_cmd_parts = if resume {
+        get_ai_tool_resume_command()?
+    } else if is_claude_tool().unwrap_or(false) && session::claude_native_session_exists(path) {
+        eprintln!("Found existing Claude session, using --continue");
         get_ai_tool_resume_command()?
     } else {
-        // Smart --continue for Claude
-        if is_claude_tool().unwrap_or(false) && session::claude_native_session_exists(path) {
-            eprintln!("Found existing Claude session, using --continue");
-            get_ai_tool_resume_command()?
-        } else {
-            get_ai_tool_command()?
-        }
+        get_ai_tool_command()?
     };
 
     if ai_cmd_parts.is_empty() {
@@ -173,7 +146,7 @@ pub fn launch_ai_tool(
     // emulator / multiplexer and return immediately, so a lock acquired here
     // would be released before the AI session really starts — for those we
     // rely on process-cwd scanning in `busy::detect_busy` instead.
-    dispatch_launch(path, method, session_name, &cmd, ai_tool_name.as_str())
+    dispatch_launch(path, method, None, &cmd, ai_tool_name.as_str())
 }
 
 /// Resume AI work in a worktree with context restoration.
@@ -286,7 +259,7 @@ pub fn resume_worktree(worktree: Option<&str>) -> Result<()> {
             );
         }
 
-        launch_ai_tool(&worktree_path, None, has_session, None, None, false, false)?;
+        launch_ai_tool(&worktree_path, has_session)?;
     }
 
     // Post-resume hooks

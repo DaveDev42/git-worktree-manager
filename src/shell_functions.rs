@@ -172,7 +172,7 @@ if [ -n "$ZSH_VERSION" ]; then
     # Register clap completion for gw/cw CLI inline
     eval "$(gw --generate-completion zsh 2>/dev/null)"
 
-    # Wrap _gw to add dynamic completion (branch names + term values)
+    # Wrap _gw to add dynamic completion (branch names)
     _gw_with_config() {
         local subcmd="${words[2]}"
 

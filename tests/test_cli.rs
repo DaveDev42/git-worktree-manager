@@ -109,13 +109,22 @@ fn gw_new_rejects_dropped_launch_flags() {
     // --bg, --fg, --term were removed in Phase 6.3; clap should reject them
     cw().args(["new", "x", "--bg", "--no-term"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(
+            predicate::str::contains("unexpected argument").or(predicate::str::contains("--bg")),
+        );
     cw().args(["new", "x", "--fg", "--no-term"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(
+            predicate::str::contains("unexpected argument").or(predicate::str::contains("--fg")),
+        );
     cw().args(["new", "x", "--term", "tmux", "--no-term"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(
+            predicate::str::contains("unexpected argument").or(predicate::str::contains("--term")),
+        );
 }
 
 #[test]
@@ -151,13 +160,22 @@ fn gw_resume_rejects_dropped_launch_flags() {
     // --bg, --fg, --term were removed in Phase 6.3; clap should reject them
     cw().args(["resume", "some-branch", "--bg"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(
+            predicate::str::contains("unexpected argument").or(predicate::str::contains("--bg")),
+        );
     cw().args(["resume", "some-branch", "--fg"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(
+            predicate::str::contains("unexpected argument").or(predicate::str::contains("--fg")),
+        );
     cw().args(["resume", "some-branch", "--term", "tmux"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(
+            predicate::str::contains("unexpected argument").or(predicate::str::contains("--term")),
+        );
 }
 
 #[test]
@@ -283,7 +301,7 @@ fn test_new_base_short_flag() {
 }
 
 #[test]
-fn test_new_term_short_flag() {
+fn test_new_help_does_not_show_term_short_flag() {
     // -T / --term were removed in Phase 6.3; verify they no longer appear in help
     cw().args(["new", "--help"])
         .assert()
