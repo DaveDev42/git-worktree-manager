@@ -2,9 +2,15 @@
 
 mod common;
 use common::TestRepo;
+#[cfg(unix)]
 use std::process::Command;
 
 /// Verify that run_event executes the configured command when the hook is set.
+///
+/// Unix-only: `touch` is the standard way to assert that the hook actually
+/// ran. Windows lacks both `sh` (the hooks runner) and `touch` (coreutils),
+/// so the cross-platform behavior is covered by the no-op tests below.
+#[cfg(unix)]
 #[test]
 fn run_event_executes_configured_command() {
     let repo = TestRepo::new();
@@ -57,6 +63,9 @@ fn run_event_propagates_nonzero_exit() {
 /// not a child. Walking up from the worktree path would never find the main repo's
 /// `.cwconfig.json`. `run_event` must resolve to the main repo root via
 /// `get_main_repo_root` before loading config.
+///
+/// Unix-only: relies on `sh` + `touch` to assert the hook actually fired.
+#[cfg(unix)]
 #[test]
 fn run_event_finds_main_repo_config_from_worktree() {
     let repo = TestRepo::new();
