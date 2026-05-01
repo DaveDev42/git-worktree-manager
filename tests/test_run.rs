@@ -123,3 +123,71 @@ fn run_no_main_skips_main_worktree() {
         "feat-x should still run; got: {s}"
     );
 }
+
+#[test]
+fn run_parallel_keeps_output_per_worktree_contiguous() {
+    let repo = TestRepo::new();
+    let _wt_a = repo.create_worktree("a");
+    let _wt_b = repo.create_worktree("b");
+    let _wt_c = repo.create_worktree("c");
+
+    let main_basename = repo.path().file_name().unwrap().to_str().unwrap().to_string();
+    let wt_a_path = repo.path().parent().unwrap().join(format!("{}-a", main_basename));
+
+    let mut buf: Vec<u8> = Vec::new();
+    let code = run_in_scope_to_writer(
+        &wt_a_path,
+        &[
+            "sh".to_string(),
+            "-c".to_string(),
+            "echo line1; echo line2".to_string(),
+        ],
+        None,
+        false,
+        4, // jobs
+        false,
+        &mut buf,
+    )
+    .expect("run_in_scope_to_writer");
+
+    assert_eq!(code, 0);
+    let s = String::from_utf8(buf).expect("utf8");
+
+    // For every worktree, the two lines must appear back-to-back (contiguous).
+    // Feature worktrees have -a / -b / -c suffix.
+    for suffix in &["-a", "-b", "-c"] {
+        let lines: Vec<&str> = s.lines().collect();
+        let mut found = false;
+        for (idx, line) in lines.iter().enumerate() {
+            if line.ends_with(&format!("{}] line1", suffix)) {
+                let prefix_part = &line[..line.len() - "line1".len()];
+                let next_expected = format!("{}line2", prefix_part);
+                assert!(
+                    idx + 1 < lines.len() && lines[idx + 1] == next_expected,
+                    "expected line2 immediately after line1 for {suffix}; got: {s}"
+                );
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "did not find line1 for worktree suffix {suffix}; got: {s}");
+    }
+
+    // Main worktree (no suffix; basename only).
+    let main_prefix = format!("[{}] ", main_basename);
+    let main_line1 = format!("{}line1", main_prefix);
+    let main_line2 = format!("{}line2", main_prefix);
+    let lines: Vec<&str> = s.lines().collect();
+    let mut found_main = false;
+    for (idx, line) in lines.iter().enumerate() {
+        if *line == main_line1 {
+            assert!(
+                idx + 1 < lines.len() && lines[idx + 1] == main_line2,
+                "main line2 should follow line1; got: {s}"
+            );
+            found_main = true;
+            break;
+        }
+    }
+    assert!(found_main, "main worktree line1 missing; got: {s}");
+}
