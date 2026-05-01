@@ -71,8 +71,8 @@ fn doctor_session_start(quiet: bool) -> Result<()> {
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "?".into());
 
-    // Branch + base + registration are best-effort: failures here must not
-    // abort the line. Each failed lookup contributes "?" to the output.
+    // Branch + base are best-effort: failures here must not abort the
+    // line. Each failed lookup contributes "?" to the output.
     let repo_root = git::get_repo_root(None).ok();
     let branch = repo_root
         .as_deref()
