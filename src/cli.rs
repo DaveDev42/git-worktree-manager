@@ -231,9 +231,9 @@ pub enum Commands {
     #[command(name = "_update-cache", hide = true)]
     UpdateCache,
 
-    /// List terminal launch method values (for tab completion)
-    #[command(name = "_term-values", hide = true)]
-    TermValues,
+    /// [Internal] Print completion targets for the current repo (one per line)
+    #[command(name = "_complete-targets", hide = true)]
+    CompleteTargets,
 
     /// [Internal] Execute an AI tool spawn spec file
     #[command(name = "_spawn-ai", hide = true)]

@@ -379,7 +379,7 @@ Used with `-T` flag on `gw new` and `gw resume`. Supports `method:session-name` 
 ## Helper Commands (for scripting and completion)
 
 These hidden commands output newline-separated values, useful for scripting:
-- `gw _term-values` — List all valid `--term` values (canonical + aliases)
+- `gw _complete-targets` — List valid completion targets (worktree names + branch names)
 - `gw _hook-events` — List all valid hook event names
 - `gw _path --list-branches` — List worktree branch names
 "#

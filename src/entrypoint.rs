@@ -40,7 +40,7 @@ pub fn run() {
         &cli.command,
         Some(
             Commands::UpdateCache
-                | Commands::TermValues
+                | Commands::CompleteTargets
                 | Commands::Path { .. }
                 | Commands::ShellFunction { .. }
                 | Commands::SpawnAi { .. }
@@ -208,12 +208,7 @@ pub fn run() {
             Ok(())
         }
 
-        Some(Commands::TermValues) => {
-            for v in constants::all_term_values() {
-                println!("{}", v);
-            }
-            Ok(())
-        }
+        Some(Commands::CompleteTargets) => crate::operations::complete::print_completion_targets(),
 
         Some(Commands::SpawnAi { spec }) => {
             // Pre-spawn failures (read/parse/chdir) exit 127 — the shell
