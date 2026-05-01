@@ -3,6 +3,7 @@
 mod common;
 use common::TestRepo;
 
+use git_worktree_manager::error::CwError;
 use git_worktree_manager::operations::helpers::resolve_target_strict;
 
 #[test]
@@ -32,7 +33,12 @@ fn resolve_strict_exact_branch_name_wins() {
 fn resolve_strict_unknown_returns_err() {
     let repo = TestRepo::new();
     let result = resolve_target_strict(repo.path(), "nonexistent");
-    assert!(result.is_err(), "Expected Err for unknown target, got Ok");
+    let err = result.expect_err("Expected Err for unknown target");
+    assert!(
+        matches!(err, CwError::WorktreeNotFound(_)),
+        "Expected CwError::WorktreeNotFound, got: {:?}",
+        err
+    );
 }
 
 #[test]

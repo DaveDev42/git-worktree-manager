@@ -8,6 +8,13 @@ pub fn worktree_not_found(branch: &str) -> String {
     )
 }
 
+pub fn target_not_found(target: &str) -> String {
+    format!(
+        "No worktree matches '{}' (tried name, branch, path). Use 'gw list' to see available worktrees.",
+        target
+    )
+}
+
 pub fn branch_not_found(branch: &str) -> String {
     format!("Branch '{}' not found", branch)
 }
@@ -90,6 +97,14 @@ mod tests {
         assert!(msg.contains("feature-x"));
         assert!(msg.contains("gw list"));
         assert!(msg.contains("No worktree found"));
+    }
+
+    #[test]
+    fn test_target_not_found() {
+        let msg = target_not_found("my-target");
+        assert!(msg.contains("my-target"));
+        assert!(msg.contains("name, branch, path"));
+        assert!(msg.contains("gw list"));
     }
 
     #[test]

@@ -18,6 +18,7 @@ pub struct ResolvedTarget {
 /// Strictly-resolved worktree target: name, branch, and path.
 ///
 /// Produced by [`resolve_target_strict`].
+#[derive(Debug)]
 pub struct StrictTarget {
     /// Basename of the worktree directory (e.g. `"repo-feat-x"`).
     pub name: String,
@@ -269,7 +270,7 @@ pub fn resolve_target_strict(repo_root: &Path, target: &str) -> Result<StrictTar
         }
     }
 
-    Err(CwError::WorktreeNotFound(messages::worktree_not_found(
+    Err(CwError::WorktreeNotFound(messages::target_not_found(
         target,
     )))
 }
