@@ -241,7 +241,7 @@ fn prewarm_busy_caches() {
 }
 
 /// List all worktrees, grouped by repository, using cwd-based scope discovery.
-pub fn list_worktrees(no_cache: bool) -> Result<()> {
+pub fn list_worktrees() -> Result<()> {
     let cwd = std::env::current_dir()?;
     let scope = crate::scope::discover_scope(&cwd)?;
 
@@ -274,8 +274,85 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
         if i > 0 {
             println!(); // separator between sections
         }
-        render_repo_section(repo, worktrees, no_cache)?;
+        render_repo_section(repo, worktrees)?;
     }
+    Ok(())
+}
+
+/// Print all worktrees as TSV — scriptable, machine-readable surface.
+///
+/// Six tab-separated columns, no header, no colors:
+///   `<worktree_id>\t<branch>\t<status>\t<age>\t<repo_root>\t<path>`
+///
+/// Silent when no worktrees are found (unlike `list_worktrees` which prints a
+/// message). Order matches `discover_scope`, grouped by repo in first-seen order.
+pub fn list_worktrees_tsv() -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let scope = crate::scope::discover_scope(&cwd)?;
+
+    if scope.is_empty() {
+        return Ok(());
+    }
+
+    // Group by repo_root in first-seen order.
+    let mut groups: Vec<(std::path::PathBuf, Vec<(String, std::path::PathBuf)>)> = Vec::new();
+    for w in scope.worktrees() {
+        let key = &w.repo_root;
+        let entry = match groups.iter_mut().find(|(k, _)| k == key) {
+            Some(e) => e,
+            None => {
+                groups.push((key.clone(), Vec::new()));
+                groups.last_mut().unwrap()
+            }
+        };
+        let branch_raw = w.branch.clone().unwrap_or_else(|| "(detached)".to_string());
+        entry.1.push((branch_raw, w.path.clone()));
+    }
+
+    for (repo, worktrees) in &groups {
+        let pr_cache = PrCache::load_or_fetch(repo, false);
+
+        // Serial prep: cheap local work (branch normalization, age, intended_branch).
+        let inputs: Vec<RowInput> = worktrees
+            .iter()
+            .map(|(branch, path)| {
+                let current_branch = git::normalize_branch_name(branch).to_string();
+                let age = path_age_str(path);
+                let intended_branch = lookup_intended_branch(repo, &current_branch, path);
+                let worktree_id = intended_branch.unwrap_or_else(|| current_branch.clone());
+                RowInput {
+                    path: path.clone(),
+                    current_branch,
+                    worktree_id,
+                    age,
+                    // rel_path not needed for TSV; repo_root and abs path are the columns.
+                    rel_path: String::new(),
+                }
+            })
+            .collect();
+
+        // Parallel status computation (same pattern as the static path in render_repo_section).
+        let rows: Vec<WorktreeRow> = inputs
+            .into_par_iter()
+            .map(|i| {
+                let status = get_worktree_status(&i.path, repo, Some(&i.current_branch), &pr_cache);
+                i.into_row(status)
+            })
+            .collect();
+
+        for (row, (_, path)) in rows.iter().zip(worktrees.iter()) {
+            println!(
+                "{}\t{}\t{}\t{}\t{}\t{}",
+                row.worktree_id,
+                row.current_branch,
+                row.status,
+                row.age,
+                repo.display(),
+                path.display(),
+            );
+        }
+    }
+
     Ok(())
 }
 
@@ -287,7 +364,6 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
 fn render_repo_section(
     repo: &std::path::Path,
     worktrees: &[(String, std::path::PathBuf)],
-    no_cache: bool,
 ) -> Result<()> {
     println!(
         "\n{}  {}\n",
@@ -295,7 +371,7 @@ fn render_repo_section(
         repo.display()
     );
 
-    let pr_cache = PrCache::load_or_fetch(repo, no_cache);
+    let pr_cache = PrCache::load_or_fetch(repo, false);
 
     // Serial prep: cheap local work. Keep single-threaded for clarity.
     let inputs: Vec<RowInput> = worktrees

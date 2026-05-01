@@ -3,16 +3,8 @@
 /// Mirrors the Typer-based CLI in src/git_worktree_manager/cli.py.
 pub mod completions;
 
-use clap::{Args, Parser, Subcommand, ValueHint};
+use clap::{Parser, Subcommand, ValueHint};
 use std::path::PathBuf;
-
-/// Shared cache-bypass flag, flattened into subcommands that query PR status.
-#[derive(Args, Debug, Clone)]
-pub struct CacheControl {
-    /// Bypass PR status cache (60s TTL) and refresh from gh
-    #[arg(long)]
-    pub no_cache: bool,
-}
 
 /// Git worktree manager CLI.
 #[derive(Parser, Debug)]
@@ -143,12 +135,11 @@ pub enum Commands {
         no_force: bool,
     },
 
-    /// List all worktrees
-    #[command(alias = "ls")]
-    List {
-        #[command(flatten)]
-        cache: CacheControl,
-    },
+    /// List all worktrees (rich, human-readable)
+    List,
+
+    /// Print all worktrees as TSV (for scripts)
+    Ls,
 
     /// Run diagnostics
     Doctor {

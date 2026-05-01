@@ -58,7 +58,8 @@ pub fn run() {
     }
 
     let result = match cli.command {
-        Some(Commands::List { cache }) => display::list_worktrees(cache.no_cache),
+        Some(Commands::List) => display::list_worktrees(),
+        Some(Commands::Ls) => display::list_worktrees_tsv(),
         Some(Commands::New {
             name,
             path,
