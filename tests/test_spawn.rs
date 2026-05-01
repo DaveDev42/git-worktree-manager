@@ -30,6 +30,11 @@ impl Drop for EnvGuard {
 /// Execute `f` with `CW_LAUNCH_METHOD=foreground` and the AI tool set to a
 /// script that creates `sentinel` then exits 0.  Restores env vars via Drop
 /// so panic in the closure can't leave env vars in a dirty state.
+///
+/// Also prepends the cargo-built `gw` binary's directory to `PATH` so the
+/// foreground launcher's `bash -lc "gw _spawn-ai …"` can resolve `gw`. CI
+/// runners don't have `gw` on PATH from a prior `cargo install`, so without
+/// this the spawn pipeline can't re-enter `gw` to read the materialized spec.
 fn with_sentinel_ai<F: FnOnce()>(sentinel_script: &str, f: F) {
     let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
@@ -37,11 +42,23 @@ fn with_sentinel_ai<F: FnOnce()>(sentinel_script: &str, f: F) {
         saved: vec![
             ("CW_LAUNCH_METHOD", std::env::var_os("CW_LAUNCH_METHOD")),
             ("CW_AI_TOOL", std::env::var_os("CW_AI_TOOL")),
+            ("PATH", std::env::var_os("PATH")),
         ],
     };
 
     std::env::set_var("CW_LAUNCH_METHOD", "foreground");
     std::env::set_var("CW_AI_TOOL", sentinel_script);
+
+    let gw_bin = std::path::PathBuf::from(env!("CARGO_BIN_EXE_gw"));
+    if let Some(bin_dir) = gw_bin.parent() {
+        let mut paths: Vec<std::path::PathBuf> = vec![bin_dir.to_path_buf()];
+        if let Some(existing) = std::env::var_os("PATH") {
+            paths.extend(std::env::split_paths(&existing));
+        }
+        if let Ok(joined) = std::env::join_paths(paths) {
+            std::env::set_var("PATH", joined);
+        }
+    }
 
     f();
 
