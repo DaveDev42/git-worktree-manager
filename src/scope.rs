@@ -22,7 +22,8 @@ pub struct ScopedWorktree {
     pub branch: Option<String>,
     /// Absolute path to the worktree directory.
     pub path: PathBuf,
-    /// Main repo root this worktree belongs to.
+    /// Main repo root this worktree belongs to. Canonicalized (symlinks resolved)
+    /// for stable equality comparisons.
     pub repo_root: PathBuf,
     /// True if this worktree is itself the main repo of its family.
     pub is_main: bool,
@@ -66,6 +67,7 @@ pub fn discover_scope(cwd: &Path) -> Result<Scope> {
 fn collect_family(repo_root: &Path) -> Result<Vec<ScopedWorktree>> {
     let raw = git::parse_worktrees(repo_root)?;
     let main_canon = git::canonicalize_or(repo_root);
+    let repo_root_canon = main_canon.clone();
     let mut out = Vec::with_capacity(raw.len());
     for (branch_raw, path) in raw {
         let normalized = git::normalize_branch_name(&branch_raw);
@@ -83,7 +85,7 @@ fn collect_family(repo_root: &Path) -> Result<Vec<ScopedWorktree>> {
             name,
             branch,
             path,
-            repo_root: repo_root.to_path_buf(),
+            repo_root: repo_root_canon.clone(),
             is_main,
         });
     }
@@ -105,7 +107,14 @@ fn walk_for_repos(
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_dir() {
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        if file_type.is_symlink() {
+            continue;
+        }
+        if !file_type.is_dir() {
             continue;
         }
         if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
@@ -117,7 +126,7 @@ fn walk_for_repos(
             }
         }
         if let Ok(repo) = git::get_main_repo_root(Some(&path)) {
-            if seen.insert(repo.clone()) {
+            if seen.insert(git::canonicalize_or(&repo)) {
                 out.extend(collect_family(&repo)?);
             }
             continue;
