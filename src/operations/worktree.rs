@@ -17,16 +17,12 @@ use super::helpers::build_hook_context;
 use crate::messages;
 
 /// Create a new worktree with a feature branch.
-#[allow(clippy::too_many_arguments)]
 pub fn create_worktree(
     branch_name: &str,
     base_branch: Option<&str>,
     path: Option<&str>,
-    term: Option<&str>,
     no_ai: bool,
     initial_prompt: Option<&str>,
-    bg: bool,
-    fg: bool,
 ) -> Result<PathBuf> {
     let repo = git::get_repo_root(None)?;
 
@@ -193,23 +189,8 @@ pub fn create_worktree(
     );
 
     // Launch AI tool in the new worktree.
-    // Phase 6.2: delegate to spawn_in_worktree unless legacy term/bg/fg flags
-    // are present, in which case fall back to launch_ai_tool so that existing
-    // `gw new -T tmux` etc. keep working until Phase 6.3 drops those flags.
     if !no_ai {
-        if term.is_some() || bg || fg {
-            let _ = super::ai_tools::launch_ai_tool(
-                &worktree_path,
-                term,
-                false,
-                None,
-                initial_prompt,
-                bg,
-                fg,
-            );
-        } else {
-            let _ = super::ai_tools::spawn_in_worktree(&worktree_path, initial_prompt);
-        }
+        let _ = super::ai_tools::spawn_in_worktree(&worktree_path, initial_prompt);
     }
 
     Ok(worktree_path)

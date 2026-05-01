@@ -66,9 +66,6 @@ pub fn run() {
             path,
             base,
             no_term,
-            term,
-            bg,
-            fg,
             prompt,
             prompt_file,
             prompt_stdin,
@@ -88,21 +85,13 @@ pub fn run() {
                 &name,
                 base.as_deref(),
                 path.as_deref(),
-                term.as_deref(),
                 no_term,
                 resolved.as_deref(),
-                bg,
-                fg,
             )?;
             Ok(())
         })(),
 
-        Some(Commands::Resume {
-            branch,
-            term,
-            bg,
-            fg,
-        }) => ai_tools::resume_worktree(branch.as_deref(), term.as_deref(), bg, fg),
+        Some(Commands::Resume { branch }) => ai_tools::resume_worktree(branch.as_deref()),
 
         Some(Commands::Spawn {
             target,

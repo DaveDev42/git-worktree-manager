@@ -125,14 +125,6 @@ if [ -n "$BASH_VERSION" ]; then
         local cur="${COMP_WORDS[COMP_CWORD]}"
         local subcmd="${COMP_WORDS[1]}"
 
-        # --term/-T value completion for new/resume commands
-        if [[ ($subcmd == "new" || $subcmd == "resume") && (${COMP_WORDS[COMP_CWORD-1]} == "--term" || ${COMP_WORDS[COMP_CWORD-1]} == "-T") ]]; then
-            local methods
-            methods=$(gw _term-values 2>/dev/null)
-            COMPREPLY=($(compgen -W "$methods" -- "$cur"))
-            return
-        fi
-
         # Branch completion for subcommands with positional branch args
         if [[ "$cur" != -* ]]; then
             # Check for global mode
@@ -183,14 +175,6 @@ if [ -n "$ZSH_VERSION" ]; then
     # Wrap _gw to add dynamic completion (branch names + term values)
     _gw_with_config() {
         local subcmd="${words[2]}"
-
-        # --term/-T value completion for new/resume commands
-        if [[ ($subcmd == "new" || $subcmd == "resume") && (${words[CURRENT-1]} == "--term" || ${words[CURRENT-1]} == "-T") ]]; then
-            local -a methods
-            methods=(${(f)"$(gw _term-values 2>/dev/null)"})
-            compadd -a methods
-            return
-        fi
 
         # Branch completion for subcommands with positional branch args
         if [[ "${words[CURRENT]}" != -* ]]; then
@@ -363,14 +347,6 @@ for cmd in pr merge resume delete sync
     complete -c cw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _path --list-branches 2>/dev/null)'
 end
 
-# --term/-T value completion for new/resume commands
-function __gw_prev_arg_is_term
-    set -l tokens (commandline -opc)
-    set -l prev $tokens[-1]
-    test "$prev" = "--term" -o "$prev" = "-T"
-end
-complete -c gw -f -n '__fish_seen_subcommand_from new resume; and __gw_prev_arg_is_term' -a '(gw _term-values 2>/dev/null)'
-complete -c cw -f -n '__fish_seen_subcommand_from new resume; and __gw_prev_arg_is_term' -a '(gw _term-values 2>/dev/null)'
 "#;
 
 const POWERSHELL_FUNCTION: &str = r#"# git-worktree-manager shell functions for PowerShell

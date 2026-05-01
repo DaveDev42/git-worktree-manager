@@ -180,12 +180,7 @@ pub fn launch_ai_tool(
 ///
 /// Target resolution uses strict ordered rules: exact worktree name → exact branch
 /// name → exact path. When no target is given, the current working directory is used.
-pub fn resume_worktree(
-    worktree: Option<&str>,
-    term: Option<&str>,
-    bg: bool,
-    fg: bool,
-) -> Result<()> {
+pub fn resume_worktree(worktree: Option<&str>) -> Result<()> {
     let (worktree_path, branch_name, worktree_repo) = if let Some(target) = worktree {
         let main_repo = git::get_main_repo_root(None)?;
         let strict = resolve_target_strict(&main_repo, target)?;
@@ -291,7 +286,7 @@ pub fn resume_worktree(
             );
         }
 
-        launch_ai_tool(&worktree_path, term, has_session, None, None, bg, fg)?;
+        launch_ai_tool(&worktree_path, None, has_session, None, None, false, false)?;
     }
 
     // Post-resume hooks

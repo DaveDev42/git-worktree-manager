@@ -96,20 +96,26 @@ fn test_new_help() {
         .stdout(predicate::str::contains("--path"))
         .stdout(predicate::str::contains("--base"))
         .stdout(predicate::str::contains("--no-term"))
-        .stdout(predicate::str::contains("--term"))
-        .stdout(predicate::str::contains("--bg"))
-        .stdout(predicate::str::contains("--fg"))
+        .stdout(predicate::str::contains("--term").not())
+        .stdout(predicate::str::contains("--bg").not())
+        .stdout(predicate::str::contains("--fg").not())
         .stdout(predicate::str::contains("--prompt "))
         .stdout(predicate::str::contains("--prompt-file"))
         .stdout(predicate::str::contains("--prompt-stdin"));
 }
 
 #[test]
-fn test_new_bg_fg_conflict() {
-    cw().args(["new", "x", "--bg", "--fg", "--no-term"])
+fn gw_new_rejects_dropped_launch_flags() {
+    // --bg, --fg, --term were removed in Phase 6.3; clap should reject them
+    cw().args(["new", "x", "--bg", "--no-term"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("cannot be used"));
+        .failure();
+    cw().args(["new", "x", "--fg", "--no-term"])
+        .assert()
+        .failure();
+    cw().args(["new", "x", "--term", "tmux", "--no-term"])
+        .assert()
+        .failure();
 }
 
 #[test]
@@ -135,17 +141,23 @@ fn test_resume_help() {
     cw().args(["resume", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("--term"))
-        .stdout(predicate::str::contains("--bg"))
-        .stdout(predicate::str::contains("--fg"));
+        .stdout(predicate::str::contains("--term").not())
+        .stdout(predicate::str::contains("--bg").not())
+        .stdout(predicate::str::contains("--fg").not());
 }
 
 #[test]
-fn test_resume_bg_fg_conflict() {
-    cw().args(["resume", "some-branch", "--bg", "--fg"])
+fn gw_resume_rejects_dropped_launch_flags() {
+    // --bg, --fg, --term were removed in Phase 6.3; clap should reject them
+    cw().args(["resume", "some-branch", "--bg"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("cannot be used"));
+        .failure();
+    cw().args(["resume", "some-branch", "--fg"])
+        .assert()
+        .failure();
+    cw().args(["resume", "some-branch", "--term", "tmux"])
+        .assert()
+        .failure();
 }
 
 #[test]
@@ -272,11 +284,12 @@ fn test_new_base_short_flag() {
 
 #[test]
 fn test_new_term_short_flag() {
+    // -T / --term were removed in Phase 6.3; verify they no longer appear in help
     cw().args(["new", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("-T"))
-        .stdout(predicate::str::contains("--term"));
+        .stdout(predicate::str::contains("-T").not())
+        .stdout(predicate::str::contains("--term").not());
 }
 
 #[test]

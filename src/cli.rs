@@ -57,20 +57,6 @@ pub enum Commands {
         #[arg(long = "no-term")]
         no_term: bool,
 
-        /// Terminal launch method (e.g., tmux, iterm-tab, zellij)
-        #[arg(short = 'T', long)]
-        term: Option<String>,
-
-        /// Launch AI tool in background (e.g. `wezterm-tab` → `wezterm-tab-bg`,
-        /// `foreground` → `detach`). No-op for launchers without a background variant.
-        #[arg(long, conflicts_with = "fg")]
-        bg: bool,
-
-        /// Force AI tool into foreground (inverse of --bg). No-op for launchers
-        /// without a foreground variant.
-        #[arg(long)]
-        fg: bool,
-
         /// Initial prompt to pass to the AI tool (starts interactive session with task)
         #[arg(long)]
         prompt: Option<String>,
@@ -88,20 +74,6 @@ pub enum Commands {
     Resume {
         /// Branch name, worktree name, or path to resume (default: current worktree)
         branch: Option<String>,
-
-        /// Terminal launch method
-        #[arg(short = 'T', long)]
-        term: Option<String>,
-
-        /// Launch AI tool in background (e.g. `wezterm-tab` → `wezterm-tab-bg`,
-        /// `foreground` → `detach`). No-op for launchers without a background variant.
-        #[arg(long, conflicts_with = "fg")]
-        bg: bool,
-
-        /// Force AI tool into foreground (inverse of --bg). No-op for launchers
-        /// without a foreground variant.
-        #[arg(long)]
-        fg: bool,
     },
 
     /// Launch AI tool in an existing worktree (default: current).
