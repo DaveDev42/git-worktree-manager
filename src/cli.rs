@@ -183,6 +183,16 @@ pub enum Commands {
     /// Interactive shell integration setup
     ShellSetup,
 
+    /// Run cmd in one specific worktree.
+    Exec {
+        /// Worktree name, branch name, or path.
+        target: String,
+
+        /// Command and args.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+        cmd: Vec<String>,
+    },
+
     /// Run cmd in every worktree in scope.
     Run {
         /// Glob filter on worktree name (e.g. 'feat-*').

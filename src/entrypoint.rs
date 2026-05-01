@@ -15,7 +15,7 @@ use crate::cwshare_setup;
 use crate::error::{CwError, Result};
 use crate::hooks;
 use crate::operations::{
-    ai_tools, diagnostics, display, guard, helpers, path_cmd, run, setup_claude, spawn_spec,
+    ai_tools, diagnostics, display, exec, guard, helpers, path_cmd, run, setup_claude, spawn_spec,
     worktree,
 };
 use crate::resolve_prompt;
@@ -163,6 +163,16 @@ pub fn run() {
         Some(Commands::Run { only, no_main, jobs, continue_on_error, cmd }) => (|| -> Result<()> {
             let cwd = std::env::current_dir()?;
             let code = run::run_in_scope(&cwd, &cmd, only.as_deref(), no_main, jobs, continue_on_error)?;
+            if code != 0 {
+                return Err(crate::error::CwError::ExitCode(code));
+            }
+            Ok(())
+        })(),
+
+        Some(Commands::Exec { target, cmd }) => (|| -> Result<()> {
+            let cwd = std::env::current_dir()?;
+            let mut out = std::io::stdout().lock();
+            let code = exec::exec_in_target(&cwd, &target, &cmd, &mut out)?;
             if code != 0 {
                 return Err(crate::error::CwError::ExitCode(code));
             }
