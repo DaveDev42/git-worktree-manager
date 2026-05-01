@@ -187,8 +187,8 @@ pub fn launch_method_aliases() -> HashMap<&'static str, &'static str> {
 pub const HOOK_EVENTS: &[&str] = &[
     "worktree.pre_create",
     "worktree.post_create",
-    "worktree.pre_delete",
-    "worktree.post_delete",
+    "worktree.pre_rm",
+    "worktree.post_rm",
     "merge.pre",
     "merge.post",
     "pr.pre",

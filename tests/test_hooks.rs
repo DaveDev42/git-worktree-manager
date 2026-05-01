@@ -9,8 +9,8 @@ use git_worktree_manager::hooks;
 fn test_hook_events_list() {
     assert!(hooks::HOOK_EVENTS.contains(&"worktree.pre_create"));
     assert!(hooks::HOOK_EVENTS.contains(&"worktree.post_create"));
-    assert!(hooks::HOOK_EVENTS.contains(&"worktree.pre_delete"));
-    assert!(hooks::HOOK_EVENTS.contains(&"worktree.post_delete"));
+    assert!(hooks::HOOK_EVENTS.contains(&"worktree.pre_rm"));
+    assert!(hooks::HOOK_EVENTS.contains(&"worktree.post_rm"));
     assert!(hooks::HOOK_EVENTS.contains(&"merge.pre"));
     assert!(hooks::HOOK_EVENTS.contains(&"merge.post"));
     assert!(hooks::HOOK_EVENTS.contains(&"pr.pre"));

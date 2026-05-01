@@ -283,11 +283,11 @@ pub(crate) fn delete_one(
         &base_branch,
         worktree_path,
         main_repo,
-        "worktree.pre_delete",
+        "worktree.pre_rm",
         "rm",
     );
     if let Err(e) = hooks::run_hooks(
-        "worktree.pre_delete",
+        "worktree.pre_rm",
         &hook_ctx,
         Some(main_repo),
         Some(main_repo),
@@ -349,9 +349,9 @@ pub(crate) fn delete_one(
     }
 
     // Post-delete hook
-    hook_ctx.insert("event".into(), "worktree.post_delete".into());
+    hook_ctx.insert("event".into(), "worktree.post_rm".into());
     let _ = hooks::run_hooks(
-        "worktree.post_delete",
+        "worktree.post_rm",
         &hook_ctx,
         Some(main_repo),
         Some(main_repo),

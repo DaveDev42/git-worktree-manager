@@ -136,8 +136,8 @@ pub fn normalize_event_name(event: &str) -> String {
     let short_aliases = [
         ("pre_create", "worktree.pre_create"),
         ("post_create", "worktree.post_create"),
-        ("pre_delete", "worktree.pre_delete"),
-        ("post_delete", "worktree.post_delete"),
+        ("pre_rm", "worktree.pre_rm"),
+        ("post_rm", "worktree.post_rm"),
         ("pre_merge", "merge.pre"),
         ("post_merge", "merge.post"),
         ("pre_pr", "pr.pre"),

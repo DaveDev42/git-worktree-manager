@@ -322,7 +322,7 @@ Toggle hook on/off.
 ### `gw hook run <EVENT> [--dry-run]`
 Manually run hooks for an event.
 
-**Available events:** `worktree.pre_create`, `worktree.post_create`, `worktree.pre_delete`, `worktree.post_delete`, `merge.pre`, `merge.post`, `pr.pre`, `pr.post`, `resume.pre`, `resume.post`, `sync.pre`, `sync.post`
+**Available events:** `worktree.pre_create`, `worktree.post_create`, `worktree.pre_rm`, `worktree.post_rm`, `merge.pre`, `merge.post`, `pr.pre`, `pr.post`, `resume.pre`, `resume.post`, `sync.pre`, `sync.post`
 
 ## Shell Integration
 
