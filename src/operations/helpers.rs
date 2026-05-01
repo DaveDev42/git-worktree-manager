@@ -1,6 +1,5 @@
 /// Helper functions shared across operations modules.
 ///
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::constants::{format_config_key, CONFIG_KEY_BASE_BRANCH, CONFIG_KEY_BASE_PATH};
@@ -281,50 +280,9 @@ pub fn resolve_target_strict(repo_root: &Path, target: &str) -> Result<StrictTar
     )))
 }
 
-/// Build a hook context HashMap with standard fields.
-pub fn build_hook_context(
-    branch: &str,
-    base_branch: &str,
-    worktree_path: &Path,
-    repo_path: &Path,
-    event: &str,
-    operation: &str,
-) -> HashMap<String, String> {
-    HashMap::from([
-        ("branch".into(), branch.to_string()),
-        ("base_branch".into(), base_branch.to_string()),
-        (
-            "worktree_path".into(),
-            worktree_path.to_string_lossy().to_string(),
-        ),
-        ("repo_path".into(), repo_path.to_string_lossy().to_string()),
-        ("event".into(), event.to_string()),
-        ("operation".into(), operation.to_string()),
-    ])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn test_build_hook_context_all_fields() {
-        let ctx = build_hook_context(
-            "feat/login",
-            "main",
-            Path::new("/tmp/worktree"),
-            Path::new("/tmp/repo"),
-            "worktree.pre_create",
-            "new",
-        );
-
-        assert_eq!(ctx.len(), 6);
-        assert_eq!(ctx["branch"], "feat/login");
-        assert_eq!(ctx["base_branch"], "main");
-        assert_eq!(ctx["worktree_path"], "/tmp/worktree");
-        assert_eq!(ctx["repo_path"], "/tmp/repo");
-        assert_eq!(ctx["event"], "worktree.pre_create");
-        assert_eq!(ctx["operation"], "new");
-    }
 
     #[test]
     fn test_parse_repo_branch_target() {

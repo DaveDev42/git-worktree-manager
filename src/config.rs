@@ -21,6 +21,8 @@ pub struct Config {
     pub git: GitConfig,
     pub update: UpdateConfig,
     pub shell_completion: ShellCompletionConfig,
+    #[serde(default)]
+    pub hooks: HookConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +41,14 @@ pub struct LaunchConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GitConfig {
     // default_base_branch removed — auto-detected per repo via git::detect_default_branch()
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct HookConfig {
+    #[serde(default)]
+    pub post_new: Option<String>,
+    #[serde(default)]
+    pub pre_rm: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +80,7 @@ impl Default for Config {
                 prompted: false,
                 installed: false,
             },
+            hooks: HookConfig::default(),
         }
     }
 }

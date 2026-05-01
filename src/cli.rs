@@ -150,12 +150,6 @@ pub enum Commands {
         cache: CacheControl,
     },
 
-    /// Manage lifecycle hooks
-    Hook {
-        #[command(subcommand)]
-        action: HookAction,
-    },
-
     /// Run diagnostics
     Doctor {
         /// Hook-friendly mode: emit a single-line summary and exit 0.
@@ -248,10 +242,6 @@ pub enum Commands {
     #[command(name = "_term-values", hide = true)]
     TermValues,
 
-    /// List hook event names (for tab completion)
-    #[command(name = "_hook-events", hide = true)]
-    HookEvents,
-
     /// [Internal] Execute an AI tool spawn spec file
     #[command(name = "_spawn-ai", hide = true)]
     SpawnAi {
@@ -259,62 +249,5 @@ pub enum Commands {
         /// spec for the current worktree from `<git-dir>/gw-spawn-last.json`.
         #[arg(value_hint = ValueHint::FilePath)]
         spec: Option<PathBuf>,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-pub enum HookAction {
-    /// Add a new hook for an event
-    Add {
-        /// Hook event (e.g., worktree.post_create, merge.pre)
-        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::constants::HOOK_EVENTS))]
-        event: String,
-        /// Shell command to execute
-        command: String,
-        /// Custom hook identifier
-        #[arg(long)]
-        id: Option<String>,
-        /// Human-readable description
-        #[arg(short, long)]
-        description: Option<String>,
-    },
-    /// Remove a hook
-    Remove {
-        /// Hook event
-        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::constants::HOOK_EVENTS))]
-        event: String,
-        /// Hook identifier to remove
-        hook_id: String,
-    },
-    /// List all hooks
-    List {
-        /// Filter by event
-        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::constants::HOOK_EVENTS))]
-        event: Option<String>,
-    },
-    /// Enable a disabled hook
-    Enable {
-        /// Hook event
-        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::constants::HOOK_EVENTS))]
-        event: String,
-        /// Hook identifier
-        hook_id: String,
-    },
-    /// Disable a hook without removing it
-    Disable {
-        /// Hook event
-        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::constants::HOOK_EVENTS))]
-        event: String,
-        /// Hook identifier
-        hook_id: String,
-    },
-    /// Manually run all hooks for an event
-    Run {
-        /// Hook event to run
-        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::constants::HOOK_EVENTS))]
-        event: String,
-        /// Show what would be executed without running
-        #[arg(long)]
-        dry_run: bool,
     },
 }

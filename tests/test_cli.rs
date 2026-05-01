@@ -73,19 +73,6 @@ fn test_shell_function_invalid() {
     cw().args(["_shell-function", "tcsh"]).assert().failure();
 }
 
-#[test]
-fn test_hook_subcommands_help() {
-    cw().args(["hook", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("add"))
-        .stdout(predicate::str::contains("remove"))
-        .stdout(predicate::str::contains("list"))
-        .stdout(predicate::str::contains("enable"))
-        .stdout(predicate::str::contains("disable"))
-        .stdout(predicate::str::contains("run"));
-}
-
 // --- Additional CLI tests ported from test_cli.py ---
 
 #[test]

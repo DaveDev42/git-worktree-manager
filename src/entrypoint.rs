@@ -7,13 +7,12 @@
 
 use clap::Parser;
 
-use crate::cli::{Cli, Commands, HookAction};
+use crate::cli::{Cli, Commands};
 use crate::config;
 use crate::console as cwconsole;
 use crate::constants;
 use crate::cwshare_setup;
 use crate::error::{CwError, Result};
-use crate::hooks;
 use crate::operations::{
     ai_tools, diagnostics, display, exec, guard, helpers, path_cmd, run, setup_claude, spawn_spec,
     worktree,
@@ -42,7 +41,6 @@ pub fn run() {
         Some(
             Commands::UpdateCache
                 | Commands::TermValues
-                | Commands::HookEvents
                 | Commands::Path { .. }
                 | Commands::ShellFunction { .. }
                 | Commands::SpawnAi { .. }
@@ -138,31 +136,6 @@ pub fn run() {
             }
         }
 
-        Some(Commands::Hook { action }) => match action {
-            HookAction::Add {
-                event,
-                command,
-                id,
-                description,
-            } => hooks::add_hook(&event, &command, id.as_deref(), description.as_deref()).map(
-                |hook_id| {
-                    println!("* Added hook '{}' for {}", hook_id, event);
-                },
-            ),
-            HookAction::Remove { event, hook_id } => hooks::remove_hook(&event, &hook_id),
-            HookAction::List { event } => {
-                list_hooks(event.as_deref());
-                Ok(())
-            }
-            HookAction::Enable { event, hook_id } => {
-                hooks::set_hook_enabled(&event, &hook_id, true)
-            }
-            HookAction::Disable { event, hook_id } => {
-                hooks::set_hook_enabled(&event, &hook_id, false)
-            }
-            HookAction::Run { event, dry_run } => run_hooks_manual(&event, dry_run),
-        },
-
         Some(Commands::Doctor {
             session_start,
             quiet,
@@ -241,13 +214,6 @@ pub fn run() {
             Ok(())
         }
 
-        Some(Commands::HookEvents) => {
-            for evt in constants::HOOK_EVENTS {
-                println!("{}", evt);
-            }
-            Ok(())
-        }
-
         Some(Commands::SpawnAi { spec }) => {
             // Pre-spawn failures (read/parse/chdir) exit 127 — the shell
             // "command not found / could not start" convention. Post-spawn
@@ -308,80 +274,6 @@ fn generate_completions(shell_name: &str) {
 
     let mut cmd = Cli::command();
     generate(shell, &mut cmd, "gw", &mut std::io::stdout());
-}
-
-fn list_hooks(event: Option<&str>) {
-    let events: Vec<&str> = if let Some(e) = event {
-        vec![e]
-    } else {
-        hooks::HOOK_EVENTS.to_vec()
-    };
-
-    let mut has_any = false;
-    for evt in &events {
-        let hook_list = hooks::get_hooks(evt, None);
-        if hook_list.is_empty() && event.is_none() {
-            continue;
-        }
-        if !hook_list.is_empty() {
-            has_any = true;
-            println!("\n{}:", evt);
-            for h in &hook_list {
-                let status = if h.enabled { "enabled" } else { "disabled" };
-                let desc = if h.description.is_empty() {
-                    String::new()
-                } else {
-                    format!(" - {}", h.description)
-                };
-                println!("  {} [{}]: {}{}", h.id, status, h.command, desc);
-            }
-        } else {
-            println!("\n{}:", evt);
-            println!("  (no hooks)");
-        }
-    }
-
-    if event.is_none() && !has_any {
-        println!("No hooks configured. Use 'gw hook add' to add one.");
-    }
-}
-
-fn run_hooks_manual(event: &str, dry_run: bool) -> Result<()> {
-    let hook_list = hooks::get_hooks(event, None);
-    if hook_list.is_empty() {
-        println!("No hooks configured for {}", event);
-        return Ok(());
-    }
-
-    let enabled: Vec<_> = hook_list.iter().filter(|h| h.enabled).collect();
-    if enabled.is_empty() {
-        println!("All hooks for {} are disabled", event);
-        return Ok(());
-    }
-
-    if dry_run {
-        println!("Would run {} hook(s) for {}:", enabled.len(), event);
-        for h in &hook_list {
-            let status = if h.enabled {
-                "enabled"
-            } else {
-                "disabled (skipped)"
-            };
-            let desc = if h.description.is_empty() {
-                String::new()
-            } else {
-                format!(" - {}", h.description)
-            };
-            println!("  {} [{}]: {}{}", h.id, status, h.command, desc);
-        }
-        return Ok(());
-    }
-
-    let cwd = std::env::current_dir()?;
-    let context = helpers::build_hook_context("", "", &cwd, &cwd, event, "manual");
-
-    hooks::run_hooks(event, &context, Some(&cwd), None)?;
-    Ok(())
 }
 
 fn shell_setup() {

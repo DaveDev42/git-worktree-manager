@@ -183,22 +183,6 @@ pub fn launch_method_aliases() -> HashMap<&'static str, &'static str> {
     ])
 }
 
-/// Valid hook events for lifecycle hooks.
-pub const HOOK_EVENTS: &[&str] = &[
-    "worktree.pre_create",
-    "worktree.post_create",
-    "worktree.pre_rm",
-    "worktree.post_rm",
-    "merge.pre",
-    "merge.post",
-    "pr.pre",
-    "pr.post",
-    "resume.pre",
-    "resume.post",
-    "sync.pre",
-    "sync.post",
-];
-
 /// Available AI tool preset names.
 pub const PRESET_NAMES: &[&str] = &[
     "claude",
@@ -435,12 +419,6 @@ mod tests {
         assert!(values.contains(&"fg"));
         assert!(values.contains(&"t"));
         assert!(values.contains(&"w-t"));
-    }
-
-    #[test]
-    fn test_hook_events_contents() {
-        assert!(HOOK_EVENTS.contains(&"worktree.post_create"));
-        assert!(HOOK_EVENTS.contains(&"merge.pre"));
     }
 
     #[test]

@@ -307,22 +307,17 @@ Key fields:
 
 ## Hooks
 
-### `gw hook add <EVENT> <COMMAND> [--id <ID>] [-d <DESC>]`
-Add a lifecycle hook.
+Lifecycle hooks are configured via `hooks.post_new` and `hooks.pre_rm` in
+`~/.config/git-worktree-manager/config.json` or `.cwconfig.json`.
 
-### `gw hook remove <EVENT> <HOOK_ID>`
-Remove a hook.
-
-### `gw hook list [EVENT]`
-List hooks.
-
-### `gw hook enable/disable <EVENT> <HOOK_ID>`
-Toggle hook on/off.
-
-### `gw hook run <EVENT> [--dry-run]`
-Manually run hooks for an event.
-
-**Available events:** `worktree.pre_create`, `worktree.post_create`, `worktree.pre_rm`, `worktree.post_rm`, `merge.pre`, `merge.post`, `pr.pre`, `pr.post`, `resume.pre`, `resume.post`, `sync.pre`, `sync.post`
+```json
+{
+  "hooks": {
+    "post_new": "npm install",
+    "pre_rm": "git stash"
+  }
+}
+```
 
 ## Shell Integration
 

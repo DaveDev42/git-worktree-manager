@@ -6,16 +6,13 @@ use std::path::Path;
 use console::style;
 
 use crate::config::{self, get_ai_tool_command, get_ai_tool_resume_command, is_claude_tool};
-use crate::constants::{
-    format_config_key, LaunchMethod, CONFIG_KEY_BASE_BRANCH, MAX_SESSION_NAME_LENGTH,
-};
+use crate::constants::{LaunchMethod, MAX_SESSION_NAME_LENGTH};
 use crate::error::Result;
 use crate::git;
-use crate::hooks;
 use crate::messages;
 use crate::session;
 
-use super::helpers::{build_hook_context, resolve_target_strict, resolve_worktree_target};
+use super::helpers::{resolve_target_strict, resolve_worktree_target};
 use super::launchers;
 use super::spawn_spec::{self, SpawnSpec};
 
@@ -154,7 +151,7 @@ pub fn launch_ai_tool(path: &Path, resume: bool) -> Result<()> {
 /// Target resolution uses strict ordered rules: exact worktree name → exact branch
 /// name → exact path. When no target is given, the current working directory is used.
 pub fn resume_worktree(worktree: Option<&str>) -> Result<()> {
-    let (worktree_path, branch_name, worktree_repo) = if let Some(target) = worktree {
+    let (worktree_path, branch_name, _worktree_repo) = if let Some(target) = worktree {
         let main_repo = git::get_main_repo_root(None)?;
         let strict = resolve_target_strict(&main_repo, target)?;
         let repo = git::get_repo_root(Some(&strict.path))?;
@@ -171,25 +168,6 @@ pub fn resume_worktree(worktree: Option<&str>) -> Result<()> {
         let resolved = resolve_worktree_target(None, None)?;
         (resolved.path, resolved.branch, resolved.repo)
     };
-
-    // Pre-resume hooks
-    let base_key = format_config_key(CONFIG_KEY_BASE_BRANCH, &branch_name);
-    let base_branch = git::get_config(&base_key, Some(&worktree_repo)).unwrap_or_default();
-
-    let mut hook_ctx = build_hook_context(
-        &branch_name,
-        &base_branch,
-        &worktree_path,
-        &worktree_repo,
-        "resume.pre",
-        "resume",
-    );
-    hooks::run_hooks(
-        "resume.pre",
-        &hook_ctx,
-        Some(&worktree_path),
-        Some(&worktree_repo),
-    )?;
 
     // Change directory if specified
     if worktree.is_some() {
@@ -261,15 +239,6 @@ pub fn resume_worktree(worktree: Option<&str>) -> Result<()> {
 
         launch_ai_tool(&worktree_path, has_session)?;
     }
-
-    // Post-resume hooks
-    hook_ctx.insert("event".into(), "resume.post".into());
-    let _ = hooks::run_hooks(
-        "resume.post",
-        &hook_ctx,
-        Some(&worktree_path),
-        Some(&worktree_repo),
-    );
 
     Ok(())
 }

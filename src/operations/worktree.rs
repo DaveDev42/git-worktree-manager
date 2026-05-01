@@ -10,10 +10,8 @@ use crate::constants::{
 };
 use crate::error::{CwError, Result};
 use crate::git;
-use crate::hooks;
 use crate::shared_files;
 
-use super::helpers::build_hook_context;
 use crate::messages;
 
 /// Create a new worktree with a feature branch.
@@ -112,17 +110,6 @@ pub fn create_worktree(
     println!("  New branch:  {}", style(branch_name).green());
     println!("  Path:        {}\n", style(worktree_path.display()).blue());
 
-    // Pre-create hooks
-    let mut hook_ctx = build_hook_context(
-        branch_name,
-        &base,
-        &worktree_path,
-        &repo,
-        "worktree.pre_create",
-        "new",
-    );
-    hooks::run_hooks("worktree.pre_create", &hook_ctx, Some(&repo), Some(&repo))?;
-
     // Create parent dir
     if let Some(parent) = worktree_path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -179,14 +166,8 @@ pub fn create_worktree(
     // Copy shared files
     shared_files::share_files(&repo, &worktree_path);
 
-    // Post-create hooks
-    hook_ctx.insert("event".into(), "worktree.post_create".into());
-    let _ = hooks::run_hooks(
-        "worktree.post_create",
-        &hook_ctx,
-        Some(&worktree_path),
-        Some(&repo),
-    );
+    // Post-new hook (best-effort; errors are swallowed)
+    let _ = crate::hooks::run_event("post_new", &worktree_path);
 
     // Launch AI tool in the new worktree.
     if !no_ai {
@@ -258,29 +239,11 @@ pub(crate) fn delete_one(
         }
     }
 
-    // Pre-delete hook
-    let base_branch = branch_name
-        .and_then(|b| {
-            let key = format_config_key(CONFIG_KEY_BASE_BRANCH, b);
-            git::get_config(&key, Some(main_repo))
-        })
-        .unwrap_or_default();
-
-    let mut hook_ctx = build_hook_context(
-        branch_name.unwrap_or(""),
-        &base_branch,
-        worktree_path,
-        main_repo,
-        "worktree.pre_rm",
-        "rm",
-    );
-    if let Err(e) = hooks::run_hooks(
-        "worktree.pre_rm",
-        &hook_ctx,
-        Some(main_repo),
-        Some(main_repo),
-    ) {
-        return DeletionOutcome::Failed { error: e };
+    // Pre-rm hook (only when not bypassing busy check)
+    if !flags.allow_busy {
+        if let Err(e) = crate::hooks::run_event("pre_rm", worktree_path) {
+            return DeletionOutcome::Failed { error: e };
+        }
     }
 
     // Remove worktree
@@ -336,14 +299,6 @@ pub(crate) fn delete_one(
         }
     }
 
-    // Post-delete hook
-    hook_ctx.insert("event".into(), "worktree.post_rm".into());
-    let _ = hooks::run_hooks(
-        "worktree.post_rm",
-        &hook_ctx,
-        Some(main_repo),
-        Some(main_repo),
-    );
     DeletionOutcome::Deleted {
         branch: branch_name.map(str::to_string),
         path: worktree_path.to_path_buf(),
