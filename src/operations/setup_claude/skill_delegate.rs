@@ -199,7 +199,6 @@ gw delete -i                       # interactive selection of worktrees to delet
 ### Global mode (across repos)
 ```bash
 gw -g list                         # list worktrees across all repos
-gw -g scan --dir ~/projects        # discover repositories
 ```
 
 ## Guidelines

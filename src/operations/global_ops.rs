@@ -59,10 +59,8 @@ pub fn global_list_worktrees(no_cache: bool) -> Result<()> {
     if repos.is_empty() {
         println!(
             "\n{}\n\
-             Use {} to discover repositories,\n\
-             or run {} in a repository to auto-register it.\n",
+             Run {} in a repository to auto-register it.\n",
             style("No repositories registered.").yellow(),
-            style("gw -g scan").cyan(),
             style("gw new").cyan(),
         );
         return Ok(());
