@@ -93,6 +93,10 @@ fn pipe_with_prefix<R: std::io::Read>(reader: R, prefix: &str) -> String {
 }
 
 fn glob_match(pattern: &str, name: &str) -> bool {
+    // Empty pattern matches only empty name.
+    if pattern.is_empty() {
+        return name.is_empty();
+    }
     // Minimal glob: supports '*' anywhere. No '?', no character classes.
     let parts: Vec<&str> = pattern.split('*').collect();
     let mut idx = 0usize;
@@ -104,7 +108,15 @@ fn glob_match(pattern: &str, name: &str) -> bool {
         if part.is_empty() {
             continue;
         }
-        match name[idx..].find(part) {
+        // For the last segment when the pattern is not '*'-terminated, use
+        // rfind so that the trailing literal is anchored to end-of-string
+        // rather than matching the first occurrence in the remaining slice.
+        let pos = if i == last && !pattern.ends_with('*') {
+            name[idx..].rfind(part)
+        } else {
+            name[idx..].find(part)
+        };
+        match pos {
             Some(p) => idx += p + part.len(),
             None => return false,
         }
@@ -113,4 +125,72 @@ fn glob_match(pattern: &str, name: &str) -> bool {
         }
     }
     true
+}
+
+#[cfg(test)]
+mod glob_tests {
+    use super::glob_match;
+
+    #[test]
+    fn empty_pattern_matches_only_empty() {
+        assert!(glob_match("", ""));
+        assert!(!glob_match("", "anything"));
+    }
+
+    #[test]
+    fn star_matches_anything() {
+        assert!(glob_match("*", ""));
+        assert!(glob_match("*", "anything"));
+    }
+
+    #[test]
+    fn literal_matches_exactly() {
+        assert!(glob_match("foo", "foo"));
+        assert!(!glob_match("foo", "foobar"));
+        assert!(!glob_match("foo", "barfoo"));
+        assert!(!glob_match("foo", "fo"));
+    }
+
+    #[test]
+    fn leading_star() {
+        assert!(glob_match("*foo", "foo"));
+        assert!(glob_match("*foo", "barfoo"));
+        assert!(!glob_match("*foo", "foobar"));
+    }
+
+    #[test]
+    fn trailing_star() {
+        assert!(glob_match("foo*", "foo"));
+        assert!(glob_match("foo*", "foobar"));
+        assert!(!glob_match("foo*", "barfoo"));
+    }
+
+    #[test]
+    fn double_star_collapses() {
+        // Adjacent '*' is harmless — empty parts skip in the loop.
+        assert!(glob_match("**foo", "foo"));
+        assert!(glob_match("foo**bar", "foobar"));
+    }
+
+    #[test]
+    fn middle_star() {
+        assert!(glob_match("a*b", "ab"));
+        assert!(glob_match("a*b", "axb"));
+        assert!(!glob_match("a*b", "axc"));
+    }
+
+    #[test]
+    fn trailing_literal_anchored_to_end_with_repeated_substring() {
+        // The bug-fix case: trailing literal must rfind, not find.
+        assert!(glob_match("*a*a", "aaaa"));
+        assert!(glob_match("*a", "aaaa"));
+        assert!(!glob_match("*a", "aaab"));
+    }
+
+    #[test]
+    fn realistic_feat_glob() {
+        assert!(glob_match("feat-*", "feat-login"));
+        assert!(glob_match("feat-*", "feat-"));
+        assert!(!glob_match("feat-*", "bug-feat-x"));
+    }
 }
