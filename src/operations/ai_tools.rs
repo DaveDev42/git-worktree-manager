@@ -151,10 +151,9 @@ pub fn launch_ai_tool(path: &Path, resume: bool) -> Result<()> {
 /// Target resolution uses strict ordered rules: exact worktree name → exact branch
 /// name → exact path. When no target is given, the current working directory is used.
 pub fn resume_worktree(worktree: Option<&str>) -> Result<()> {
-    let (worktree_path, branch_name, _worktree_repo) = if let Some(target) = worktree {
+    let (worktree_path, branch_name) = if let Some(target) = worktree {
         let main_repo = git::get_main_repo_root(None)?;
         let strict = resolve_target_strict(&main_repo, target)?;
-        let repo = git::get_repo_root(Some(&strict.path))?;
         let branch_name = strict.branch.unwrap_or_else(|| {
             strict
                 .path
@@ -162,11 +161,11 @@ pub fn resume_worktree(worktree: Option<&str>) -> Result<()> {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "(detached)".into())
         });
-        (strict.path, branch_name, repo)
+        (strict.path, branch_name)
     } else {
         // No target — use current working directory.
         let resolved = resolve_worktree_target(None, None)?;
-        (resolved.path, resolved.branch, resolved.repo)
+        (resolved.path, resolved.branch)
     };
 
     // Change directory if specified

@@ -15,7 +15,13 @@ use crate::error::Result;
 /// unset. Hook is run as `sh -c <cmd>` with `cwd` as the current directory.
 /// A non-zero exit propagates as `CwError::Other`.
 pub fn run_event(event: &str, cwd: &Path) -> Result<()> {
-    let cfg = crate::config::load_effective_config(cwd)?;
+    // Worktrees are siblings of the main repo (default ../<repo>-<branch>),
+    // so walking up from `cwd` would never find the main repo's .cwconfig.json.
+    // Resolve to the main repo root for config lookup; `cwd` is kept as the
+    // shell's working directory so hooks run inside the worktree they pertain to.
+    let config_root =
+        crate::git::get_main_repo_root(Some(cwd)).unwrap_or_else(|_| cwd.to_path_buf());
+    let cfg = crate::config::load_effective_config(&config_root)?;
     let cmd = match event {
         "post_new" => cfg.hooks.post_new,
         "pre_rm" => cfg.hooks.pre_rm,
@@ -24,6 +30,8 @@ pub fn run_event(event: &str, cwd: &Path) -> Result<()> {
     let Some(cmd) = cmd else {
         return Ok(());
     };
+    // sh -c lets users write pipes/conditionals like "npm install && npm test".
+    // stderr is inherited from Command::status() so users see hook output directly.
     let status = Command::new("sh")
         .arg("-c")
         .arg(&cmd)
@@ -31,8 +39,9 @@ pub fn run_event(event: &str, cwd: &Path) -> Result<()> {
         .status()?;
     if !status.success() {
         return Err(crate::error::CwError::Other(format!(
-            "hook '{}' exited with {}",
+            "hook '{}' (`{}`) exited with {}",
             event,
+            cmd.chars().take(60).collect::<String>(),
             status.code().unwrap_or(-1)
         )));
     }

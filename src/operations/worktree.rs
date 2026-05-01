@@ -166,7 +166,7 @@ pub fn create_worktree(
     // Copy shared files
     shared_files::share_files(&repo, &worktree_path);
 
-    // Post-new hook (best-effort; errors are swallowed)
+    // Best-effort: hook failures shouldn't undo a successful worktree create.
     let _ = crate::hooks::run_event("post_new", &worktree_path);
 
     // Launch AI tool in the new worktree.

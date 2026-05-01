@@ -319,6 +319,15 @@ Lifecycle hooks are configured via `hooks.post_new` and `hooks.pre_rm` in
 }
 ```
 
+Precedence: a repo-local `.cwconfig.json` overrides the global
+`~/.config/git-worktree-manager/config.json`, so you can set per-project hooks
+without affecting other repos. Hooks run with the **worktree path** as the
+working directory, so relative paths and commands like `cd ..` refer to the
+worktree. Config lookup is **main-repo-aware**: even though worktrees live in
+sibling directories (`../<repo>-<branch>`), `gw` resolves `.cwconfig.json` from
+the main repo root, meaning a single `.cwconfig.json` at the main repo controls
+hooks for all worktrees of that repo.
+
 ## Shell Integration
 
 ### `gw shell-setup`
