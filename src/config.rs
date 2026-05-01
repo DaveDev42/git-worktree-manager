@@ -686,5 +686,4 @@ mod tests {
         assert_eq!(presets["no-op"].len(), 0);
         assert_eq!(presets["claude"], vec!["claude"]);
     }
-
 }
