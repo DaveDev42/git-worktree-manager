@@ -59,7 +59,7 @@ pub fn get_worktree_status(
     // takes ~1.5s on macOS and dominates `gw list` latency. This narrows
     // exclusion to ancestors only (no siblings) since the fast path must
     // avoid `self_siblings`, which internally triggers the cwd scan.
-    // Destructive commands (`gw delete`) still use the full `detect_busy`.
+    // Destructive commands (`gw rm`) still use the full `detect_busy`.
     if !crate::operations::busy::detect_busy_lockfile_only(path).is_empty() {
         return "busy".to_string();
     }
@@ -137,7 +137,7 @@ pub fn format_age(age_days: f64) -> String {
     }
 }
 
-/// Compose a single row for the `gw delete -i` multi-select TUI.
+/// Compose a single row for the `gw rm -i` multi-select TUI.
 ///
 /// Columns, left to right, separated by one space:
 ///   branch (padded to `branch_col`) | age (padded to 9) | busy (7, colored) | path
@@ -603,7 +603,7 @@ fn lookup_intended_branch(repo: &Path, current_branch: &str, path: &Path) -> Opt
 }
 
 /// Print a multi-line block per busy worktree showing the same body
-/// sections `gw delete` uses (Active Claude session / Lockfile holder /
+/// sections `gw rm` uses (Active Claude session / Lockfile holder /
 /// processes with cwd in this worktree), via the shared
 /// `busy_messages::render_busy_block`. Skips the `--force` guidance —
 /// `gw list` is read-only.

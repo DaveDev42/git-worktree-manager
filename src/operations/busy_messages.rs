@@ -1,4 +1,4 @@
-//! Render `gw delete` refusal messages for the 3-tier busy model.
+//! Render `gw rm` refusal messages for the 3-tier busy model.
 //! Pure string formatting; no I/O. Kept separate from `busy.rs` so the
 //! detection logic can be tested without locale/styling concerns.
 
@@ -90,7 +90,7 @@ pub fn render_busy_block(branch_display: &str, hard: &[BusyInfo], soft: &[BusyIn
     out
 }
 
-/// Render the user-facing refusal text for `gw delete`. Empty inputs in
+/// Render the user-facing refusal text for `gw rm`. Empty inputs in
 /// both vectors is a programming error (caller should not have refused)
 /// but is rendered as an empty string for safety.
 pub fn render_refusal(branch_display: &str, hard: &[BusyInfo], soft: &[BusyInfo]) -> String {

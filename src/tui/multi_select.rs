@@ -1,4 +1,4 @@
-//! Arrow/checkbox multi-select TUI used by `gw delete -i`.
+//! Arrow/checkbox multi-select TUI used by `gw rm -i`.
 //!
 //! Built on the raw-mode plumbing shared from `arrow_select.rs`.
 

@@ -1,6 +1,6 @@
-//! Batch deletion orchestration for `gw delete`.
+//! Batch removal orchestration for `gw rm`.
 //!
-//! Multi-target deletion pipeline: resolve-all → plan (busy) → summary →
+//! Multi-target removal pipeline: resolve-all → plan (busy) → summary →
 //! confirm → execute → exit code. Reuses `worktree::delete_one` for per-target
 //! execution.
 
@@ -14,7 +14,7 @@ use crate::git;
 use crate::operations::busy::{self, BusyInfo};
 use crate::operations::busy_messages;
 use crate::operations::helpers;
-use crate::operations::worktree::{self, DeleteFlags};
+use crate::operations::worktree::{self, RmFlags};
 
 /// Result of the interactive multi-select flow.
 ///
@@ -29,12 +29,12 @@ enum InteractiveOutcome {
 }
 
 /// Open the multi-select TUI to let the user choose which feature worktrees
-/// to delete. Distinguishes Selected / Nothing / Cancelled so the caller can
+/// to remove. Distinguishes Selected / Nothing / Cancelled so the caller can
 /// map each to the exit code the spec requires.
 fn interactive_select(main_repo: &Path) -> Result<InteractiveOutcome> {
     let feature_worktrees = git::get_feature_worktrees(Some(main_repo))?;
     if feature_worktrees.is_empty() {
-        eprintln!("No feature worktrees to delete.");
+        eprintln!("No feature worktrees to remove.");
         return Ok(InteractiveOutcome::Nothing);
     }
     let labels: Vec<String> = feature_worktrees
@@ -53,7 +53,7 @@ fn interactive_select(main_repo: &Path) -> Result<InteractiveOutcome> {
             )
         })
         .collect();
-    match crate::tui::multi_select::multi_select(&labels, "Select worktrees to delete:") {
+    match crate::tui::multi_select::multi_select(&labels, "Select worktrees to remove:") {
         Some(indices) if indices.is_empty() => {
             eprintln!("Nothing selected.");
             Ok(InteractiveOutcome::Nothing)
@@ -265,7 +265,7 @@ fn label_of(entry: &PlanEntry) -> String {
 }
 
 /// Execute the plan sequentially. Best-effort: one failure does not abort.
-fn execute_all(entries: Vec<PlanEntry>, flags: DeleteFlags) -> Result<Vec<ItemResult>> {
+fn execute_all(entries: Vec<PlanEntry>, flags: RmFlags) -> Result<Vec<ItemResult>> {
     let main_repo = git::get_main_repo_root(None)?;
     let mut results = Vec::with_capacity(entries.len());
     for entry in entries {
@@ -296,7 +296,7 @@ fn execute_all(entries: Vec<PlanEntry>, flags: DeleteFlags) -> Result<Vec<ItemRe
             PlanEntry::Busy { hard, soft, .. } => {
                 // Summary line → stdout.
                 println!("{} Skipped {} (busy)", style("~").yellow(), label);
-                // Error mirror → stderr. Required so non-TTY `gw delete`
+                // Error mirror → stderr. Required so non-TTY `gw rm`
                 // against a busy worktree emits a stderr hint matching the
                 // legacy single-target flow (see tests/busy_detection.rs).
                 eprint!(
@@ -384,16 +384,16 @@ fn move_cwd_out_of_targets(entries: &[PlanEntry]) {
     }
 }
 
-/// Top-level orchestrator for `gw delete`.
+/// Top-level orchestrator for `gw rm`.
 ///
 /// `inputs` is empty for the legacy "current worktree" case and for the
 /// `-i` interactive case — the caller passes `interactive=true` to trigger the
 /// selector.
-pub fn delete_worktrees(
+pub fn rm_worktrees(
     inputs: Vec<String>,
     interactive: bool,
     dry_run: bool,
-    flags: DeleteFlags,
+    flags: RmFlags,
 ) -> Result<i32> {
     // 1) Decide the initial input set.
     let initial_inputs: Vec<String> = if interactive {
@@ -450,7 +450,7 @@ pub fn delete_worktrees(
     Ok(exit_code_from(&results))
 }
 
-fn legacy_single_current(flags: DeleteFlags) -> Result<i32> {
+fn legacy_single_current(flags: RmFlags) -> Result<i32> {
     match worktree::delete_worktree(
         None,
         flags.keep_branch,

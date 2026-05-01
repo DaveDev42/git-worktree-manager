@@ -104,19 +104,19 @@ pub enum Commands {
         fg: bool,
     },
 
-    /// Delete one or more worktrees.
+    /// Remove one or more worktrees.
     ///
-    /// With no arguments: deletes the current worktree (must be inside one).
-    /// With one or more positional targets: deletes each of them; flags apply
+    /// With no arguments: removes the current worktree (must be inside one).
+    /// With one or more positional targets: removes each of them; flags apply
     /// to every target.
     /// With `-i`: opens a multi-select UI.
     ///
     /// Exits 0 on full success, 1 if the user cancelled at the confirmation
-    /// prompt or in the interactive UI, 2 if any target could not be deleted
+    /// prompt or in the interactive UI, 2 if any target could not be removed
     /// (not found, busy, or an error).
-    Delete {
-        /// Branch names or paths of worktrees to delete.
-        /// If empty and --interactive is not set, deletes the current worktree.
+    Rm {
+        /// Branch names or paths of worktrees to remove.
+        /// If empty and --interactive is not set, removes the current worktree.
         #[arg(conflicts_with = "interactive")]
         targets: Vec<String>,
 
@@ -124,7 +124,7 @@ pub enum Commands {
         #[arg(short, long, conflicts_with = "targets")]
         interactive: bool,
 
-        /// Show what would be deleted without deleting
+        /// Show what would be removed without removing
         #[arg(long)]
         dry_run: bool,
 
@@ -137,7 +137,7 @@ pub enum Commands {
         delete_remote: bool,
 
         /// Force remove: also bypasses the busy-detection gate (skips the
-        /// "worktree is in use" check and deletes anyway)
+        /// "worktree is in use" check and removes anyway)
         #[arg(short, long, conflicts_with = "no_force")]
         force: bool,
 

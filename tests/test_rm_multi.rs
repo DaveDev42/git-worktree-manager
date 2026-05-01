@@ -1,4 +1,4 @@
-//! Integration tests for multi-target `gw delete`.
+//! Integration tests for multi-target `gw rm`.
 //!
 //! Uses the `TestRepo` harness from `tests/common/`.
 
@@ -13,13 +13,13 @@ fn worktree_row(branch: &str) -> String {
 }
 
 #[test]
-fn test_delete_multiple_positional_all_succeed() {
+fn test_rm_multiple_positional_all_succeed() {
     let repo = TestRepo::new();
     assert!(repo.cw_ok(&["new", "a", "--no-term"]));
     assert!(repo.cw_ok(&["new", "b", "--no-term"]));
     assert!(repo.cw_ok(&["new", "c", "--no-term"]));
 
-    let out = repo.cw(&["delete", "a", "b", "c"]);
+    let out = repo.cw(&["rm", "a", "b", "c"]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -42,11 +42,11 @@ fn test_delete_multiple_positional_all_succeed() {
 }
 
 #[test]
-fn test_delete_multiple_mixed_valid_and_missing() {
+fn test_rm_multiple_mixed_valid_and_missing() {
     let repo = TestRepo::new();
     assert!(repo.cw_ok(&["new", "real", "--no-term"]));
 
-    let out = repo.cw(&["delete", "real", "does-not-exist"]);
+    let out = repo.cw(&["rm", "real", "does-not-exist"]);
     // exit code 2: at least one target was not deleted
     assert_eq!(
         out.status.code(),
@@ -64,7 +64,7 @@ fn test_delete_multiple_mixed_valid_and_missing() {
 }
 
 #[test]
-fn test_delete_dry_run_does_not_delete() {
+fn test_rm_dry_run_does_not_delete() {
     let repo = TestRepo::new();
     let p_path = repo.create_worktree("p");
     let q_path = repo.create_worktree("q");
@@ -75,7 +75,7 @@ fn test_delete_dry_run_does_not_delete() {
     TestRepo::commit_file_at(&p_path, "p.txt", "p work", "feat: p work");
     TestRepo::commit_file_at(&q_path, "q.txt", "q work", "feat: q work");
 
-    let out = repo.cw(&["delete", "p", "q", "--dry-run"]);
+    let out = repo.cw(&["rm", "p", "q", "--dry-run"]);
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
@@ -95,12 +95,12 @@ fn test_delete_dry_run_does_not_delete() {
 }
 
 #[test]
-fn test_delete_keep_branch_applies_to_all_targets() {
+fn test_rm_keep_branch_applies_to_all_targets() {
     let repo = TestRepo::new();
     assert!(repo.cw_ok(&["new", "k1", "--no-term"]));
     assert!(repo.cw_ok(&["new", "k2", "--no-term"]));
 
-    let out = repo.cw(&["delete", "k1", "k2", "--keep-branch"]);
+    let out = repo.cw(&["rm", "k1", "k2", "--keep-branch"]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -124,9 +124,9 @@ fn test_delete_keep_branch_applies_to_all_targets() {
 }
 
 #[test]
-fn test_delete_interactive_conflicts_with_positional_at_runtime() {
+fn test_rm_interactive_conflicts_with_positional_at_runtime() {
     let repo = TestRepo::new();
-    let out = repo.cw(&["delete", "-i", "some-target"]);
+    let out = repo.cw(&["rm", "-i", "some-target"]);
     assert!(
         !out.status.success(),
         "stdout: {} stderr: {}",
@@ -141,14 +141,14 @@ fn test_delete_interactive_conflicts_with_positional_at_runtime() {
 }
 
 #[test]
-fn test_delete_no_args_still_uses_legacy_path() {
-    // Running `gw delete` from *inside* a worktree should still delete the
+fn test_rm_no_args_still_uses_legacy_path() {
+    // Running `gw rm` from *inside* a worktree should still remove the
     // current worktree. This exercises the legacy path.
     let repo = TestRepo::new();
     let wt_path = repo.create_worktree("inside-me");
 
-    // Run `gw delete` with cwd = the worktree path, using cw_at
-    let out = TestRepo::cw_at(&wt_path, &["delete"]);
+    // Run `gw rm` with cwd = the worktree path, using cw_at
+    let out = TestRepo::cw_at(&wt_path, &["rm"]);
     assert!(
         out.status.success(),
         "stderr: {}",

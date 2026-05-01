@@ -347,12 +347,12 @@ fn test_create_worktree_local_branch_takes_precedence_over_remote() {
 // ===========================================================================
 
 #[test]
-fn test_delete_worktree_by_branch() {
+fn test_rm_worktree_by_branch() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("delete-me");
     assert!(wt.exists());
 
-    let output = repo.cw(&["delete", "delete-me"]);
+    let output = repo.cw(&["rm", "delete-me"]);
     assert!(output.status.success());
 
     assert!(!wt.exists());
@@ -366,11 +366,11 @@ fn test_delete_worktree_by_branch() {
 // ===========================================================================
 
 #[test]
-fn test_delete_worktree_by_path() {
+fn test_rm_worktree_by_path() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("delete-by-path");
 
-    let output = repo.cw(&["delete", wt.to_str().unwrap()]);
+    let output = repo.cw(&["rm", wt.to_str().unwrap()]);
     assert!(output.status.success());
     assert!(!wt.exists());
 }
@@ -380,11 +380,11 @@ fn test_delete_worktree_by_path() {
 // ===========================================================================
 
 #[test]
-fn test_delete_worktree_keep_branch() {
+fn test_rm_worktree_keep_branch() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("keep-branch");
 
-    let output = repo.cw(&["delete", "keep-branch", "--keep-branch"]);
+    let output = repo.cw(&["rm", "keep-branch", "--keep-branch"]);
     assert!(output.status.success());
 
     assert!(!wt.exists());
@@ -399,9 +399,9 @@ fn test_delete_worktree_keep_branch() {
 // ===========================================================================
 
 #[test]
-fn test_delete_worktree_nonexistent() {
+fn test_rm_worktree_nonexistent() {
     let repo = TestRepo::new();
-    let output = repo.cw(&["delete", "nonexistent-branch"]);
+    let output = repo.cw(&["rm", "nonexistent-branch"]);
     assert!(!output.status.success());
 }
 
@@ -410,9 +410,9 @@ fn test_delete_worktree_nonexistent() {
 // ===========================================================================
 
 #[test]
-fn test_delete_main_repo_protection() {
+fn test_rm_main_repo_protection() {
     let repo = TestRepo::new();
-    let output = repo.cw(&["delete", repo.path().to_str().unwrap()]);
+    let output = repo.cw(&["rm", repo.path().to_str().unwrap()]);
     assert!(!output.status.success());
     let combined = format!(
         "{}{}",
@@ -434,7 +434,7 @@ fn test_delete_main_repo_protection() {
 // ===========================================================================
 
 #[test]
-fn test_delete_worktree_created_from_remote() {
+fn test_rm_worktree_created_from_remote() {
     let mut repo = TestRepo::new();
     let _remote = repo.setup_remote();
 
@@ -448,7 +448,7 @@ fn test_delete_worktree_created_from_remote() {
     let wt = worktree_path(&repo, "delete-remote-test");
     assert!(wt.exists());
 
-    let del = repo.cw(&["delete", "delete-remote-test"]);
+    let del = repo.cw(&["rm", "delete-remote-test"]);
     assert!(del.status.success());
     assert!(!wt.exists());
 }
@@ -648,13 +648,13 @@ fn test_diff_nonexistent_branch() {
 
 #[test]
 #[cfg_attr(windows, ignore)] // Windows cannot delete cwd
-fn test_delete_worktree_current_directory() {
+fn test_rm_worktree_current_directory() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("delete-current");
     assert!(wt.exists());
 
     // Delete from inside the worktree
-    let output = TestRepo::cw_at(&wt, &["delete", "delete-current"]);
+    let output = TestRepo::cw_at(&wt, &["rm", "delete-current"]);
     assert!(
         output.status.success(),
         "delete from inside worktree failed: {}{}",
@@ -670,13 +670,13 @@ fn test_delete_worktree_current_directory() {
 // ===========================================================================
 
 #[test]
-fn test_delete_worktree_same_branch_and_worktree_name() {
+fn test_rm_worktree_same_branch_and_worktree_name() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("matching");
     assert!(wt.exists());
 
     // "matching" as branch should work without ambiguity
-    let output = repo.cw(&["delete", "matching"]);
+    let output = repo.cw(&["rm", "matching"]);
     assert!(output.status.success());
     assert!(!wt.exists());
 }

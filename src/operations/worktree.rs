@@ -212,7 +212,7 @@ pub fn create_worktree(
 ///
 /// `delete_one` itself returns only `Deleted` or `Failed` today; `Skipped` is
 /// carried for the batch orchestrator, which may classify an entry as skipped
-/// before `delete_one` would even be called (see `delete_batch::PlanEntry`).
+/// before `delete_one` would even be called (see `rm_batch::PlanEntry`).
 #[derive(Debug)]
 pub enum DeletionOutcome {
     Deleted {
@@ -229,7 +229,7 @@ pub enum DeletionOutcome {
 
 /// Flags that apply uniformly to every target in a batch.
 #[derive(Debug, Clone, Copy)]
-pub struct DeleteFlags {
+pub struct RmFlags {
     pub keep_branch: bool,
     pub delete_remote: bool,
     /// Passes through to `git worktree remove --force` (historical semantic).
@@ -248,7 +248,7 @@ pub(crate) fn delete_one(
     worktree_path: &Path,
     branch_name: Option<&str>,
     main_repo: &Path,
-    flags: DeleteFlags,
+    flags: RmFlags,
 ) -> DeletionOutcome {
     // Safety: never delete the main worktree.
     let wt_resolved = git::canonicalize_or(worktree_path);
@@ -284,7 +284,7 @@ pub(crate) fn delete_one(
         worktree_path,
         main_repo,
         "worktree.pre_delete",
-        "delete",
+        "rm",
     );
     if let Err(e) = hooks::run_hooks(
         "worktree.pre_delete",
@@ -424,7 +424,7 @@ pub fn delete_worktree(
         )));
     }
 
-    let flags = DeleteFlags {
+    let flags = RmFlags {
         keep_branch,
         delete_remote,
         git_force: force,

@@ -25,7 +25,7 @@ These are the management-side commands. For full flag detail, see
 | Command | Purpose |
 |---------|---------|
 | `gw list` (alias `gw ls`) | List all worktrees with status indicators (active, clean, modified, stale). |
-| `gw delete [target]` | Delete a worktree (and optionally its branch / remote branch). Use `-i` for interactive batch selection. |
+| `gw rm [target]` | Delete a worktree (and optionally its branch / remote branch). Use `-i` for interactive batch selection. |
 | `gw resume [branch]` | Resume an AI session in a worktree (auto-uses `--continue` when possible). |
 
 `gw new` (creating a worktree to delegate work into) is owned by the sibling
@@ -44,7 +44,7 @@ a concern once per session per rule, then drop it unless the user asks.
 ### Rule: Stale cwd / externally-deleted worktree
 
 **Symptom:** The current working directory disappears mid-session because
-another `gw` session ran `gw delete` on this worktree (or the user removed
+another `gw` session ran `gw rm` on this worktree (or the user removed
 it manually from another terminal).
 
 **Why it hurts:** Every subsequent shell, git, or tool call fails with
@@ -124,7 +124,7 @@ start?" If there is drift, suggest running `git rebase` inside the worktree.
 
 **Symptom:** A delete operation in the main repo session removes a
 worktree that another Claude session is actively working in. The most
-common path is volunteering `--force` to "clean up" after `gw delete`
+common path is volunteering `--force` to "clean up" after `gw rm`
 complains that a target is busy.
 
 **Why it hurts:** The sibling session's review-fix loop or long-running
@@ -132,12 +132,12 @@ task halts mid-flight. Even if the work is on a pushed branch, local
 state and any uncommitted changes are gone, and the sibling's cwd dies
 underneath it.
 
-**Healthy state:** `gw delete` completes without `--force` — i.e. it
+**Healthy state:** `gw rm` completes without `--force` — i.e. it
 respects the built-in busy gate. `--force` is reserved for cases where
 the user has explicitly said "force-delete this even if busy". Never
 volunteer `--force` to make an error message go away.
 
-**How to detect:** Before any `gw delete <target>` call, run `gw list`
+**How to detect:** Before any `gw rm <target>` call, run `gw list`
 and check the candidates' busy badges. If a candidate is busy, do
 **not** add `--force`.
 
@@ -274,7 +274,7 @@ Create new worktree for feature branch.
 
 Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be used per invocation.
 
-### `gw delete [target] [OPTIONS]`
+### `gw rm [target] [OPTIONS]`
 Delete a worktree.
 - `-k, --keep-branch` — Keep the branch (only remove worktree directory)
 - `-r, --delete-remote` — Also delete the remote branch

@@ -16,7 +16,7 @@ fn test_full_workflow_new_list_delete() {
     assert!(list.contains("e2e-test"));
 
     // Delete
-    assert!(repo.cw_ok(&["delete", "e2e-test"]));
+    assert!(repo.cw_ok(&["rm", "e2e-test"]));
 
     // Gone
     let list = repo.cw_stdout(&["list"]);
@@ -36,7 +36,7 @@ fn test_workflow_multiple_worktrees() {
     assert!(list.contains("feat-c"));
 
     // Clean up one
-    assert!(repo.cw_ok(&["delete", "feat-b"]));
+    assert!(repo.cw_ok(&["rm", "feat-b"]));
     let list = repo.cw_stdout(&["list"]);
     assert!(!list.contains("feat-b"));
     assert!(list.contains("feat-a"));
@@ -47,7 +47,7 @@ fn test_workflow_multiple_worktrees() {
 fn test_workflow_delete_keep_branch() {
     let repo = TestRepo::new();
     assert!(repo.cw_ok(&["new", "keep-branch-test", "--no-term"]));
-    assert!(repo.cw_ok(&["delete", "keep-branch-test", "--keep-branch"]));
+    assert!(repo.cw_ok(&["rm", "keep-branch-test", "--keep-branch"]));
 
     // Worktree removed but branch should still exist
     let list = repo.cw_stdout(&["list"]);

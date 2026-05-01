@@ -5,7 +5,7 @@
 //! "active" when its `~/.claude/projects/<encoded>/*.jsonl` has an event
 //! within the activity threshold. That signal alone is too coarse — when a
 //! user exits Claude Code cleanly the jsonl tail keeps its recent timestamp
-//! and `gw delete` keeps refusing for the full threshold window.
+//! and `gw rm` keeps refusing for the full threshold window.
 //!
 //! This module supplies a complementary signal: scan the live process table
 //! for a real `claude` binary (identified by its `txt` mapping under

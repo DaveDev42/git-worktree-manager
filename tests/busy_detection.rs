@@ -103,7 +103,7 @@ mod unix_only {
     }
 
     #[test]
-    fn gw_delete_rejects_busy_worktree_when_not_tty() {
+    fn gw_rm_rejects_busy_worktree_when_not_tty() {
         use assert_cmd::Command;
         use std::process::{Command as StdCommand, Stdio};
 
@@ -162,13 +162,13 @@ mod unix_only {
             .unwrap();
 
         // Poll until detect_busy sees the child, so the subsequent
-        // `gw delete` has a reliable busy signal to react to.
+        // `gw rm` has a reliable busy signal to react to.
         let pid = child.id();
         let _ = wait_for(|| detect_busy(&wt_path).iter().any(|i| i.pid == pid));
 
         let output = Command::cargo_bin("gw")
             .unwrap()
-            .args(["delete", &branch])
+            .args(["rm", &branch])
             .current_dir(repo.path())
             .write_stdin("")
             .output()
@@ -189,7 +189,7 @@ mod unix_only {
 
         assert!(
             !output.status.success(),
-            "expected gw delete to fail for busy worktree; status: {:?}; stdout: {}; stderr: {}",
+            "expected gw rm to fail for busy worktree; status: {:?}; stdout: {}; stderr: {}",
             output.status,
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)

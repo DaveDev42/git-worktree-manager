@@ -104,7 +104,7 @@ pub fn run() {
             fg,
         }) => ai_tools::resume_worktree(branch.as_deref(), term.as_deref(), bg, fg),
 
-        Some(Commands::Delete {
+        Some(Commands::Rm {
             targets,
             interactive,
             dry_run,
@@ -113,13 +113,13 @@ pub fn run() {
             force,
             no_force,
         }) => {
-            let flags = crate::operations::worktree::DeleteFlags {
+            let flags = crate::operations::worktree::RmFlags {
                 keep_branch,
                 delete_remote,
                 git_force: !no_force,
                 allow_busy: force,
             };
-            match crate::operations::delete_batch::delete_worktrees(
+            match crate::operations::rm_batch::rm_worktrees(
                 targets,
                 interactive,
                 dry_run,

@@ -134,7 +134,7 @@ Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be given per invoc
 | Command | Description |
 |---------|-------------|
 | `gw new <branch> [--prompt-file <path> \| --prompt "..." \| --prompt-stdin]` | Create worktree + optionally launch AI with task |
-| `gw delete <branch>` | Delete worktree and branch |
+| `gw rm <branch>` | Delete worktree and branch |
 | `gw list` | List all worktrees with status |
 | `gw resume [branch]` | Resume AI session in worktree |
 | `gw doctor` | Run diagnostics |
@@ -188,17 +188,17 @@ PROMPT
 gw new feature-x --prompt-file /tmp/gw-prompt-$$.txt
 # ... work is done in the new worktree ...
 gh pr create                       # create PR (run inside the worktree)
-gw delete feature-x                # cleanup after merge
+gw rm feature-x                # cleanup after merge
 ```
 
 ### Batch cleanup
 ```bash
-gw delete -i                       # interactive selection of worktrees to delete
+gw rm -i                       # interactive selection of worktrees to delete
 ```
 
 ## Guidelines
 
-- Before running any `gw` subcommand that reads the current worktree (`gw list`, `gw delete` without an explicit target, etc.), make sure the shell's cwd still exists. If another session or an earlier `gw delete` removed the worktree, the shell holds a stale pwd and commands behave unexpectedly. Quick guard:
+- Before running any `gw` subcommand that reads the current worktree (`gw list`, `gw rm` without an explicit target, etc.), make sure the shell's cwd still exists. If another session or an earlier `gw rm` removed the worktree, the shell holds a stale pwd and commands behave unexpectedly. Quick guard:
   ```bash
   [ -d "$(pwd -P 2>/dev/null)" ] || { echo "FATAL: cwd missing (worktree likely deleted). Abort."; exit 1; }
   ```
@@ -220,6 +220,6 @@ gw delete -i                       # interactive selection of worktrees to delet
   - Use `--prompt-file` for complex or skill-generated prompts to manage them conveniently
   - If the user's request is vague or ambiguous, ask clarifying questions BEFORE spawning
   - Do NOT spawn a task assuming you can "correct course later" — you cannot
-- For destructive worktree operations (`gw delete`), defer to the `manage` skill — in particular the don't-kill-busy-siblings rule.
+- For destructive worktree operations (`gw rm`), defer to the `manage` skill — in particular the don't-kill-busy-siblings rule.
 "#
 }
