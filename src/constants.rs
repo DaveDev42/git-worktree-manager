@@ -194,36 +194,6 @@ pub const PRESET_NAMES: &[&str] = &[
     "no-op",
 ];
 
-/// Return all valid `--term` values: canonical launch methods + aliases.
-pub fn all_term_values() -> Vec<&'static str> {
-    let mut values: Vec<&str> = vec![
-        "foreground",
-        "detach",
-        "iterm-window",
-        "iterm-tab",
-        "iterm-pane-h",
-        "iterm-pane-v",
-        "tmux",
-        "tmux-window",
-        "tmux-pane-h",
-        "tmux-pane-v",
-        "zellij",
-        "zellij-tab",
-        "zellij-pane-h",
-        "zellij-pane-v",
-        "wezterm-window",
-        "wezterm-tab",
-        "wezterm-tab-bg",
-        "wezterm-pane-h",
-        "wezterm-pane-v",
-    ];
-    for alias in launch_method_aliases().keys() {
-        values.push(alias);
-    }
-    values.sort();
-    values
-}
-
 /// Seconds in one day (24 * 60 * 60).
 pub const SECS_PER_DAY: u64 = 86400;
 
@@ -400,25 +370,6 @@ mod tests {
         if let Some(age) = path_age_days(&tmp) {
             assert!(age >= 0.0);
         }
-    }
-
-    #[test]
-    fn test_all_term_values_contains_canonical_and_aliases() {
-        let values = all_term_values();
-        // 19 canonical + aliases
-        assert!(
-            values.len() >= 36,
-            "expected ≥36 term values, got {}",
-            values.len()
-        );
-        // Check a few canonical values
-        assert!(values.contains(&"foreground"));
-        assert!(values.contains(&"tmux"));
-        assert!(values.contains(&"wezterm-tab"));
-        // Check a few aliases
-        assert!(values.contains(&"fg"));
-        assert!(values.contains(&"t"));
-        assert!(values.contains(&"w-t"));
     }
 
     #[test]

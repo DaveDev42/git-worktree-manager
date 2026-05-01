@@ -334,6 +334,27 @@ Register-ArgumentCompleter -CommandName cw-cd -ParameterName Target -ScriptBlock
             [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
         }
 }
+
+# Native target completion for `gw` / `cw` subcommands: rm, resume, spawn, exec
+Register-ArgumentCompleter -CommandName gw, cw -Native -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+
+    # Find the subcommand (first non-flag element after the command name)
+    $elements = $commandAst.CommandElements
+    if ($elements.Count -lt 2) { return }
+    $subcmd = $elements[1].Value
+
+    # Only complete positional targets for these subcommands
+    if ($subcmd -notin @('rm', 'resume', 'spawn', 'exec')) { return }
+
+    # Get completion targets from gw
+    $targets = & gw _complete-targets 2>$null
+
+    $targets | Where-Object { $_ -like "$wordToComplete*" } |
+        ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+}
 "#;
 
 #[cfg(test)]
@@ -381,6 +402,19 @@ mod tests {
         assert!(script.contains("function gw-cd"));
         assert!(script.contains("Register-ArgumentCompleter"));
         assert!(script.contains("Set-Alias -Name cw-cd -Value gw-cd"));
+    }
+
+    #[test]
+    fn test_powershell_uses_complete_targets() {
+        let script = generate("powershell").unwrap();
+        assert!(
+            script.contains("gw _complete-targets"),
+            "PowerShell script should call gw _complete-targets"
+        );
+        assert!(
+            script.contains("Register-ArgumentCompleter -CommandName gw"),
+            "PowerShell script should register a completer for `gw`"
+        );
     }
 
     #[test]
