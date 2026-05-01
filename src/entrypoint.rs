@@ -15,7 +15,8 @@ use crate::cwshare_setup;
 use crate::error::{CwError, Result};
 use crate::hooks;
 use crate::operations::{
-    ai_tools, diagnostics, display, guard, helpers, path_cmd, setup_claude, spawn_spec, worktree,
+    ai_tools, diagnostics, display, guard, helpers, path_cmd, run, setup_claude, spawn_spec,
+    worktree,
 };
 use crate::resolve_prompt;
 use crate::shell_functions;
@@ -159,7 +160,14 @@ pub fn run() {
             session_start,
             quiet,
         }) => diagnostics::doctor(session_start, quiet),
-        Some(Commands::Run { .. }) => Err(CwError::Other("not implemented".into())),
+        Some(Commands::Run { only, no_main, jobs, continue_on_error, cmd }) => (|| -> Result<()> {
+            let cwd = std::env::current_dir()?;
+            let code = run::run_in_scope(&cwd, &cmd, only.as_deref(), no_main, jobs, continue_on_error)?;
+            if code != 0 {
+                return Err(crate::error::CwError::ExitCode(code));
+            }
+            Ok(())
+        })(),
 
         Some(Commands::Guard { tool_input }) => guard::run(&tool_input),
         Some(Commands::SetupClaude) => setup_claude::setup_claude(),

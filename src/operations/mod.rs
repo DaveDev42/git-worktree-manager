@@ -13,6 +13,7 @@ pub mod launchers;
 pub mod lockfile;
 pub mod path_cmd;
 pub mod pr_cache;
+pub mod run;
 pub mod setup_claude;
 pub mod spawn_spec;
 #[cfg(test)]
