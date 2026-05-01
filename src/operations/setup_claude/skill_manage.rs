@@ -332,29 +332,11 @@ Apply stash to a different worktree.
 
 ## Configuration
 
-### `gw config show`
-Show current configuration.
-
-### `gw config list`
-List all configuration keys with descriptions.
-
-### `gw config get <KEY>`
-Get a config value. Keys use dot notation (see Key Config Keys section below).
-
-### `gw config set <KEY> <VALUE>`
-Set a config value. Key-specific valid values:
-- `ai_tool.command` — Preset name (`claude`, `claude-yolo`, `claude-remote`, `claude-yolo-remote`, `codex`, `codex-yolo`, `no-op`) or any command name
-- `launch.method` — Any terminal launch method name or alias (see Terminal Launch Methods)
+Edit `~/.config/git-worktree-manager/config.json` directly to change settings.
+Key fields:
+- `ai_tool.command` — AI tool preset name (`claude`, `claude-yolo`, `codex`, `no-op`, etc.) or any command
+- `launch.method` — Default terminal launch method (e.g., `wezterm-tab`, `tmux`, `foreground`)
 - `update.auto_check` — `true` or `false`
-
-### `gw config use-preset <NAME>`
-Use a predefined AI tool preset: `claude`, `claude-yolo`, `claude-remote`, `claude-yolo-remote`, `codex`, `codex-yolo`, `no-op`.
-
-### `gw config list-presets`
-List available presets.
-
-### `gw config reset`
-Reset configuration to defaults.
 
 ## Hooks
 
@@ -374,14 +356,6 @@ Toggle hook on/off.
 Manually run hooks for an event.
 
 **Available events:** `worktree.pre_create`, `worktree.post_create`, `worktree.pre_delete`, `worktree.post_delete`, `merge.pre`, `merge.post`, `pr.pre`, `pr.post`, `resume.pre`, `resume.post`, `sync.pre`, `sync.post`
-
-## Export / Import
-
-### `gw export [-o <FILE>]`
-Export worktree configuration to JSON.
-
-### `gw import <FILE> [--apply]`
-Import configuration (preview by default, `--apply` to apply).
 
 ## Global Mode
 
@@ -448,7 +422,6 @@ Used with `-T` flag on `gw new` and `gw resume`. Supports `method:session-name` 
 ## Helper Commands (for scripting and completion)
 
 These hidden commands output newline-separated values, useful for scripting:
-- `gw _config-keys` — List all config key names
 - `gw _term-values` — List all valid `--term` values (canonical + aliases)
 - `gw _preset-names` — List all AI tool preset names
 - `gw _hook-events` — List all valid hook event names

@@ -619,19 +619,6 @@ fn test_doctor() {
 }
 
 // ===========================================================================
-// config show
-// ===========================================================================
-
-#[test]
-fn test_config_show() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["config", "show"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("AI Tool:") || stdout.contains("Config") || stdout.contains("config"));
-}
-
-// ===========================================================================
 // path --list-branches
 // ===========================================================================
 
@@ -671,42 +658,6 @@ fn test_prune_empty() {
             || stdout.contains("Prune")
             || stdout.contains("prune")
     );
-}
-
-// ===========================================================================
-// export creates file
-// ===========================================================================
-
-#[test]
-fn test_export_creates_file() {
-    let repo = TestRepo::new();
-    let export_path = repo.path().join("test-export.json");
-    let output = repo.cw(&["export", "--output", export_path.to_str().unwrap()]);
-    assert!(output.status.success());
-    assert!(export_path.exists());
-
-    let content = std::fs::read_to_string(&export_path).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-    assert_eq!(
-        parsed.get("export_version").unwrap().as_str().unwrap(),
-        "1.0"
-    );
-}
-
-// ===========================================================================
-// import preview
-// ===========================================================================
-
-#[test]
-fn test_import_preview() {
-    let repo = TestRepo::new();
-    let export_path = repo.path().join("import-test.json");
-    repo.cw(&["export", "--output", export_path.to_str().unwrap()]);
-
-    let output = repo.cw(&["import", export_path.to_str().unwrap()]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Preview") || stdout.contains("preview"));
 }
 
 // ===========================================================================

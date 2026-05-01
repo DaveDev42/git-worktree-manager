@@ -4,6 +4,9 @@ use clap::Parser;
 use git_worktree_manager::cli::{Cli, Commands};
 use predicates::prelude::*;
 
+// Note: gw config, gw export, and gw import were removed in 1.0.
+// Edit ~/.config/git-worktree-manager/config.json directly instead.
+
 fn cw() -> Command {
     Command::cargo_bin("gw").unwrap()
 }
@@ -22,8 +25,6 @@ fn test_help() {
         .stdout(predicate::str::contains("stash"))
         .stdout(predicate::str::contains("hook"))
         .stdout(predicate::str::contains("shell"))
-        .stdout(predicate::str::contains("export"))
-        .stdout(predicate::str::contains("import"))
         .stdout(predicate::str::contains("backup"));
 }
 
@@ -40,16 +41,6 @@ fn test_no_args_shows_help() {
     cw().assert()
         .failure()
         .stderr(predicate::str::contains("Usage"));
-}
-
-#[test]
-fn test_config_list_presets() {
-    cw().args(["config", "list-presets"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("claude"))
-        .stdout(predicate::str::contains("codex"))
-        .stdout(predicate::str::contains("no-op"));
 }
 
 #[test]
@@ -82,18 +73,6 @@ fn test_shell_function_powershell() {
 #[test]
 fn test_shell_function_invalid() {
     cw().args(["_shell-function", "tcsh"]).assert().failure();
-}
-
-#[test]
-fn test_config_subcommands_help() {
-    cw().args(["config", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("show"))
-        .stdout(predicate::str::contains("set"))
-        .stdout(predicate::str::contains("reset"))
-        .stdout(predicate::str::contains("use-preset"))
-        .stdout(predicate::str::contains("list-presets"));
 }
 
 #[test]
@@ -255,22 +234,6 @@ fn test_delete_interactive_conflicts_with_positional() {
 }
 
 #[test]
-fn test_export_help() {
-    cw().args(["export", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--output"));
-}
-
-#[test]
-fn test_import_help() {
-    cw().args(["import", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--apply"));
-}
-
-#[test]
 fn test_shell_help() {
     cw().args(["shell", "--help"]).assert().success();
 }
@@ -330,14 +293,6 @@ fn test_upgrade_runs() {
         predicate::str::contains("gw") // shows version
             .or(predicate::str::contains("git-worktree-manager")),
     );
-}
-
-#[test]
-fn test_config_show_runs() {
-    cw().args(["config", "show"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("AI Tool:"));
 }
 
 // --- New CLI option tests ---

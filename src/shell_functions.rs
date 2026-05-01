@@ -133,27 +133,6 @@ if [ -n "$BASH_VERSION" ]; then
             return
         fi
 
-        # Config key completion: "config get <key>" or "config set <key>"
-        if [[ $subcmd == "config" && ( ${COMP_WORDS[2]} == "get" || ${COMP_WORDS[2]} == "set" ) && $COMP_CWORD -eq 3 ]]; then
-            local keys
-            keys=$(gw _config-keys 2>/dev/null)
-            COMPREPLY=($(compgen -W "$keys" -- "$cur"))
-            return
-        fi
-
-        # Config set value completion: "config set <key> <value>"
-        if [[ $subcmd == "config" && ${COMP_WORDS[2]} == "set" && $COMP_CWORD -eq 4 ]]; then
-            local key="${COMP_WORDS[3]}"
-            case "$key" in
-                launch.method)
-                    COMPREPLY=($(compgen -W "$(gw _term-values 2>/dev/null)" -- "$cur"))
-                    return ;;
-                ai_tool.command)
-                    COMPREPLY=($(compgen -W "$(gw _preset-names 2>/dev/null)" -- "$cur"))
-                    return ;;
-            esac
-        fi
-
         # Branch completion for subcommands with positional branch args
         if [[ "$cur" != -* ]]; then
             # Check for global mode
@@ -171,9 +150,6 @@ if [ -n "$BASH_VERSION" ]; then
             case "$subcmd" in
                 pr|merge|resume|shell|delete|sync)
                     max_pos=1
-                    ;;
-                diff|change-base)
-                    max_pos=2
                     ;;
                 backup)
                     if [[ ${COMP_WORDS[2]} =~ ^(create|list|restore)$ ]]; then
@@ -218,7 +194,7 @@ if [ -n "$ZSH_VERSION" ]; then
     # Register clap completion for gw/cw CLI inline
     eval "$(gw --generate-completion zsh 2>/dev/null)"
 
-    # Wrap _gw to add dynamic completion (config keys + branch names)
+    # Wrap _gw to add dynamic completion (branch names + term values)
     _gw_with_config() {
         local subcmd="${words[2]}"
 
@@ -228,31 +204,6 @@ if [ -n "$ZSH_VERSION" ]; then
             methods=(${(f)"$(gw _term-values 2>/dev/null)"})
             compadd -a methods
             return
-        fi
-
-        # Config key completion: "config get <key>" or "config set <key>"
-        if [[ $subcmd == "config" && ( ${words[3]} == "get" || ${words[3]} == "set" ) && $CURRENT -eq 4 ]]; then
-            local -a keys
-            keys=(${(f)"$(gw _config-keys 2>/dev/null)"})
-            _describe 'config key' keys
-            return
-        fi
-
-        # Config set value completion: "config set <key> <value>"
-        if [[ $subcmd == "config" && ${words[3]} == "set" && $CURRENT -eq 5 ]]; then
-            local key="${words[4]}"
-            case "$key" in
-                launch.method)
-                    local -a methods
-                    methods=(${(f)"$(gw _term-values 2>/dev/null)"})
-                    compadd -a methods
-                    return ;;
-                ai_tool.command)
-                    local -a presets
-                    presets=(${(f)"$(gw _preset-names 2>/dev/null)"})
-                    compadd -a presets
-                    return ;;
-            esac
         fi
 
         # Branch completion for subcommands with positional branch args
@@ -272,9 +223,6 @@ if [ -n "$ZSH_VERSION" ]; then
             case "$subcmd" in
                 pr|merge|resume|shell|delete|sync)
                     max_pos=1
-                    ;;
-                diff|change-base)
-                    max_pos=2
                     ;;
                 backup)
                     case "${words[3]}" in create|list|restore)
@@ -432,12 +380,8 @@ complete -c cw-cd -w gw-cd
 # Tab completion for gw/cw CLI (clap-generated)
 gw --generate-completion fish 2>/dev/null | source
 
-# Config key completion for gw config get/set
-complete -c gw -f -n '__fish_seen_subcommand_from config; and __fish_seen_subcommand_from get set' -a '(gw _config-keys 2>/dev/null)'
-complete -c cw -f -n '__fish_seen_subcommand_from config; and __fish_seen_subcommand_from get set' -a '(gw _config-keys 2>/dev/null)'
-
 # Branch completion for subcommands with positional branch args
-for cmd in pr merge resume shell delete sync diff change-base
+for cmd in pr merge resume shell delete sync
     complete -c gw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _path --list-branches 2>/dev/null)'
     complete -c cw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _path --list-branches 2>/dev/null)'
 end

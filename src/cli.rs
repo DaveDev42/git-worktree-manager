@@ -15,11 +15,6 @@ pub struct CacheControl {
     pub no_cache: bool,
 }
 
-/// Validate config key (accepts any string but provides completion hints).
-fn parse_config_key(s: &str) -> Result<String, String> {
-    Ok(s.to_string())
-}
-
 /// Git worktree manager CLI.
 #[derive(Parser, Debug)]
 #[command(
@@ -189,12 +184,6 @@ pub enum Commands {
         cache: CacheControl,
     },
 
-    /// Configuration management
-    Config {
-        #[command(subcommand)]
-        action: ConfigAction,
-    },
-
     /// Backup and restore worktrees
     Backup {
         #[command(subcommand)]
@@ -211,23 +200,6 @@ pub enum Commands {
     Hook {
         #[command(subcommand)]
         action: HookAction,
-    },
-
-    /// Export worktree configuration to a file
-    Export {
-        /// Output file path
-        #[arg(short, long)]
-        output: Option<String>,
-    },
-
-    /// Import worktree configuration from a file
-    Import {
-        /// Path to the configuration file to import
-        import_file: String,
-
-        /// Apply the imported configuration (default: preview only)
-        #[arg(long)]
-        apply: bool,
     },
 
     /// Scan for repositories (global mode)
@@ -295,10 +267,6 @@ pub enum Commands {
         shell: String,
     },
 
-    /// List config keys (for tab completion)
-    #[command(name = "_config-keys", hide = true)]
-    ConfigKeys,
-
     /// Refresh update cache (background process)
     #[command(name = "_update-cache", hide = true)]
     UpdateCache,
@@ -323,39 +291,6 @@ pub enum Commands {
         #[arg(value_hint = ValueHint::FilePath)]
         spec: Option<PathBuf>,
     },
-}
-
-#[derive(Subcommand, Debug)]
-pub enum ConfigAction {
-    /// Show current configuration summary
-    Show,
-    /// List all configuration keys, values, and descriptions
-    #[command(alias = "ls")]
-    List,
-    /// Get a configuration value
-    Get {
-        /// Dot-separated config key (e.g., ai_tool.command)
-        #[arg(value_parser = parse_config_key)]
-        key: String,
-    },
-    /// Set a configuration value
-    Set {
-        /// Dot-separated config key (e.g., ai_tool.command)
-        #[arg(value_parser = parse_config_key)]
-        key: String,
-        /// Value to set
-        value: String,
-    },
-    /// Use a predefined AI tool preset
-    UsePreset {
-        /// Preset name (e.g., claude, codex, no-op)
-        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::constants::PRESET_NAMES))]
-        name: String,
-    },
-    /// List available presets
-    ListPresets,
-    /// Reset configuration to defaults
-    Reset,
 }
 
 #[derive(Subcommand, Debug)]

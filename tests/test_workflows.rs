@@ -64,37 +64,6 @@ fn test_workflow_doctor_after_operations() {
 }
 
 #[test]
-fn test_workflow_config_show() {
-    let repo = TestRepo::new();
-    let output = repo.cw_stdout(&["config", "show"]);
-    assert!(output.contains("AI Tool:"));
-    assert!(output.contains("Config file:"));
-}
-
-#[test]
-fn test_workflow_config_list_presets() {
-    let repo = TestRepo::new();
-    let output = repo.cw_stdout(&["config", "list-presets"]);
-    assert!(output.contains("claude"));
-    assert!(output.contains("no-op"));
-}
-
-#[test]
-fn test_workflow_export_import_roundtrip() {
-    let repo = TestRepo::new();
-    let export_path = repo.path().join("export.json");
-
-    assert!(repo.cw_ok(&["export", "--output", export_path.to_str().unwrap()]));
-    assert!(export_path.exists());
-
-    // Import preview
-    let output = repo.cw(&["import", export_path.to_str().unwrap()]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Preview"));
-}
-
-#[test]
 fn test_workflow_path_list_branches() {
     let repo = TestRepo::new();
     assert!(repo.cw_ok(&["new", "path-test", "--no-term"]));

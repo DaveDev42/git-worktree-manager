@@ -7,7 +7,7 @@
 
 use clap::Parser;
 
-use crate::cli::{BackupAction, Cli, Commands, ConfigAction, HookAction, StashAction};
+use crate::cli::{BackupAction, Cli, Commands, HookAction, StashAction};
 use crate::config;
 use crate::console as cwconsole;
 use crate::constants;
@@ -15,8 +15,8 @@ use crate::cwshare_setup;
 use crate::error::{CwError, Result};
 use crate::hooks;
 use crate::operations::{
-    ai_tools, backup, config_ops, diagnostics, display, global_ops, guard, helpers, path_cmd,
-    setup_claude, shell, spawn_spec, stash, worktree,
+    ai_tools, backup, diagnostics, display, global_ops, guard, helpers, path_cmd, setup_claude,
+    shell, spawn_spec, stash, worktree,
 };
 use crate::resolve_prompt;
 use crate::shell_functions;
@@ -41,7 +41,6 @@ pub fn run() {
         &cli.command,
         Some(
             Commands::UpdateCache
-                | Commands::ConfigKeys
                 | Commands::TermValues
                 | Commands::PresetNames
                 | Commands::HookEvents
@@ -72,19 +71,6 @@ pub fn run() {
                 display::list_worktrees(no_cache)
             }
         }
-        Some(Commands::Config { action }) => match action {
-            ConfigAction::Show => config::show_config().map(|output| println!("{}", output)),
-            ConfigAction::List => config::list_config(),
-            ConfigAction::Get { key } => config::get_config_value(&key),
-            ConfigAction::Set { key, value } => config::set_config_value(&key, &value),
-            ConfigAction::UsePreset { name } => config::use_preset(&name),
-            ConfigAction::ListPresets => {
-                println!("{}", config::list_presets());
-                Ok(())
-            }
-            ConfigAction::Reset => config::reset_config(),
-        },
-
         Some(Commands::New {
             name,
             path,
@@ -219,11 +205,6 @@ pub fn run() {
             HookAction::Run { event, dry_run } => run_hooks_manual(&event, dry_run),
         },
 
-        Some(Commands::Export { output }) => config_ops::export_config(output.as_deref()),
-        Some(Commands::Import { import_file, apply }) => {
-            config_ops::import_config(&import_file, apply)
-        }
-
         Some(Commands::Scan { dir }) => global_ops::global_scan(dir.as_deref()),
         Some(Commands::Prune) => global_ops::global_prune(),
         Some(Commands::Doctor {
@@ -262,13 +243,6 @@ pub fn run() {
 
         Some(Commands::UpdateCache) => {
             update::refresh_cache();
-            Ok(())
-        }
-
-        Some(Commands::ConfigKeys) => {
-            for (key, _desc) in config::CONFIG_KEYS {
-                println!("{}", key);
-            }
             Ok(())
         }
 

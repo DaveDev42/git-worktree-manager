@@ -54,10 +54,6 @@ pub fn backup_not_found(backup_id: &str, branch: &str) -> String {
     format!("Backup '{}' not found for branch '{}'", backup_id, branch)
 }
 
-pub fn import_file_not_found(import_file: &str) -> String {
-    format!("Import file not found: {}", import_file)
-}
-
 pub fn detached_head_warning() -> String {
     "Worktree is detached or branch not found. Specify branch with --branch or skip with --force."
         .to_string()
@@ -170,13 +166,6 @@ mod tests {
         assert!(msg.contains("abc123"));
         assert!(msg.contains("feature-x"));
         assert!(msg.contains("not found"));
-    }
-
-    #[test]
-    fn test_import_file_not_found() {
-        let msg = import_file_not_found("/tmp/export.json");
-        assert!(msg.contains("/tmp/export.json"));
-        assert!(msg.contains("Import file not found"));
     }
 
     #[test]
