@@ -240,29 +240,73 @@ fn prewarm_busy_caches() {
     std::thread::spawn(crate::operations::claude_process::prewarm);
 }
 
-/// List all worktrees for the current repository.
+/// List all worktrees, grouped by repository, using cwd-based scope discovery.
 pub fn list_worktrees(no_cache: bool) -> Result<()> {
-    let repo = git::get_repo_root(None)?;
-    let worktrees = git::parse_worktrees(&repo)?;
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let scope = crate::scope::discover_scope(&cwd)?;
 
+    if scope.is_empty() {
+        println!("  {}\n", style("No worktrees found.").dim());
+        return Ok(());
+    }
+
+    // Group by repo_root, preserving first-seen order.
+    // Using Vec<(PathBuf, Vec<(String, PathBuf)>)> instead of HashMap to keep
+    // a stable, deterministic order for multi-repo output.
+    let mut groups: Vec<(std::path::PathBuf, Vec<(String, std::path::PathBuf)>)> = Vec::new();
+    for w in scope.worktrees() {
+        let key = &w.repo_root;
+        let entry = match groups.iter_mut().find(|(k, _)| k == key) {
+            Some(e) => e,
+            None => {
+                groups.push((key.clone(), Vec::new()));
+                groups.last_mut().unwrap()
+            }
+        };
+        // Re-derive (branch_raw, path) tuple shape that the existing rendering
+        // pipeline expects. For detached HEAD, use "(detached)" so downstream
+        // normalize_branch_name keeps working.
+        let branch_raw = w.branch.clone().unwrap_or_else(|| "(detached)".to_string());
+        entry.1.push((branch_raw, w.path.clone()));
+    }
+
+    for (i, (repo, worktrees)) in groups.iter().enumerate() {
+        if i > 0 {
+            println!(); // separator between sections
+        }
+        render_repo_section(repo, worktrees, no_cache)?;
+    }
+    Ok(())
+}
+
+/// Render a single repository's worktree list section.
+///
+/// This is the extracted body of the original `list_worktrees`, parameterised
+/// over `(repo, worktrees)` so the outer function can call it once per repo
+/// family found by `scope::discover_scope`.
+fn render_repo_section(
+    repo: &std::path::Path,
+    worktrees: &[(String, std::path::PathBuf)],
+    no_cache: bool,
+) -> Result<()> {
     println!(
         "\n{}  {}\n",
         style("Worktrees for repository:").cyan().bold(),
         repo.display()
     );
 
-    let pr_cache = PrCache::load_or_fetch(&repo, no_cache);
+    let pr_cache = PrCache::load_or_fetch(repo, no_cache);
 
     // Serial prep: cheap local work. Keep single-threaded for clarity.
     let inputs: Vec<RowInput> = worktrees
         .iter()
         .map(|(branch, path)| {
             let current_branch = git::normalize_branch_name(branch).to_string();
-            let rel_path = pathdiff::diff_paths(path, &repo)
+            let rel_path = pathdiff::diff_paths(path, repo)
                 .map(|p: std::path::PathBuf| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| path.to_string_lossy().to_string());
             let age = path_age_str(path);
-            let intended_branch = lookup_intended_branch(&repo, &current_branch, path);
+            let intended_branch = lookup_intended_branch(repo, &current_branch, path);
             let worktree_id = intended_branch.unwrap_or_else(|| current_branch.clone());
             RowInput {
                 path: path.clone(),
@@ -274,10 +318,9 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
         })
         .collect();
 
-    if inputs.is_empty() {
-        println!("  {}\n", style("No worktrees found.").dim());
-        return Ok(());
-    }
+    // A repo section with zero worktrees produces an empty table — acceptable
+    // in practice since a repo always has at least the main worktree.
+    // (The outer scope-level empty check handles the truly empty case.)
 
     prewarm_busy_caches();
 
@@ -291,14 +334,13 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
     let use_progressive = is_tty && !narrow;
 
     let rows: Vec<WorktreeRow> = if use_progressive {
-        render_rows_progressive(&repo, &pr_cache, inputs)?
+        render_rows_progressive(repo, &pr_cache, inputs)?
     } else {
         // rayon borrows &pr_cache across workers via the type system.
         inputs
             .into_par_iter()
             .map(|i| {
-                let status =
-                    get_worktree_status(&i.path, &repo, Some(&i.current_branch), &pr_cache);
+                let status = get_worktree_status(&i.path, repo, Some(&i.current_branch), &pr_cache);
                 i.into_row(status)
             })
             .collect()
