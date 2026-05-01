@@ -104,6 +104,30 @@ pub enum Commands {
         fg: bool,
     },
 
+    /// Launch AI tool in an existing worktree (default: current).
+    #[command(group(
+        clap::ArgGroup::new("prompt_source")
+            .args(["prompt", "prompt_file", "prompt_stdin"])
+            .multiple(false)
+            .required(false)
+    ))]
+    Spawn {
+        /// Worktree target (default: current worktree).
+        target: Option<String>,
+
+        /// Initial prompt to pass to the AI tool.
+        #[arg(long)]
+        prompt: Option<String>,
+
+        /// Read the initial prompt from a file.
+        #[arg(long = "prompt-file", value_hint = ValueHint::FilePath)]
+        prompt_file: Option<PathBuf>,
+
+        /// Read the initial prompt from standard input.
+        #[arg(long = "prompt-stdin")]
+        prompt_stdin: bool,
+    },
+
     /// Remove one or more worktrees.
     ///
     /// With no arguments: removes the current worktree (must be inside one).

@@ -46,8 +46,8 @@ fn exec_resolves_by_branch_name() {
     ));
 
     let mut buf: Vec<u8> = Vec::new();
-    let code = exec_in_target(&wt_path, "feat-x", &["pwd".to_string()], &mut buf)
-        .expect("exec_in_target");
+    let code =
+        exec_in_target(&wt_path, "feat-x", &["pwd".to_string()], &mut buf).expect("exec_in_target");
     assert_eq!(code, 0);
     let s = String::from_utf8(buf).expect("utf8");
     assert!(s.contains("-feat-x] "));
@@ -71,7 +71,10 @@ fn exec_propagates_nonzero_exit_code() {
         &mut buf,
     )
     .expect("exec_in_target");
-    assert_eq!(code, 7, "exec should propagate the child's exit code verbatim");
+    assert_eq!(
+        code, 7,
+        "exec should propagate the child's exit code verbatim"
+    );
 }
 
 #[test]

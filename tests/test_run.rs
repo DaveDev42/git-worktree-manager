@@ -33,16 +33,25 @@ fn run_executes_cmd_in_each_worktree_with_prefix() {
 
     // Both worktrees ran. The main repo's basename is unpredictable (TempDir)
     // so we assert presence of the [feat-x] prefix and the count of [<name>] occurrences.
-    assert!(s.contains("[") && s.contains("] "), "should be prefixed; got: {s}");
+    assert!(
+        s.contains("[") && s.contains("] "),
+        "should be prefixed; got: {s}"
+    );
     assert!(s.ends_with('\n'), "trailing newline expected");
 
     // feat-x basename ends with "-feat-x"
     let feat_x_lines = s.lines().filter(|l| l.contains("-feat-x] ")).count();
-    assert!(feat_x_lines >= 1, "feat-x prefix should appear at least once; got: {s}");
+    assert!(
+        feat_x_lines >= 1,
+        "feat-x prefix should appear at least once; got: {s}"
+    );
 
     // Main worktree appears as the other prefixed line(s).
     let prefix_lines = s.lines().filter(|l| l.starts_with('[')).count();
-    assert!(prefix_lines >= 2, "main + feat-x = at least 2 prefixed lines; got: {s}");
+    assert!(
+        prefix_lines >= 2,
+        "main + feat-x = at least 2 prefixed lines; got: {s}"
+    );
 }
 
 #[test]
@@ -93,7 +102,13 @@ fn run_no_main_skips_main_worktree() {
         repo.path().file_name().unwrap().to_str().unwrap()
     ));
 
-    let main_basename = repo.path().file_name().unwrap().to_str().unwrap().to_string();
+    let main_basename = repo
+        .path()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let mut buf: Vec<u8> = Vec::new();
     let code = run_in_scope_to_writer(
@@ -131,8 +146,18 @@ fn run_parallel_keeps_output_per_worktree_contiguous() {
     let _wt_b = repo.create_worktree("b");
     let _wt_c = repo.create_worktree("c");
 
-    let main_basename = repo.path().file_name().unwrap().to_str().unwrap().to_string();
-    let wt_a_path = repo.path().parent().unwrap().join(format!("{}-a", main_basename));
+    let main_basename = repo
+        .path()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let wt_a_path = repo
+        .path()
+        .parent()
+        .unwrap()
+        .join(format!("{}-a", main_basename));
 
     let mut buf: Vec<u8> = Vec::new();
     let code = run_in_scope_to_writer(
@@ -170,7 +195,10 @@ fn run_parallel_keeps_output_per_worktree_contiguous() {
                 break;
             }
         }
-        assert!(found, "did not find line1 for worktree suffix {suffix}; got: {s}");
+        assert!(
+            found,
+            "did not find line1 for worktree suffix {suffix}; got: {s}"
+        );
     }
 
     // Main worktree (no suffix; basename only).

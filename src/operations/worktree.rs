@@ -192,17 +192,24 @@ pub fn create_worktree(
         Some(&repo),
     );
 
-    // Launch AI tool in the new worktree
+    // Launch AI tool in the new worktree.
+    // Phase 6.2: delegate to spawn_in_worktree unless legacy term/bg/fg flags
+    // are present, in which case fall back to launch_ai_tool so that existing
+    // `gw new -T tmux` etc. keep working until Phase 6.3 drops those flags.
     if !no_ai {
-        let _ = super::ai_tools::launch_ai_tool(
-            &worktree_path,
-            term,
-            false,
-            None,
-            initial_prompt,
-            bg,
-            fg,
-        );
+        if term.is_some() || bg || fg {
+            let _ = super::ai_tools::launch_ai_tool(
+                &worktree_path,
+                term,
+                false,
+                None,
+                initial_prompt,
+                bg,
+                fg,
+            );
+        } else {
+            let _ = super::ai_tools::spawn_in_worktree(&worktree_path, branch_name, initial_prompt);
+        }
     }
 
     Ok(worktree_path)

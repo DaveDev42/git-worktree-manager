@@ -294,6 +294,132 @@ pub fn resume_worktree(
     Ok(())
 }
 
+/// Launch the configured AI tool inside an existing worktree.
+///
+/// Used by both `gw new` (after worktree creation) and `gw spawn`. Honors the
+/// default launch method from config; no terminal-override / fg / bg knobs.
+pub fn spawn_in_worktree(worktree_path: &Path, _name: &str, prompt: Option<&str>) -> Result<()> {
+    let method = config::get_default_launch_method()?;
+
+    let ai_cmd_parts = if let Some(p) = prompt {
+        config::get_ai_tool_merge_command(p)?
+    } else {
+        get_ai_tool_command()?
+    };
+
+    if ai_cmd_parts.is_empty() {
+        return Ok(());
+    }
+
+    let ai_tool_name = ai_cmd_parts[0].clone();
+
+    if !git::has_command(&ai_tool_name) {
+        println!(
+            "{} {} not detected. Install it or update config with 'cw config set ai-tool <tool>'.\n",
+            console::style("!").yellow(),
+            ai_tool_name,
+        );
+        return Ok(());
+    }
+
+    let spec = SpawnSpec::new(ai_cmd_parts, worktree_path.to_path_buf());
+    let (cmd, _) = spawn_spec::materialize(&spec)?;
+
+    let ai_tool_name = ai_tool_name.as_str();
+    match method {
+        LaunchMethod::Foreground => {
+            println!(
+                "{}\n",
+                console::style(messages::starting_ai_tool_foreground(ai_tool_name)).cyan()
+            );
+            let _session_lock =
+                match crate::operations::lockfile::acquire(worktree_path, ai_tool_name) {
+                    Ok(lock) => Some(lock),
+                    Err(err @ crate::operations::lockfile::AcquireError::ForeignLock(_)) => {
+                        return Err(crate::error::CwError::Other(format!(
+                            "{}; exit that session first",
+                            err
+                        )));
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "{} could not write session lock: {}",
+                            console::style("warning:").yellow(),
+                            e
+                        );
+                        None
+                    }
+                };
+            launchers::foreground::run(worktree_path, &cmd);
+        }
+        LaunchMethod::Detach => {
+            launchers::detached::run(worktree_path, &cmd);
+            println!(
+                "{} {} detached (survives terminal close)\n",
+                console::style("*").green().bold(),
+                ai_tool_name
+            );
+        }
+        // iTerm
+        LaunchMethod::ItermWindow => {
+            launchers::iterm::launch_window(worktree_path, &cmd, ai_tool_name)?
+        }
+        LaunchMethod::ItermTab => launchers::iterm::launch_tab(worktree_path, &cmd, ai_tool_name)?,
+        LaunchMethod::ItermPaneH => {
+            launchers::iterm::launch_pane(worktree_path, &cmd, ai_tool_name, true)?
+        }
+        LaunchMethod::ItermPaneV => {
+            launchers::iterm::launch_pane(worktree_path, &cmd, ai_tool_name, false)?
+        }
+        // tmux
+        LaunchMethod::Tmux => {
+            let sn = generate_session_name(worktree_path);
+            launchers::tmux::launch_session(worktree_path, &cmd, ai_tool_name, &sn)?;
+        }
+        LaunchMethod::TmuxWindow => {
+            launchers::tmux::launch_window(worktree_path, &cmd, ai_tool_name)?
+        }
+        LaunchMethod::TmuxPaneH => {
+            launchers::tmux::launch_pane(worktree_path, &cmd, ai_tool_name, true)?
+        }
+        LaunchMethod::TmuxPaneV => {
+            launchers::tmux::launch_pane(worktree_path, &cmd, ai_tool_name, false)?
+        }
+        // Zellij
+        LaunchMethod::Zellij => {
+            let sn = generate_session_name(worktree_path);
+            launchers::zellij::launch_session(worktree_path, &cmd, ai_tool_name, &sn)?;
+        }
+        LaunchMethod::ZellijTab => {
+            launchers::zellij::launch_tab(worktree_path, &cmd, ai_tool_name)?
+        }
+        LaunchMethod::ZellijPaneH => {
+            launchers::zellij::launch_pane(worktree_path, &cmd, ai_tool_name, true)?
+        }
+        LaunchMethod::ZellijPaneV => {
+            launchers::zellij::launch_pane(worktree_path, &cmd, ai_tool_name, false)?
+        }
+        // WezTerm
+        LaunchMethod::WeztermWindow => {
+            launchers::wezterm::launch_window(worktree_path, &cmd, ai_tool_name)?
+        }
+        LaunchMethod::WeztermTab => {
+            launchers::wezterm::launch_tab(worktree_path, &cmd, ai_tool_name)?
+        }
+        LaunchMethod::WeztermTabBg => {
+            launchers::wezterm::launch_tab_bg(worktree_path, &cmd, ai_tool_name)?
+        }
+        LaunchMethod::WeztermPaneH => {
+            launchers::wezterm::launch_pane(worktree_path, &cmd, ai_tool_name, true)?
+        }
+        LaunchMethod::WeztermPaneV => {
+            launchers::wezterm::launch_pane(worktree_path, &cmd, ai_tool_name, false)?
+        }
+    }
+
+    Ok(())
+}
+
 /// Generate a session name from path with length limit.
 fn generate_session_name(path: &Path) -> String {
     let config = config::load_config().unwrap_or_default();

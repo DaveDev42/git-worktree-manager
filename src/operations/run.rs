@@ -16,7 +16,15 @@ pub fn run_in_scope(
     continue_on_error: bool,
 ) -> Result<i32> {
     let mut stdout = std::io::stdout().lock();
-    run_in_scope_to_writer(cwd, cmd, only, no_main, jobs, continue_on_error, &mut stdout)
+    run_in_scope_to_writer(
+        cwd,
+        cmd,
+        only,
+        no_main,
+        jobs,
+        continue_on_error,
+        &mut stdout,
+    )
 }
 
 /// Returns the last non-zero exit code observed (or 0 if all succeeded).
@@ -87,11 +95,7 @@ pub fn run_in_scope_to_writer<W: Write>(
     Ok(last_failure)
 }
 
-pub(crate) fn run_capture_one(
-    name: &str,
-    path: &Path,
-    cmd: &[String],
-) -> Result<(String, i32)> {
+pub(crate) fn run_capture_one(name: &str, path: &Path, cmd: &[String]) -> Result<(String, i32)> {
     let prefix = format!("[{}] ", name);
     let mut child = Command::new(&cmd[0])
         .args(&cmd[1..])

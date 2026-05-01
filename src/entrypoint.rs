@@ -104,6 +104,34 @@ pub fn run() {
             fg,
         }) => ai_tools::resume_worktree(branch.as_deref(), term.as_deref(), bg, fg),
 
+        Some(Commands::Spawn {
+            target,
+            prompt,
+            prompt_file,
+            prompt_stdin,
+        }) => (|| -> Result<()> {
+            let resolved_prompt =
+                resolve_prompt(prompt, prompt_file.as_deref(), prompt_stdin, || {
+                    let mut buf = String::new();
+                    std::io::stdin().read_to_string(&mut buf)?;
+                    Ok(buf)
+                })?;
+            let cwd = std::env::current_dir()?;
+            let target_path = match target {
+                Some(t) => {
+                    let main_repo = crate::git::get_main_repo_root(Some(&cwd))?;
+                    helpers::resolve_target_strict(&main_repo, &t)?.path
+                }
+                None => crate::git::get_repo_root(Some(&cwd))?,
+            };
+            let name = target_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("?")
+                .to_string();
+            ai_tools::spawn_in_worktree(&target_path, &name, resolved_prompt.as_deref())
+        })(),
+
         Some(Commands::Rm {
             targets,
             interactive,
@@ -119,12 +147,7 @@ pub fn run() {
                 git_force: !no_force,
                 allow_busy: force,
             };
-            match crate::operations::rm_batch::rm_worktrees(
-                targets,
-                interactive,
-                dry_run,
-                flags,
-            ) {
+            match crate::operations::rm_batch::rm_worktrees(targets, interactive, dry_run, flags) {
                 Ok(0) => Ok(()),
                 Ok(code) => Err(crate::error::CwError::ExitCode(code)),
                 Err(e) => Err(e),
@@ -160,9 +183,22 @@ pub fn run() {
             session_start,
             quiet,
         }) => diagnostics::doctor(session_start, quiet),
-        Some(Commands::Run { only, no_main, jobs, continue_on_error, cmd }) => (|| -> Result<()> {
+        Some(Commands::Run {
+            only,
+            no_main,
+            jobs,
+            continue_on_error,
+            cmd,
+        }) => (|| -> Result<()> {
             let cwd = std::env::current_dir()?;
-            let code = run::run_in_scope(&cwd, &cmd, only.as_deref(), no_main, jobs, continue_on_error)?;
+            let code = run::run_in_scope(
+                &cwd,
+                &cmd,
+                only.as_deref(),
+                no_main,
+                jobs,
+                continue_on_error,
+            )?;
             if code != 0 {
                 return Err(crate::error::CwError::ExitCode(code));
             }
