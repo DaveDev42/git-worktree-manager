@@ -8,7 +8,6 @@ use crate::constants::{
 };
 use crate::error::Result;
 use crate::git;
-use crate::registry;
 
 use super::display::get_worktree_status;
 use super::pr_cache::PrCache;
@@ -90,24 +89,10 @@ fn doctor_session_start(quiet: bool) -> Result<()> {
     } else {
         "?".into()
     };
-    let registered = {
-        let registry = registry::load_registry();
-        cwd.as_ref()
-            .map(|p| {
-                let key = p
-                    .canonicalize()
-                    .unwrap_or_else(|_| p.clone())
-                    .to_string_lossy()
-                    .to_string();
-                registry.repositories.contains_key(&key)
-            })
-            .unwrap_or(false)
-    };
-
     let prefix = if quiet { "gw:" } else { "gw doctor:" };
     println!(
-        "{} cwd={} ok={} branch={} base={} registered={}",
-        prefix, cwd_str, cwd_ok, branch, base, registered,
+        "{} cwd={} ok={} branch={} base={}",
+        prefix, cwd_str, cwd_ok, branch, base,
     );
     Ok(())
 }

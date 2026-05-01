@@ -2,7 +2,6 @@
 ///
 /// Mirrors the Typer-based CLI in src/git_worktree_manager/cli.py.
 pub mod completions;
-pub mod global;
 
 use clap::{Args, Parser, Subcommand, ValueHint};
 use std::path::PathBuf;

@@ -29,7 +29,7 @@ pub fn print_dim(text: &str) {
     let _ = Term::stdout().write_line(&format!("{}", style(text).dim()));
 }
 
-/// Status → color mapping used by list, tree, global_ops.
+/// Status → color mapping used by list and display.
 pub fn status_style(status: &str) -> Style {
     match status {
         "active" => Style::new().green().bold(),

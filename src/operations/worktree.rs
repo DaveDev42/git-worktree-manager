@@ -11,7 +11,6 @@ use crate::constants::{
 use crate::error::{CwError, Result};
 use crate::git;
 use crate::hooks;
-use crate::registry;
 use crate::shared_files;
 
 use super::helpers::build_hook_context;
@@ -175,9 +174,6 @@ pub fn create_worktree(
     git::set_config(&bb_key, &base, Some(&repo))?;
     git::set_config(&bp_key, &repo.to_string_lossy(), Some(&repo))?;
     git::set_config(&ib_key, branch_name, Some(&repo))?;
-
-    // Register in global registry (non-fatal)
-    let _ = registry::register_repo(&repo);
 
     println!(
         "{} Worktree created successfully\n",
@@ -360,8 +356,6 @@ pub(crate) fn delete_one(
         Some(main_repo),
         Some(main_repo),
     );
-    let _ = registry::update_last_seen(main_repo);
-
     DeletionOutcome::Deleted {
         branch: branch_name.map(str::to_string),
         path: worktree_path.to_path_buf(),

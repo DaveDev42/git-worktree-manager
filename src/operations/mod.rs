@@ -7,7 +7,6 @@ pub mod claude_session;
 pub mod delete_batch;
 pub mod diagnostics;
 pub mod display;
-pub mod global_ops;
 pub mod guard;
 pub mod helpers;
 pub mod launchers;
