@@ -8,12 +8,12 @@ use git_worktree_manager::operations::helpers::resolve_target_strict;
 #[test]
 fn resolve_strict_exact_worktree_name_wins() {
     let repo = TestRepo::new();
-    repo.create_worktree("feat-x");
+    let wt_path = repo.create_worktree("feat-x");
 
-    // The worktree directory name follows the <repo>-<branch> convention,
-    // so the "name" (basename) is something like "<tmpdir>-feat-x".
-    // resolve_target_strict accepts the branch name as both branch and name.
-    let result = resolve_target_strict(repo.path(), "feat-x").unwrap();
+    // The worktree directory basename follows the <repo-tmpname>-<branch> convention.
+    // Pass the full basename to verify that rule 1 (worktree name) fires, not rule 2.
+    let basename = wt_path.file_name().unwrap().to_str().unwrap();
+    let result = resolve_target_strict(repo.path(), basename).unwrap();
     assert_eq!(result.branch, "feat-x");
 }
 

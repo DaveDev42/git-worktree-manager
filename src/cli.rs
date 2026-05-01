@@ -86,7 +86,7 @@ pub enum Commands {
 
     /// Resume AI work in a worktree
     Resume {
-        /// Branch name to resume (default: current worktree)
+        /// Branch name, worktree name, or path to resume (default: current worktree)
         branch: Option<String>,
 
         /// Terminal launch method
@@ -102,14 +102,6 @@ pub enum Commands {
         /// without a foreground variant.
         #[arg(long)]
         fg: bool,
-
-        /// Resolve target as worktree name (instead of branch)
-        #[arg(short, long)]
-        worktree: bool,
-
-        /// Resolve target as branch name (instead of worktree)
-        #[arg(short, long, conflicts_with = "worktree")]
-        by_branch: bool,
     },
 
     /// Delete one or more worktrees.

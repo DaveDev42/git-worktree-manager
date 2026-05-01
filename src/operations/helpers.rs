@@ -206,7 +206,7 @@ pub fn get_worktree_metadata(branch: &str, repo: &Path) -> Result<(String, PathB
 /// 2. **Branch name** — short branch name (after stripping `refs/heads/`) equals `target`.
 /// 3. **Absolute path** — the worktree path equals `target`.
 ///
-/// Returns [`CwError::Other`] when no worktree matches.
+/// Returns [`CwError::WorktreeNotFound`] when no worktree matches.
 pub fn resolve_target_strict(repo_root: &Path, target: &str) -> Result<StrictTarget> {
     let worktrees = git::parse_worktrees(repo_root)?;
 
@@ -269,9 +269,8 @@ pub fn resolve_target_strict(repo_root: &Path, target: &str) -> Result<StrictTar
         }
     }
 
-    Err(CwError::Other(format!(
-        "no worktree matches '{}': not a worktree name, branch, or path",
-        target
+    Err(CwError::WorktreeNotFound(messages::worktree_not_found(
+        target,
     )))
 }
 

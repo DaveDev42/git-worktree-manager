@@ -101,12 +101,7 @@ pub fn run() {
             term,
             bg,
             fg,
-            worktree: is_worktree,
-            by_branch,
-        }) => {
-            let lookup_mode = resolve_lookup_mode(is_worktree, by_branch);
-            ai_tools::resume_worktree(branch.as_deref(), term.as_deref(), lookup_mode, bg, fg)
-        }
+        }) => ai_tools::resume_worktree(branch.as_deref(), term.as_deref(), bg, fg),
 
         Some(Commands::Delete {
             targets,

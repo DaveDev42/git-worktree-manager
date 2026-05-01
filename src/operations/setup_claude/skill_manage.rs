@@ -285,12 +285,11 @@ Delete a worktree.
 ### `gw list`
 List all worktrees with status indicators (active, clean, modified, stale). Alias: `gw ls`.
 
-### `gw resume [branch] [OPTIONS]`
+### `gw resume [TARGET] [OPTIONS]`
 Resume AI work in a worktree. Auto-detects existing Claude sessions and uses `--continue`.
+Target is resolved in order: exact worktree name → exact branch name → exact path.
 - `-T, --term <METHOD>` — Terminal launch method (same format as `gw new`)
 - `--bg` — Launch AI tool in background
-- `-w, --worktree` — Resolve as worktree name
-- `-b, --by-branch` — Resolve as branch name
 
 ## Maintenance
 

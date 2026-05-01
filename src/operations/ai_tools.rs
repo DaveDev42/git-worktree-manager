@@ -17,7 +17,7 @@ use crate::hooks;
 use crate::messages;
 use crate::session;
 
-use super::helpers::{build_hook_context, resolve_worktree_target};
+use super::helpers::{build_hook_context, resolve_target_strict, resolve_worktree_target};
 use super::launchers;
 use super::spawn_spec::{self, SpawnSpec};
 
@@ -165,17 +165,25 @@ pub fn launch_ai_tool(
 }
 
 /// Resume AI work in a worktree with context restoration.
+///
+/// Target resolution uses strict ordered rules: exact worktree name → exact branch
+/// name → exact path. When no target is given, the current working directory is used.
 pub fn resume_worktree(
     worktree: Option<&str>,
     term: Option<&str>,
-    lookup_mode: Option<&str>,
     bg: bool,
     fg: bool,
 ) -> Result<()> {
-    let resolved = resolve_worktree_target(worktree, lookup_mode)?;
-    let worktree_path = resolved.path;
-    let branch_name = resolved.branch;
-    let worktree_repo = resolved.repo;
+    let (worktree_path, branch_name, worktree_repo) = if let Some(target) = worktree {
+        let main_repo = git::get_main_repo_root(None)?;
+        let strict = resolve_target_strict(&main_repo, target)?;
+        let repo = git::get_repo_root(Some(&strict.path))?;
+        (strict.path, strict.branch, repo)
+    } else {
+        // No target — use current working directory.
+        let resolved = resolve_worktree_target(None, None)?;
+        (resolved.path, resolved.branch, resolved.repo)
+    };
 
     // Pre-resume hooks
     let base_key = format_config_key(CONFIG_KEY_BASE_BRANCH, &branch_name);
