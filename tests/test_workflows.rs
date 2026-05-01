@@ -73,21 +73,6 @@ fn test_workflow_path_list_branches() {
 }
 
 #[test]
-fn test_workflow_backup_create_list() {
-    let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "backup-wf", "--no-term"]));
-
-    let output = repo.cw(&["backup", "create", "backup-wf"]);
-    assert!(output.status.success());
-
-    let list = repo.cw_stdout(&["backup", "list"]);
-    assert!(
-        list.contains("backup-wf") || list.contains("Backup"),
-        "Should list the backup"
-    );
-}
-
-#[test]
 fn test_workflow_new_with_prompt_file() {
     use std::io::Write;
     let repo = TestRepo::new();

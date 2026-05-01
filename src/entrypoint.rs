@@ -7,7 +7,7 @@
 
 use clap::Parser;
 
-use crate::cli::{BackupAction, Cli, Commands, HookAction, StashAction};
+use crate::cli::{Cli, Commands, HookAction};
 use crate::config;
 use crate::console as cwconsole;
 use crate::constants;
@@ -15,8 +15,8 @@ use crate::cwshare_setup;
 use crate::error::{CwError, Result};
 use crate::hooks;
 use crate::operations::{
-    ai_tools, backup, diagnostics, display, global_ops, guard, helpers, path_cmd, setup_claude,
-    shell, spawn_spec, stash, worktree,
+    ai_tools, diagnostics, display, global_ops, guard, helpers, path_cmd, setup_claude, shell,
+    spawn_spec, worktree,
 };
 use crate::resolve_prompt;
 use crate::shell_functions;
@@ -153,31 +153,6 @@ pub fn run() {
                 Err(e) => Err(e),
             }
         }
-
-        Some(Commands::Backup { action }) => match action {
-            BackupAction::Create {
-                branch,
-                all,
-                output,
-            } => backup::backup_worktree(
-                branch.as_deref(),
-                all,
-                output.as_deref().map(std::path::Path::new),
-            ),
-            BackupAction::List { branch, all } => backup::list_backups(branch.as_deref(), all),
-            BackupAction::Restore { branch, path, id } => {
-                backup::restore_worktree(&branch, path.as_deref(), id.as_deref())
-            }
-        },
-
-        Some(Commands::Stash { action }) => match action {
-            StashAction::Save { message } => stash::stash_save(message.as_deref()),
-            StashAction::List => stash::stash_list(),
-            StashAction::Apply {
-                target_branch,
-                stash: stash_ref,
-            } => stash::stash_apply(&target_branch, &stash_ref),
-        },
 
         Some(Commands::Hook { action }) => match action {
             HookAction::Add {

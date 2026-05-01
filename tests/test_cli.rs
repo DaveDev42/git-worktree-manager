@@ -22,10 +22,8 @@ fn test_help() {
         .stdout(predicate::str::contains("resume"))
         .stdout(predicate::str::contains("delete"))
         .stdout(predicate::str::contains("doctor"))
-        .stdout(predicate::str::contains("stash"))
         .stdout(predicate::str::contains("hook"))
-        .stdout(predicate::str::contains("shell"))
-        .stdout(predicate::str::contains("backup"));
+        .stdout(predicate::str::contains("shell"));
 }
 
 #[test]
@@ -73,26 +71,6 @@ fn test_shell_function_powershell() {
 #[test]
 fn test_shell_function_invalid() {
     cw().args(["_shell-function", "tcsh"]).assert().failure();
-}
-
-#[test]
-fn test_backup_subcommands_help() {
-    cw().args(["backup", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("create"))
-        .stdout(predicate::str::contains("list"))
-        .stdout(predicate::str::contains("restore"));
-}
-
-#[test]
-fn test_stash_subcommands_help() {
-    cw().args(["stash", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("save"))
-        .stdout(predicate::str::contains("list"))
-        .stdout(predicate::str::contains("apply"));
 }
 
 #[test]

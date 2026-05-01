@@ -184,18 +184,6 @@ pub enum Commands {
         cache: CacheControl,
     },
 
-    /// Backup and restore worktrees
-    Backup {
-        #[command(subcommand)]
-        action: BackupAction,
-    },
-
-    /// Stash management (worktree-aware)
-    Stash {
-        #[command(subcommand)]
-        action: StashAction,
-    },
-
     /// Manage lifecycle hooks
     Hook {
         #[command(subcommand)]
@@ -286,65 +274,6 @@ pub enum Commands {
         /// spec for the current worktree from `<git-dir>/gw-spawn-last.json`.
         #[arg(value_hint = ValueHint::FilePath)]
         spec: Option<PathBuf>,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-pub enum BackupAction {
-    /// Create backup of worktree(s) using git bundle
-    Create {
-        /// Branch name to backup (default: current worktree)
-        branch: Option<String>,
-
-        /// Backup all worktrees
-        #[arg(long)]
-        all: bool,
-
-        /// Output directory for backups
-        #[arg(short, long)]
-        output: Option<String>,
-    },
-    /// List available backups
-    List {
-        /// Filter by branch name
-        branch: Option<String>,
-
-        /// Show all backups (not just current repo)
-        #[arg(short, long)]
-        all: bool,
-    },
-    /// Restore worktree from backup
-    Restore {
-        /// Branch name to restore
-        branch: String,
-
-        /// Custom path for restored worktree
-        #[arg(short, long)]
-        path: Option<String>,
-
-        /// Backup ID (timestamp) to restore (default: latest)
-        #[arg(long)]
-        id: Option<String>,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-pub enum StashAction {
-    /// Save changes in current worktree to stash
-    Save {
-        /// Optional message to describe the stash
-        message: Option<String>,
-    },
-    /// List all stashes organized by worktree/branch
-    List,
-    /// Apply a stash to a different worktree
-    Apply {
-        /// Branch name of worktree to apply stash to
-        target_branch: String,
-
-        /// Stash reference (default: stash@{0})
-        #[arg(short, long, default_value = "stash@{0}")]
-        stash: String,
     },
 }
 

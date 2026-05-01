@@ -1,6 +1,5 @@
 /// Operations module — business logic for all commands.
 pub mod ai_tools;
-pub mod backup;
 pub mod busy;
 pub mod busy_messages;
 pub mod claude_process;
@@ -18,7 +17,6 @@ pub mod pr_cache;
 pub mod setup_claude;
 pub mod shell;
 pub mod spawn_spec;
-pub mod stash;
 #[cfg(test)]
 pub(crate) mod test_env;
 pub mod worktree;
