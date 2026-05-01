@@ -54,6 +54,27 @@ fn exec_resolves_by_branch_name() {
 }
 
 #[test]
+fn exec_propagates_nonzero_exit_code() {
+    let repo = TestRepo::new();
+    let _wt = repo.create_worktree("feat-x");
+
+    let wt_path = repo.path().parent().unwrap().join(format!(
+        "{}-feat-x",
+        repo.path().file_name().unwrap().to_str().unwrap()
+    ));
+
+    let mut buf: Vec<u8> = Vec::new();
+    let code = exec_in_target(
+        &wt_path,
+        "feat-x",
+        &["sh".to_string(), "-c".to_string(), "exit 7".to_string()],
+        &mut buf,
+    )
+    .expect("exec_in_target");
+    assert_eq!(code, 7, "exec should propagate the child's exit code verbatim");
+}
+
+#[test]
 fn exec_unknown_target_errors() {
     let repo = TestRepo::new();
     // No worktree created — only the main repo exists.
