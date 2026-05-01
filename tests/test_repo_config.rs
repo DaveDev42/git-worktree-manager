@@ -44,3 +44,62 @@ fn invalid_json_yields_none() {
         "broken JSON should fail closed (return None)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Layered config resolution tests (Phase 7.2)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn repo_config_overrides_global_keys() {
+    use std::path::PathBuf;
+    let global_dir = tempdir().unwrap();
+    let global_path: PathBuf = global_dir.path().join("config.json");
+    std::fs::write(
+        &global_path,
+        r#"{"ai_tool":{"command":"claude","args":[]}}"#,
+    )
+    .unwrap();
+
+    let repo = tempdir().unwrap();
+    std::fs::write(
+        repo.path().join(".cwconfig.json"),
+        r#"{"ai_tool":{"command":"codex","args":[]}}"#,
+    )
+    .unwrap();
+
+    let cfg =
+        git_worktree_manager::config::load_effective_config_with_global(repo.path(), &global_path)
+            .unwrap();
+    assert_eq!(cfg.ai_tool.command, "codex");
+}
+
+#[test]
+fn repo_config_extends_global_when_no_overlap() {
+    let global_dir = tempdir().unwrap();
+    let global_path = global_dir.path().join("config.json");
+    std::fs::write(
+        &global_path,
+        r#"{"ai_tool":{"command":"claude","args":["--verbose"]}}"#,
+    )
+    .unwrap();
+
+    let repo = tempdir().unwrap();
+    // No .cwconfig.json — global is the only override.
+    let cfg =
+        git_worktree_manager::config::load_effective_config_with_global(repo.path(), &global_path)
+            .unwrap();
+    assert_eq!(cfg.ai_tool.command, "claude");
+    assert_eq!(cfg.ai_tool.args, vec!["--verbose"]);
+}
+
+#[test]
+fn missing_global_and_repo_returns_defaults() {
+    let global_dir = tempdir().unwrap();
+    let global_path = global_dir.path().join("nonexistent.json"); // does not exist
+    let repo = tempdir().unwrap();
+    let cfg =
+        git_worktree_manager::config::load_effective_config_with_global(repo.path(), &global_path)
+            .unwrap();
+    let default = git_worktree_manager::config::Config::default();
+    assert_eq!(cfg.ai_tool.command, default.ai_tool.command);
+}

@@ -3,7 +3,7 @@
 /// Supports multiple AI coding assistants with customizable commands.
 /// Configuration stored in ~/.config/git-worktree-manager/config.json.
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -293,6 +293,69 @@ pub fn load_config() -> Result<Config> {
     })
 }
 
+/// Load configuration with the repo-local `.cwconfig.json` (if any) deep-merged
+/// over the global config. Layer order (lowest to highest precedence):
+///
+///   1. `Config::default()`
+///   2. Global `~/.config/git-worktree-manager/config.json` (or legacy path)
+///   3. Repo-local `.cwconfig.json` walked up from `cwd`
+///
+/// Returns `Config::default()` if no config files are found.
+pub fn load_effective_config(cwd: &Path) -> Result<Config> {
+    load_effective_config_with_global(cwd, &get_config_path())
+}
+
+/// Same as [`load_effective_config`] but accepts an explicit global config path.
+/// Carved out so tests can drive the global layer without setting `HOME`.
+pub fn load_effective_config_with_global(cwd: &Path, global_path: &Path) -> Result<Config> {
+    let mut merged = serde_json::to_value(Config::default())?;
+
+    // Layer 2: global file (or legacy fallback if explicit path absent).
+    let global_value = if global_path.exists() {
+        Some(read_json_value(global_path)?)
+    } else if global_path == get_config_path().as_path() {
+        // Only fall through to legacy when the caller passed the *default* path —
+        // tests that pass an explicit synthetic path should not pick up the user's
+        // real legacy file.
+        let legacy = get_legacy_config_path();
+        if legacy.exists() {
+            Some(read_json_value(&legacy)?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    if let Some(v) = global_value {
+        merged = deep_merge(merged, v);
+    }
+
+    // Layer 3: repo-local `.cwconfig.json` walked up from cwd.
+    if let Some(repo_value) = crate::repo_config::load_repo_config(cwd)? {
+        merged = deep_merge(merged, repo_value);
+    }
+
+    serde_json::from_value(merged)
+        .map_err(|e| CwError::Config(format!("invalid effective config: {}", e)))
+}
+
+fn read_json_value(path: &Path) -> Result<serde_json::Value> {
+    let content = std::fs::read_to_string(path).map_err(|e| {
+        CwError::Config(format!(
+            "failed to load config from {}: {}",
+            path.display(),
+            e
+        ))
+    })?;
+    serde_json::from_str(&content).map_err(|e| {
+        CwError::Config(format!(
+            "failed to parse config from {}: {}",
+            path.display(),
+            e
+        ))
+    })
+}
+
 /// Save configuration to file.
 pub fn save_config(config: &Config) -> Result<()> {
     let config_path = get_config_path();
@@ -314,6 +377,11 @@ pub fn save_config(config: &Config) -> Result<()> {
 ///
 /// Priority: CW_AI_TOOL env > config file > default ("claude").
 pub fn get_ai_tool_command() -> Result<Vec<String>> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    get_ai_tool_command_for_cwd(&cwd)
+}
+
+pub fn get_ai_tool_command_for_cwd(cwd: &Path) -> Result<Vec<String>> {
     // Check environment variable first
     if let Ok(env_tool) = std::env::var("CW_AI_TOOL") {
         if env_tool.trim().is_empty() {
@@ -322,7 +390,7 @@ pub fn get_ai_tool_command() -> Result<Vec<String>> {
         return Ok(env_tool.split_whitespace().map(String::from).collect());
     }
 
-    let config = load_config()?;
+    let config = load_effective_config(cwd)?;
     let command = &config.ai_tool.command;
     let args = &config.ai_tool.args;
 
@@ -344,6 +412,11 @@ pub fn get_ai_tool_command() -> Result<Vec<String>> {
 
 /// Get the AI tool resume command.
 pub fn get_ai_tool_resume_command() -> Result<Vec<String>> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    get_ai_tool_resume_command_for_cwd(&cwd)
+}
+
+pub fn get_ai_tool_resume_command_for_cwd(cwd: &Path) -> Result<Vec<String>> {
     if let Ok(env_tool) = std::env::var("CW_AI_TOOL") {
         if env_tool.trim().is_empty() {
             return Ok(Vec::new());
@@ -353,7 +426,7 @@ pub fn get_ai_tool_resume_command() -> Result<Vec<String>> {
         return Ok(parts);
     }
 
-    let config = load_config()?;
+    let config = load_effective_config(cwd)?;
     let command = &config.ai_tool.command;
     let args = &config.ai_tool.args;
 
@@ -387,6 +460,11 @@ pub fn get_ai_tool_resume_command() -> Result<Vec<String>> {
 
 /// Get the AI tool merge command.
 pub fn get_ai_tool_merge_command(prompt: &str) -> Result<Vec<String>> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    get_ai_tool_merge_command_for_cwd(&cwd, prompt)
+}
+
+pub fn get_ai_tool_merge_command_for_cwd(cwd: &Path, prompt: &str) -> Result<Vec<String>> {
     if let Ok(env_tool) = std::env::var("CW_AI_TOOL") {
         if env_tool.trim().is_empty() {
             return Ok(Vec::new());
@@ -396,7 +474,7 @@ pub fn get_ai_tool_merge_command(prompt: &str) -> Result<Vec<String>> {
         return Ok(parts);
     }
 
-    let config = load_config()?;
+    let config = load_effective_config(cwd)?;
     let command = &config.ai_tool.command;
     let args = &config.ai_tool.args;
 
@@ -450,7 +528,12 @@ pub fn get_ai_tool_merge_command(prompt: &str) -> Result<Vec<String>> {
 /// Appends the prompt as a positional argument so the AI tool starts in interactive mode
 /// with the given task. For Claude Code: `claude "<prompt>"` starts interactive with initial prompt.
 pub fn get_ai_tool_delegate_command(prompt: &str) -> Result<Vec<String>> {
-    let mut cmd = get_ai_tool_command()?;
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    get_ai_tool_delegate_command_for_cwd(&cwd, prompt)
+}
+
+pub fn get_ai_tool_delegate_command_for_cwd(cwd: &Path, prompt: &str) -> Result<Vec<String>> {
+    let mut cmd = get_ai_tool_command_for_cwd(cwd)?;
     if cmd.is_empty() {
         return Ok(cmd);
     }
@@ -460,11 +543,16 @@ pub fn get_ai_tool_delegate_command(prompt: &str) -> Result<Vec<String>> {
 
 /// Check if the currently configured AI tool is Claude-based.
 pub fn is_claude_tool() -> Result<bool> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    is_claude_tool_for_cwd(&cwd)
+}
+
+pub fn is_claude_tool_for_cwd(cwd: &Path) -> Result<bool> {
     if let Ok(env_tool) = std::env::var("CW_AI_TOOL") {
         let first_word = env_tool.split_whitespace().next().unwrap_or("");
         return Ok(first_word == "claude");
     }
-    let config = load_config()?;
+    let config = load_effective_config(cwd)?;
     Ok(claude_preset_names().contains(&config.ai_tool.command.as_str()))
 }
 
@@ -621,6 +709,11 @@ pub fn parse_term_option(term_value: Option<&str>) -> Result<(LaunchMethod, Opti
 
 /// Get default launch method from config or environment.
 pub fn get_default_launch_method() -> Result<LaunchMethod> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    get_default_launch_method_for_cwd(&cwd)
+}
+
+pub fn get_default_launch_method_for_cwd(cwd: &Path) -> Result<LaunchMethod> {
     // 1. Environment variable
     if let Ok(env_val) = std::env::var("CW_LAUNCH_METHOD") {
         let resolved = resolve_launch_alias(&env_val);
@@ -630,7 +723,7 @@ pub fn get_default_launch_method() -> Result<LaunchMethod> {
     }
 
     // 2. Config file
-    let config = load_config()?;
+    let config = load_effective_config(cwd)?;
     if let Some(ref method) = config.launch.method {
         let resolved = resolve_launch_alias(method);
         if let Some(m) = LaunchMethod::from_str_opt(&resolved) {
