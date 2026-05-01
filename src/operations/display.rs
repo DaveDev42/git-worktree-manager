@@ -242,7 +242,7 @@ fn prewarm_busy_caches() {
 
 /// List all worktrees, grouped by repository, using cwd-based scope discovery.
 pub fn list_worktrees(no_cache: bool) -> Result<()> {
-    let cwd = std::env::current_dir().unwrap_or_default();
+    let cwd = std::env::current_dir()?;
     let scope = crate::scope::discover_scope(&cwd)?;
 
     if scope.is_empty() {

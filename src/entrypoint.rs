@@ -337,7 +337,7 @@ fn run_hooks_manual(event: &str, dry_run: bool) -> Result<()> {
         return Ok(());
     }
 
-    let cwd = std::env::current_dir().unwrap_or_default();
+    let cwd = std::env::current_dir()?;
     let context = helpers::build_hook_context("", "", &cwd, &cwd, event, "manual");
 
     hooks::run_hooks(event, &context, Some(&cwd), None)?;
