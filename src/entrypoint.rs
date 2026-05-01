@@ -159,6 +159,8 @@ pub fn run() {
             session_start,
             quiet,
         }) => diagnostics::doctor(session_start, quiet),
+        Some(Commands::Run { .. }) => Err(CwError::Other("not implemented".into())),
+
         Some(Commands::Guard { tool_input }) => guard::run(&tool_input),
         Some(Commands::SetupClaude) => setup_claude::setup_claude(),
 

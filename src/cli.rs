@@ -183,6 +183,25 @@ pub enum Commands {
     /// Interactive shell integration setup
     ShellSetup,
 
+    /// Run cmd in every worktree in scope.
+    Run {
+        /// Glob filter on worktree name (e.g. 'feat-*').
+        #[arg(long)]
+        only: Option<String>,
+        /// Skip the main worktree.
+        #[arg(long = "no-main")]
+        no_main: bool,
+        /// Parallel worktrees.
+        #[arg(short = 'j', long, default_value = "1")]
+        jobs: usize,
+        /// Continue past per-worktree failures.
+        #[arg(long)]
+        continue_on_error: bool,
+        /// Command and args.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+        cmd: Vec<String>,
+    },
+
     /// Hook helper: read a Claude Code hook payload from stdin (or a file)
     /// and decide whether to allow or block the inbound tool use. Exits 0
     /// to allow; non-zero with stderr message to block.
