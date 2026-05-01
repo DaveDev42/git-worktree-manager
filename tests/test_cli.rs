@@ -291,15 +291,6 @@ fn test_delete_short_flags() {
 }
 
 #[test]
-fn test_delete_worktree_disambiguation_flag() {
-    cw().args(["delete", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--worktree"))
-        .stdout(predicate::str::contains("-w"));
-}
-
-#[test]
 fn test_generate_completion_bash() {
     cw().args(["--generate-completion", "bash"])
         .assert()

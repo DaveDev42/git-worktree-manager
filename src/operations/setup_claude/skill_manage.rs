@@ -279,8 +279,6 @@ Delete a worktree.
 - `-k, --keep-branch` — Keep the branch (only remove worktree directory)
 - `-r, --delete-remote` — Also delete the remote branch
 - `--no-force` — Don't use --force flag
-- `-w, --worktree` — Resolve target as worktree directory name
-- `-b, --branch` — Resolve target as branch name
 
 ### `gw list`
 List all worktrees with status indicators (active, clean, modified, stale). Alias: `gw ls`.

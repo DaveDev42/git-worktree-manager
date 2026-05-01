@@ -144,14 +144,6 @@ pub enum Commands {
         /// Don't use --force flag
         #[arg(long)]
         no_force: bool,
-
-        /// Resolve targets as worktree names (instead of branches)
-        #[arg(short, long)]
-        worktree: bool,
-
-        /// Resolve targets as branch names (instead of worktrees)
-        #[arg(short, long, conflicts_with = "worktree")]
-        branch: bool,
     },
 
     /// List all worktrees

@@ -13,6 +13,7 @@ use crate::error::{CwError, Result};
 use crate::git;
 use crate::operations::busy::{self, BusyInfo};
 use crate::operations::busy_messages;
+use crate::operations::helpers;
 use crate::operations::worktree::{self, DeleteFlags};
 
 /// Result of the interactive multi-select flow.
@@ -96,13 +97,14 @@ pub enum PlanEntry {
 
 /// Resolve a list of user inputs against the main repository.
 ///
-/// Inputs may be branch names, worktree directory names, or filesystem paths.
-/// Anything that does not resolve becomes a `PlanEntry::Unresolved`.
-pub fn resolve_all(inputs: &[String], lookup_mode: Option<&str>) -> Result<Vec<PlanEntry>> {
+/// Each input is resolved via strict ordered resolution:
+/// exact worktree name → exact branch name → exact path.
+/// Anything that does not match becomes a `PlanEntry::Unresolved`.
+pub fn resolve_all(inputs: &[String]) -> Result<Vec<PlanEntry>> {
     let main_repo = git::get_main_repo_root(None)?;
     let mut out = Vec::with_capacity(inputs.len());
     for input in inputs {
-        match resolve_one(input, &main_repo, lookup_mode) {
+        match resolve_one(input, &main_repo) {
             Some(resolved) => out.push(PlanEntry::Ready(resolved)),
             None => out.push(PlanEntry::Unresolved {
                 input: input.clone(),
@@ -113,43 +115,15 @@ pub fn resolve_all(inputs: &[String], lookup_mode: Option<&str>) -> Result<Vec<P
     Ok(out)
 }
 
-fn resolve_one(input: &str, main_repo: &Path, lookup_mode: Option<&str>) -> Option<Resolved> {
-    // 1) filesystem path
-    let p = PathBuf::from(input);
-    if p.exists() {
-        let resolved = p.canonicalize().unwrap_or(p);
-        let branch = crate::operations::helpers::get_branch_for_worktree(main_repo, &resolved);
-        return Some(Resolved {
+fn resolve_one(input: &str, main_repo: &Path) -> Option<Resolved> {
+    match helpers::resolve_target_strict(main_repo, input) {
+        Ok(strict) => Some(Resolved {
             input: input.to_string(),
-            path: resolved,
-            branch,
-        });
+            path: strict.path,
+            branch: Some(strict.branch),
+        }),
+        Err(_) => None,
     }
-
-    // 2) branch lookup
-    if lookup_mode != Some("worktree") {
-        if let Ok(Some(path)) = git::find_worktree_by_intended_branch(main_repo, input) {
-            return Some(Resolved {
-                input: input.to_string(),
-                path,
-                branch: Some(input.to_string()),
-            });
-        }
-    }
-
-    // 3) worktree name lookup
-    if lookup_mode != Some("branch") {
-        if let Ok(Some(path)) = git::find_worktree_by_name(main_repo, input) {
-            let branch = crate::operations::helpers::get_branch_for_worktree(main_repo, &path);
-            return Some(Resolved {
-                input: input.to_string(),
-                path,
-                branch,
-            });
-        }
-    }
-
-    None
 }
 
 /// Annotate resolved entries with busy status. Unresolved entries pass through.
@@ -420,7 +394,6 @@ pub fn delete_worktrees(
     interactive: bool,
     dry_run: bool,
     flags: DeleteFlags,
-    lookup_mode: Option<&str>,
 ) -> Result<i32> {
     // 1) Decide the initial input set.
     let initial_inputs: Vec<String> = if interactive {
@@ -438,13 +411,13 @@ pub fn delete_worktrees(
         // Legacy path: delegate to the single-target shim and return its exit
         // code. Keeps the "no-args inside a worktree deletes current" behavior
         // and its busy prompt exactly as today.
-        return legacy_single_current(flags, lookup_mode);
+        return legacy_single_current(flags);
     } else {
         inputs
     };
 
     // 2) Resolve all inputs against the repo.
-    let entries = resolve_all(&initial_inputs, lookup_mode)?;
+    let entries = resolve_all(&initial_inputs)?;
 
     // 2.5) If cwd is inside any resolved target, move to the main repo *before*
     // busy detection so the running `gw` process doesn't register as a busy
@@ -477,14 +450,13 @@ pub fn delete_worktrees(
     Ok(exit_code_from(&results))
 }
 
-fn legacy_single_current(flags: DeleteFlags, lookup_mode: Option<&str>) -> Result<i32> {
+fn legacy_single_current(flags: DeleteFlags) -> Result<i32> {
     match worktree::delete_worktree(
         None,
         flags.keep_branch,
         flags.delete_remote,
         flags.git_force,
         flags.allow_busy,
-        lookup_mode,
     ) {
         Ok(()) => Ok(0),
         Err(e) => {

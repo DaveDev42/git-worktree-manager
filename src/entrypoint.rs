@@ -111,10 +111,7 @@ pub fn run() {
             delete_remote,
             force,
             no_force,
-            worktree: is_worktree,
-            branch: is_branch,
         }) => {
-            let lookup_mode = resolve_lookup_mode(is_worktree, is_branch);
             let flags = crate::operations::worktree::DeleteFlags {
                 keep_branch,
                 delete_remote,
@@ -126,7 +123,6 @@ pub fn run() {
                 interactive,
                 dry_run,
                 flags,
-                lookup_mode,
             ) {
                 Ok(0) => Ok(()),
                 Ok(code) => Err(crate::error::CwError::ExitCode(code)),
@@ -248,16 +244,6 @@ pub fn run() {
         }
         cwconsole::print_error(&format!("Error: {}", e));
         std::process::exit(1);
-    }
-}
-
-fn resolve_lookup_mode(is_worktree: bool, is_branch: bool) -> Option<&'static str> {
-    if is_worktree {
-        Some("worktree")
-    } else if is_branch {
-        Some("branch")
-    } else {
-        None
     }
 }
 

@@ -382,10 +382,9 @@ pub fn delete_worktree(
     delete_remote: bool,
     force: bool,
     allow_busy: bool,
-    lookup_mode: Option<&str>,
 ) -> Result<()> {
     let main_repo = git::get_main_repo_root(None)?;
-    let (worktree_path, branch_name) = resolve_delete_target(target, &main_repo, lookup_mode)?;
+    let (worktree_path, branch_name) = resolve_delete_target(target, &main_repo)?;
 
     // Main-repo safety guard (mirrors delete_one, but we want the error
     // surfaced up before prompting).
@@ -440,10 +439,12 @@ pub fn delete_worktree(
 }
 
 /// Resolve delete target to (worktree_path, branch_name).
+///
+/// Uses strict ordered resolution: exact worktree name → exact branch → exact path.
+/// When `target` is `None`, falls back to cwd as the target path.
 fn resolve_delete_target(
     target: Option<&str>,
     main_repo: &Path,
-    lookup_mode: Option<&str>,
 ) -> Result<(PathBuf, Option<String>)> {
     let target = target.map(|t| t.to_string()).unwrap_or_else(|| {
         std::env::current_dir()
@@ -452,31 +453,6 @@ fn resolve_delete_target(
             .to_string()
     });
 
-    let target_path = PathBuf::from(&target);
-
-    // Check if it's a filesystem path
-    if target_path.exists() {
-        let resolved = target_path.canonicalize().unwrap_or(target_path);
-        let branch = super::helpers::get_branch_for_worktree(main_repo, &resolved);
-        return Ok((resolved, branch));
-    }
-
-    // Try branch lookup (skip if lookup_mode is "worktree")
-    if lookup_mode != Some("worktree") {
-        if let Some(path) = git::find_worktree_by_intended_branch(main_repo, &target)? {
-            return Ok((path, Some(target)));
-        }
-    }
-
-    // Try worktree name lookup (skip if lookup_mode is "branch")
-    if lookup_mode != Some("branch") {
-        if let Some(path) = git::find_worktree_by_name(main_repo, &target)? {
-            let branch = super::helpers::get_branch_for_worktree(main_repo, &path);
-            return Ok((path, branch));
-        }
-    }
-
-    Err(CwError::WorktreeNotFound(messages::worktree_not_found(
-        &target,
-    )))
+    let strict = super::helpers::resolve_target_strict(main_repo, &target)?;
+    Ok((strict.path, Some(strict.branch)))
 }
