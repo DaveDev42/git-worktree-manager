@@ -19,6 +19,9 @@ pub fn run_in_scope(
     run_in_scope_to_writer(cwd, cmd, only, no_main, jobs, continue_on_error, &mut stdout)
 }
 
+/// Returns the last non-zero exit code observed (or 0 if all succeeded).
+/// In parallel mode (`jobs > 1`), `continue_on_error = false` aborts at batch
+/// boundaries — siblings already started in the same batch run to completion.
 pub fn run_in_scope_to_writer<W: Write>(
     cwd: &Path,
     cmd: &[String],
