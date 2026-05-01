@@ -477,22 +477,6 @@ pub fn resolve_launch_display_name(method: &str) -> String {
         .unwrap_or_else(|| method.to_string())
 }
 
-/// Get a formatted list of available presets.
-pub fn list_presets() -> String {
-    let presets = ai_tool_presets();
-    let mut lines = vec!["Available AI tool presets:".to_string(), String::new()];
-
-    let mut preset_names: Vec<&str> = presets.keys().copied().collect();
-    preset_names.sort();
-
-    for name in preset_names {
-        let cmd = presets[name].join(" ");
-        lines.push(format!("  {:<20} -> {}", name, cmd));
-    }
-
-    lines.join("\n")
-}
-
 // ---------------------------------------------------------------------------
 // Shell completion prompt
 // ---------------------------------------------------------------------------
@@ -703,11 +687,4 @@ mod tests {
         assert_eq!(presets["claude"], vec!["claude"]);
     }
 
-    #[test]
-    fn test_list_presets_format() {
-        let output = list_presets();
-        assert!(output.contains("Available AI tool presets:"));
-        assert!(output.contains("claude"));
-        assert!(output.contains("no-op"));
-    }
 }

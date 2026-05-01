@@ -275,10 +275,6 @@ pub enum Commands {
     #[command(name = "_term-values", hide = true)]
     TermValues,
 
-    /// List preset names (for tab completion)
-    #[command(name = "_preset-names", hide = true)]
-    PresetNames,
-
     /// List hook event names (for tab completion)
     #[command(name = "_hook-events", hide = true)]
     HookEvents,

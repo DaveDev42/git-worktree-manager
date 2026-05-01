@@ -42,7 +42,6 @@ pub fn run() {
         Some(
             Commands::UpdateCache
                 | Commands::TermValues
-                | Commands::PresetNames
                 | Commands::HookEvents
                 | Commands::Path { .. }
                 | Commands::ShellFunction { .. }
@@ -249,13 +248,6 @@ pub fn run() {
         Some(Commands::TermValues) => {
             for v in constants::all_term_values() {
                 println!("{}", v);
-            }
-            Ok(())
-        }
-
-        Some(Commands::PresetNames) => {
-            for name in constants::PRESET_NAMES {
-                println!("{}", name);
             }
             Ok(())
         }

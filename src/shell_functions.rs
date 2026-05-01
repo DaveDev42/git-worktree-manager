@@ -400,20 +400,6 @@ function __gw_prev_arg_is_term
 end
 complete -c gw -f -n '__fish_seen_subcommand_from new resume; and __gw_prev_arg_is_term' -a '(gw _term-values 2>/dev/null)'
 complete -c cw -f -n '__fish_seen_subcommand_from new resume; and __gw_prev_arg_is_term' -a '(gw _term-values 2>/dev/null)'
-
-# Config set value completion: "config set launch.method <value>" / "config set ai_tool.command <value>"
-function __gw_config_set_value_launch
-    set -l tokens (commandline -opc)
-    test (count $tokens) -ge 4; and test "$tokens[2]" = "config"; and test "$tokens[3]" = "set"; and test "$tokens[4]" = "launch.method"
-end
-function __gw_config_set_value_ai_tool
-    set -l tokens (commandline -opc)
-    test (count $tokens) -ge 4; and test "$tokens[2]" = "config"; and test "$tokens[3]" = "set"; and test "$tokens[4]" = "ai_tool.command"
-end
-complete -c gw -f -n '__gw_config_set_value_launch' -a '(gw _term-values 2>/dev/null)'
-complete -c cw -f -n '__gw_config_set_value_launch' -a '(gw _term-values 2>/dev/null)'
-complete -c gw -f -n '__gw_config_set_value_ai_tool' -a '(gw _preset-names 2>/dev/null)'
-complete -c cw -f -n '__gw_config_set_value_ai_tool' -a '(gw _preset-names 2>/dev/null)'
 "#;
 
 const POWERSHELL_FUNCTION: &str = r#"# git-worktree-manager shell functions for PowerShell

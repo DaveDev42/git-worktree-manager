@@ -423,7 +423,6 @@ Used with `-T` flag on `gw new` and `gw resume`. Supports `method:session-name` 
 
 These hidden commands output newline-separated values, useful for scripting:
 - `gw _term-values` — List all valid `--term` values (canonical + aliases)
-- `gw _preset-names` — List all AI tool preset names
 - `gw _hook-events` — List all valid hook event names
 - `gw _path --list-branches [-g]` — List worktree branch names
 "#
