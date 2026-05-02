@@ -3,7 +3,6 @@
     ".": {
       "release-type": "rust",
       "component": "",
-      "release-as": "0.1.0",
       "include-component-in-tag": false,
       "draft": true,
       "bump-major-pre-major": false,
