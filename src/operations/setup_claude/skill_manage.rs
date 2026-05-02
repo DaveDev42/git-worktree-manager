@@ -267,7 +267,6 @@ Create new worktree for feature branch.
 - `-b, --base <BASE>` — Base branch to create from (default: from config or auto-detect)
 - `--no-term` — Skip AI tool launch
 - `-T, --term <METHOD>` — Terminal launch method. Accepts canonical name (e.g., `tmux`, `wezterm-tab`) or alias (e.g., `t`, `w-t`). Supports `method:session-name` for tmux/zellij (e.g., `tmux:mywork`). See Terminal Launch Methods section below.
-- `--bg` — Launch AI tool in background
 - `--prompt <PROMPT>` — Initial prompt as a CLI string (single-line, best for short prompts)
 - `--prompt-file <PATH>` — Read initial prompt from a file (recommended for multi-line / quoted content)
 - `--prompt-stdin` — Read initial prompt from standard input (for piping). Avoid combining with `-T <terminal>` — the spawned terminal may inherit a closed stdin.
@@ -275,24 +274,29 @@ Create new worktree for feature branch.
 Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be used per invocation.
 
 ### `gw rm [target] [OPTIONS]`
-Delete a worktree.
+Delete one or more worktrees. With no positional argument: removes the current worktree. With one or more targets: removes each. Use `-i` for the multi-select UI.
+- `-i, --interactive` — Multi-select UI (mutually exclusive with positional targets)
+- `--dry-run` — Show what would be removed without removing
 - `-k, --keep-branch` — Keep the branch (only remove worktree directory)
 - `-r, --delete-remote` — Also delete the remote branch
-- `--no-force` — Don't use --force flag
+- `-f, --force` — Bypass the busy-detection gate (also passes `--force` to `git worktree remove`)
+- `--no-force` — Don't pass `--force` to `git worktree remove` (still allows the busy gate to apply)
 
 ### `gw list`
-List all worktrees with status indicators (active, clean, modified, stale). Alias: `gw ls`.
+List all worktrees in a rich, human-readable view with status indicators (active, clean, modified, stale).
+
+### `gw ls`
+Print all worktrees as TSV (one row per worktree, tab-separated columns: `worktree_id`, `branch`, `status`, `age`, `repo_root`, `path`). For scripts and pipelines.
 
 ### `gw resume [TARGET] [OPTIONS]`
 Resume AI work in a worktree. Auto-detects existing Claude sessions and uses `--continue`.
 Target is resolved in order: exact worktree name → exact branch name → exact path.
 - `-T, --term <METHOD>` — Terminal launch method (same format as `gw new`)
-- `--bg` — Launch AI tool in background
 
 ## Maintenance
 
 ### `gw doctor`
-Run health check: git version, worktree accessibility, uncommitted changes, behind-base detection, merge conflicts, Claude Code integration.
+Run a 5-check health audit: (1) git version, (2) worktree accessibility (no missing/orphaned dirs), (3) uncommitted changes across worktrees, (4) busy-worktree detection, (5) Claude Code integration (skill installation + plugin paths). Use `--session-start --quiet` for hook-friendly single-line output.
 
 ### `gw upgrade`
 Check for updates and install latest version from GitHub Releases.
@@ -380,7 +384,6 @@ Used with `-T` flag on `gw new` and `gw resume`. Supports `method:session-name` 
 
 These hidden commands output newline-separated values, useful for scripting:
 - `gw _complete-targets` — List valid completion targets (worktree names + branch names)
-- `gw _hook-events` — List all valid hook event names
 - `gw _path --list-branches` — List worktree branch names
 "#
 }
