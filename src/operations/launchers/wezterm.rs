@@ -10,9 +10,44 @@ use crate::config;
 use crate::error::{CwError, Result};
 use crate::git;
 
-/// Wait for shell to be ready in a WezTerm pane.
+/// Heuristic: does the last non-blank line of pane text look like an
+/// interactive shell prompt waiting for input? We accept the common shell
+/// prompt suffixes (`$`, `#`, `%`, `>`) and the prompt characters used by
+/// popular zsh themes (`❯`, `➜`, `»`). The line is allowed to have trailing
+/// whitespace (most prompts end with `<char> ` so the cursor sits one cell
+/// past the marker).
+fn looks_like_prompt(text: &str) -> bool {
+    let last = text
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("");
+    let trimmed = last.trim_end();
+    matches!(
+        trimmed.chars().last(),
+        Some('$') | Some('#') | Some('%') | Some('>') | Some('❯') | Some('➜') | Some('»')
+    )
+}
+
+/// Wait for the shell in a WezTerm pane to start reading stdin.
+///
+/// `wezterm cli get-text` returns whatever is currently rendered in the
+/// pane, which under a multiplexer (zellij/tmux auto-attach via shell rc)
+/// can be non-empty *before* any shell has actually started — the
+/// multiplexer's UI chrome is enough to make a "non-empty" check fire
+/// instantly. Sending text in that window gets dropped.
+///
+/// We wait until the last non-blank line ends in a prompt character.
+/// To avoid flaky pre-prompt false positives (e.g. a banner line that
+/// happens to end in `>`), we enforce a minimum settle delay before
+/// polling starts.
 fn wait_for_shell_ready(pane_id: &str, timeout: f64) {
-    let poll_interval = Duration::from_millis(200);
+    // Hard minimum: even on the fastest shells, wezterm's pane needs a few
+    // hundred ms to render a prompt. Polling sooner just burns CPU.
+    let min_delay = Duration::from_millis(400);
+    thread::sleep(min_delay);
+
+    let poll_interval = Duration::from_millis(150);
     let deadline = Instant::now() + Duration::from_secs_f64(timeout);
 
     while Instant::now() < deadline {
@@ -22,8 +57,8 @@ fn wait_for_shell_ready(pane_id: &str, timeout: f64) {
         {
             if output.status.success() {
                 let text = String::from_utf8_lossy(&output.stdout);
-                if !text.trim().is_empty() {
-                    return; // Shell is ready
+                if looks_like_prompt(&text) {
+                    return;
                 }
             }
         }
@@ -191,4 +226,56 @@ pub fn launch_pane(path: &Path, command: &str, ai_tool_name: &str, horizontal: b
         pane_type
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::looks_like_prompt;
+
+    #[test]
+    fn detects_common_prompt_suffixes() {
+        for line in [
+            "user@host:~ $",
+            "user@host:~ $ ",
+            "user@host:~ #",
+            "/tmp %",
+            "PS C:\\>",
+            "~/code ❯",
+            "myproj ➜",
+            "» ",
+        ] {
+            assert!(looks_like_prompt(line), "expected prompt: {:?}", line);
+        }
+    }
+
+    #[test]
+    fn rejects_multiplexer_chrome_without_prompt() {
+        // The exact failure mode this guards against: zellij's status bar is
+        // non-empty and ends with whitespace before the shell has started.
+        let chrome = " Zellij (a947) NORMAL  Tab #1                              \n";
+        assert!(!looks_like_prompt(chrome));
+    }
+
+    #[test]
+    fn rejects_blank_pane() {
+        assert!(!looks_like_prompt(""));
+        assert!(!looks_like_prompt("\n\n\n   \n"));
+    }
+
+    #[test]
+    fn picks_last_non_blank_line() {
+        // A prompt scrolled up by a banner is not ready — the last line is
+        // blank, so we keep waiting.
+        let text = "welcome banner\n$\n\n   \n";
+        assert!(looks_like_prompt(text));
+    }
+
+    #[test]
+    fn ignores_command_in_progress() {
+        // Text that ends with a running command (no prompt char) should not
+        // be treated as ready.
+        let text = "user@host:~ $ echo hi\nhi\n";
+        // Last non-blank line is "hi" — no prompt suffix.
+        assert!(!looks_like_prompt(text));
+    }
 }
