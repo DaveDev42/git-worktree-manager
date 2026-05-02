@@ -9,15 +9,18 @@ is to gate, merge, watch, and **verify the tap actually got the new
 version** — `release.yml` swallows tap-update warnings, so a "green"
 workflow can still leave the tap one version behind.
 
-Before starting, read `docs/release.md` once. It is the canonical
-deep-dive on branch protection, the conventional-commit rules, and the
-pre-release checklist. This command is the automation wrapper around it.
-
 ## Inputs
 
 None. Always operates on `main`, always patch-bump (release-please
-decides the version). Major/minor bumps are out of scope — see
-`docs/release.md` "Manual major/minor bump".
+decides the version). Major/minor bumps are out of scope — push a
+`Release-As: x.y.z` footer commit to `main` (release-please picks it
+up automatically) instead of running this command.
+
+`main` is branch-protected: `ci-gate` required, linear history, no
+force pushes, admin enforcement off so release-please automation keeps
+working. Never use `feat!` / `fix!` / `BREAKING CHANGE:` — they escalate
+release-please to a major bump (0.x → 1.0.0) automatically; describe
+breaking changes in the PR body instead.
 
 ## Procedure
 
@@ -81,10 +84,11 @@ Then run the drift check that CI does not cover:
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-`docs/release.md` warns this combination catches drift the default CI
-clippy run misses (`#[cfg(test)]` lints, feature-gated code, test/example
-targets). `cargo test`, `cargo fmt --check`, and `cargo build --release`
-are CI-covered — do **not** re-run them locally.
+The `--all-targets --all-features` combination catches drift the default
+CI clippy run misses: `#[cfg(test)]` lints, feature-gated code, and
+test/example/bench target warnings. Without both flags, those paths
+are skipped. `cargo test`, `cargo fmt --check`, and `cargo build
+--release` are CI-covered — do **not** re-run them locally.
 
 If clippy reports anything, abort. Do not "fix and retry" inline; the
 release should not paper over a clippy violation.

@@ -85,7 +85,7 @@ Same git config metadata keys and session storage paths.
 - **PR title은 valid conventional commit으로 작성** (`type: subject`). squash merge라 PR title만 release-please가 읽음.
 - **`feat!` / `fix!` / `BREAKING CHANGE:` 절대 금지** — major bump 자동 트리거. breaking change는 PR body에 설명.
 
-릴리스/PR 절차 deep-dive (Branch Protection, Pre-Release Checklist, manual major/minor bump): 릴리스를 만들거나 release-please PR을 merge하기 전에 `docs/release.md` 먼저 read.
+릴리스 절차 — 사람이 직접 돌릴 일은 거의 없음. release-please가 PR을 만들고, `/release` 명령이 gate/merge/watch/verify까지 자동화한다 (`.claude/commands/release.md` 참조). Manual major/minor bump가 필요하면 `Release-As: x.y.z` footer 커밋을 `main`에 push (release-please가 자동 인식).
 
 ## Code Conventions
 
