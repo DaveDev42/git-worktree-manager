@@ -231,7 +231,10 @@ Two lifecycle hooks are available, configured in `.cwconfig.json` (or the global
 | `hooks.post_new` | After `gw new` creates a worktree |
 | `hooks.pre_rm` | Before `gw rm` removes a worktree |
 
-Hooks run as `sh -c <cmd>` with the worktree directory as the working directory. A non-zero exit aborts the operation.
+Hooks run as `sh -c <cmd>` with the worktree directory as the working directory.
+
+- `pre_rm` non-zero exit aborts the remove (the worktree stays). This is independent of `--force` — `--force` bypasses busy detection, not user hooks.
+- `post_new` non-zero exit surfaces as a non-zero `gw new` exit code, but the worktree itself remains on disk because the hook runs after `git worktree add`. The AI tool launch is skipped.
 
 There are no `gw hook` CRUD subcommands — set hooks in the config file directly.
 
