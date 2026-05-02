@@ -1,4 +1,4 @@
-//! Render `gw delete` refusal messages for the 3-tier busy model.
+//! Render `gw rm` refusal messages for the 3-tier busy model.
 //! Pure string formatting; no I/O. Kept separate from `busy.rs` so the
 //! detection logic can be tested without locale/styling concerns.
 
@@ -67,7 +67,7 @@ fn render_soft_list(out: &mut String, soft: &[BusyInfo]) {
 }
 
 /// Render the busy-status block (header + body) for read-only callers
-/// like `gw status` / `gw list`. Same body sections as `render_refusal`
+/// like `gw list`. Same body sections as `render_refusal`
 /// (Active Claude session / Lockfile holder / cwd processes) but with a
 /// neutral header and no `--force` guidance. Returns an empty string
 /// when both vectors are empty.
@@ -90,7 +90,7 @@ pub fn render_busy_block(branch_display: &str, hard: &[BusyInfo], soft: &[BusyIn
     out
 }
 
-/// Render the user-facing refusal text for `gw delete`. Empty inputs in
+/// Render the user-facing refusal text for `gw rm`. Empty inputs in
 /// both vectors is a programming error (caller should not have refused)
 /// but is rendered as an empty string for safety.
 pub fn render_refusal(branch_display: &str, hard: &[BusyInfo], soft: &[BusyInfo]) -> String {

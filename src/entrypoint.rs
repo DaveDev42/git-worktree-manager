@@ -7,16 +7,15 @@
 
 use clap::Parser;
 
-use crate::cli::{BackupAction, Cli, Commands, ConfigAction, HookAction, StashAction};
+use crate::cli::{Cli, Commands};
 use crate::config;
 use crate::console as cwconsole;
 use crate::constants;
 use crate::cwshare_setup;
 use crate::error::{CwError, Result};
-use crate::hooks;
 use crate::operations::{
-    ai_tools, backup, clean, config_ops, diagnostics, display, git_ops, global_ops, guard, helpers,
-    path_cmd, setup_claude, shell, spawn_spec, stash, worktree,
+    ai_tools, diagnostics, display, exec, guard, helpers, path_cmd, run, setup_claude, spawn_spec,
+    worktree,
 };
 use crate::resolve_prompt;
 use crate::shell_functions;
@@ -41,10 +40,7 @@ pub fn run() {
         &cli.command,
         Some(
             Commands::UpdateCache
-                | Commands::ConfigKeys
-                | Commands::TermValues
-                | Commands::PresetNames
-                | Commands::HookEvents
+                | Commands::CompleteTargets
                 | Commands::Path { .. }
                 | Commands::ShellFunction { .. }
                 | Commands::SpawnAi { .. }
@@ -61,48 +57,14 @@ pub fn run() {
         config::prompt_shell_completion_setup();
     }
 
-    helpers::set_global_mode(cli.global);
-
     let result = match cli.command {
-        Some(Commands::List { cache }) => {
-            let no_cache = cache.no_cache;
-            if cli.global {
-                global_ops::global_list_worktrees(no_cache)
-            } else {
-                display::list_worktrees(no_cache)
-            }
-        }
-        Some(Commands::Status { cache }) => display::show_status(cache.no_cache),
-        Some(Commands::Tree { cache }) => display::show_tree(cache.no_cache),
-        Some(Commands::Stats { cache }) => display::show_stats(cache.no_cache),
-        Some(Commands::Diff {
-            branch1,
-            branch2,
-            summary,
-            files,
-        }) => display::diff_worktrees(&branch1, &branch2, summary, files),
-
-        Some(Commands::Config { action }) => match action {
-            ConfigAction::Show => config::show_config().map(|output| println!("{}", output)),
-            ConfigAction::List => config::list_config(),
-            ConfigAction::Get { key } => config::get_config_value(&key),
-            ConfigAction::Set { key, value } => config::set_config_value(&key, &value),
-            ConfigAction::UsePreset { name } => config::use_preset(&name),
-            ConfigAction::ListPresets => {
-                println!("{}", config::list_presets());
-                Ok(())
-            }
-            ConfigAction::Reset => config::reset_config(),
-        },
-
+        Some(Commands::List) => display::list_worktrees(),
+        Some(Commands::Ls) => display::list_worktrees_tsv(),
         Some(Commands::New {
             name,
             path,
             base,
             no_term,
-            term,
-            bg,
-            fg,
             prompt,
             prompt_file,
             prompt_stdin,
@@ -122,72 +84,38 @@ pub fn run() {
                 &name,
                 base.as_deref(),
                 path.as_deref(),
-                term.as_deref(),
                 no_term,
                 resolved.as_deref(),
-                bg,
-                fg,
             )?;
             Ok(())
         })(),
 
-        Some(Commands::Pr {
-            branch,
-            title,
-            body,
-            draft,
-            no_push,
-            worktree: is_worktree,
-            by_branch,
-        }) => {
-            let lookup_mode = resolve_lookup_mode(is_worktree, by_branch);
-            git_ops::create_pr_worktree(
-                branch.as_deref(),
-                !no_push,
-                title.as_deref(),
-                body.as_deref(),
-                draft,
-                lookup_mode,
-            )
-        }
+        Some(Commands::Resume { branch }) => ai_tools::resume_worktree(branch.as_deref()),
 
-        Some(Commands::Merge {
-            branch,
-            interactive,
-            dry_run,
-            push,
-            ai_merge,
-            worktree: is_worktree,
-        }) => {
-            let lookup_mode = if is_worktree { Some("worktree") } else { None };
-            git_ops::merge_worktree(
-                branch.as_deref(),
-                push,
-                interactive,
-                dry_run,
-                ai_merge,
-                lookup_mode,
-            )
-        }
+        Some(Commands::Spawn {
+            target,
+            prompt,
+            prompt_file,
+            prompt_stdin,
+        }) => (|| -> Result<()> {
+            let resolved_prompt =
+                resolve_prompt(prompt, prompt_file.as_deref(), prompt_stdin, || {
+                    let mut buf = String::new();
+                    std::io::stdin().read_to_string(&mut buf)?;
+                    Ok(buf)
+                })?;
+            let cwd = std::env::current_dir()?;
+            let target_path = match target {
+                Some(t) => {
+                    let main_repo = crate::git::get_main_repo_root(Some(&cwd))?;
+                    helpers::resolve_target_strict(&main_repo, &t)?.path
+                }
+                None => crate::git::get_repo_root(Some(&cwd))?,
+            };
+            ai_tools::spawn_in_worktree(&target_path, resolved_prompt.as_deref())
+        })(),
 
-        Some(Commands::Resume {
-            branch,
-            term,
-            bg,
-            fg,
-            worktree: is_worktree,
-            by_branch,
-        }) => {
-            let lookup_mode = resolve_lookup_mode(is_worktree, by_branch);
-            ai_tools::resume_worktree(branch.as_deref(), term.as_deref(), lookup_mode, bg, fg)
-        }
-
-        Some(Commands::Shell { worktree, args }) => {
-            let cmd = if args.is_empty() { None } else { Some(args) };
-            shell::shell_worktree(worktree.as_deref(), cmd)
-        }
-
-        Some(Commands::Delete {
+        Some(Commands::Rm {
             targets,
             interactive,
             dry_run,
@@ -195,132 +123,56 @@ pub fn run() {
             delete_remote,
             force,
             no_force,
-            worktree: is_worktree,
-            branch: is_branch,
         }) => {
-            let lookup_mode = resolve_lookup_mode(is_worktree, is_branch);
-            let flags = crate::operations::worktree::DeleteFlags {
+            let flags = crate::operations::worktree::RmFlags {
                 keep_branch,
                 delete_remote,
                 git_force: !no_force,
                 allow_busy: force,
             };
-            match crate::operations::delete_batch::delete_worktrees(
-                targets,
-                interactive,
-                dry_run,
-                flags,
-                lookup_mode,
-            ) {
+            match crate::operations::rm_batch::rm_worktrees(targets, interactive, dry_run, flags) {
                 Ok(0) => Ok(()),
                 Ok(code) => Err(crate::error::CwError::ExitCode(code)),
                 Err(e) => Err(e),
             }
         }
 
-        Some(Commands::Clean {
-            merged,
-            older_than,
-            dry_run,
-            force,
-            interactive,
-        }) => match clean::clean_worktrees(merged, older_than, dry_run, force, interactive) {
-            Ok(0) => Ok(()),
-            Ok(code) => Err(crate::error::CwError::ExitCode(code)),
-            Err(e) => Err(e),
-        },
-
-        Some(Commands::Sync {
-            branch,
-            all,
-            fetch_only,
-            ai_merge,
-            worktree: is_worktree,
-            by_branch,
-        }) => {
-            let lookup_mode = resolve_lookup_mode(is_worktree, by_branch);
-            worktree::sync_worktree(branch.as_deref(), all, fetch_only, ai_merge, lookup_mode)
-        }
-
-        Some(Commands::ChangeBase {
-            new_base,
-            branch,
-            dry_run,
-            interactive,
-            worktree: is_worktree,
-            by_branch,
-        }) => {
-            let lookup_mode = resolve_lookup_mode(is_worktree, by_branch);
-            config_ops::change_base_branch(
-                &new_base,
-                branch.as_deref(),
-                dry_run,
-                interactive,
-                lookup_mode,
-            )
-        }
-
-        Some(Commands::Backup { action }) => match action {
-            BackupAction::Create {
-                branch,
-                all,
-                output,
-            } => backup::backup_worktree(
-                branch.as_deref(),
-                all,
-                output.as_deref().map(std::path::Path::new),
-            ),
-            BackupAction::List { branch, all } => backup::list_backups(branch.as_deref(), all),
-            BackupAction::Restore { branch, path, id } => {
-                backup::restore_worktree(&branch, path.as_deref(), id.as_deref())
-            }
-        },
-
-        Some(Commands::Stash { action }) => match action {
-            StashAction::Save { message } => stash::stash_save(message.as_deref()),
-            StashAction::List => stash::stash_list(),
-            StashAction::Apply {
-                target_branch,
-                stash: stash_ref,
-            } => stash::stash_apply(&target_branch, &stash_ref),
-        },
-
-        Some(Commands::Hook { action }) => match action {
-            HookAction::Add {
-                event,
-                command,
-                id,
-                description,
-            } => hooks::add_hook(&event, &command, id.as_deref(), description.as_deref()).map(
-                |hook_id| {
-                    println!("* Added hook '{}' for {}", hook_id, event);
-                },
-            ),
-            HookAction::Remove { event, hook_id } => hooks::remove_hook(&event, &hook_id),
-            HookAction::List { event } => {
-                list_hooks(event.as_deref());
-                Ok(())
-            }
-            HookAction::Enable { event, hook_id } => {
-                hooks::set_hook_enabled(&event, &hook_id, true)
-            }
-            HookAction::Disable { event, hook_id } => {
-                hooks::set_hook_enabled(&event, &hook_id, false)
-            }
-            HookAction::Run { event, dry_run } => run_hooks_manual(&event, dry_run),
-        },
-
-        Some(Commands::Export { output }) => config_ops::export_config(output.as_deref()),
-        Some(Commands::Import { import_file, apply }) => {
-            config_ops::import_config(&import_file, apply)
-        }
-
-        Some(Commands::Scan { dir }) => global_ops::global_scan(dir.as_deref()),
-        Some(Commands::Prune) => global_ops::global_prune(),
         Some(Commands::Doctor {
             session_start,
             quiet,
         }) => diagnostics::doctor(session_start, quiet),
+        Some(Commands::Run {
+            only,
+            no_main,
+            jobs,
+            continue_on_error,
+            cmd,
+        }) => (|| -> Result<()> {
+            let cwd = std::env::current_dir()?;
+            let code = run::run_in_scope(
+                &cwd,
+                &cmd,
+                only.as_deref(),
+                no_main,
+                jobs,
+                continue_on_error,
+            )?;
+            if code != 0 {
+                return Err(crate::error::CwError::ExitCode(code));
+            }
+            Ok(())
+        })(),
+
+        Some(Commands::Exec { target, cmd }) => (|| -> Result<()> {
+            let cwd = std::env::current_dir()?;
+            let mut out = std::io::stdout().lock();
+            let code = exec::exec_in_target(&cwd, &target, &cmd, &mut out)?;
+            if code != 0 {
+                return Err(crate::error::CwError::ExitCode(code));
+            }
+            Ok(())
+        })(),
+
         Some(Commands::Guard { tool_input }) => guard::run(&tool_input),
         Some(Commands::SetupClaude) => setup_claude::setup_claude(),
 
@@ -338,7 +190,7 @@ pub fn run() {
             branch,
             list_branches,
             interactive,
-        }) => path_cmd::worktree_path(branch.as_deref(), cli.global, list_branches, interactive),
+        }) => path_cmd::worktree_path(branch.as_deref(), list_branches, interactive),
 
         Some(Commands::ShellFunction { shell }) => match shell_functions::generate(&shell) {
             Some(output) => {
@@ -356,33 +208,7 @@ pub fn run() {
             Ok(())
         }
 
-        Some(Commands::ConfigKeys) => {
-            for (key, _desc) in config::CONFIG_KEYS {
-                println!("{}", key);
-            }
-            Ok(())
-        }
-
-        Some(Commands::TermValues) => {
-            for v in constants::all_term_values() {
-                println!("{}", v);
-            }
-            Ok(())
-        }
-
-        Some(Commands::PresetNames) => {
-            for name in constants::PRESET_NAMES {
-                println!("{}", name);
-            }
-            Ok(())
-        }
-
-        Some(Commands::HookEvents) => {
-            for evt in constants::HOOK_EVENTS {
-                println!("{}", evt);
-            }
-            Ok(())
-        }
+        Some(Commands::CompleteTargets) => crate::operations::complete::print_completion_targets(),
 
         Some(Commands::SpawnAi { spec }) => {
             // Pre-spawn failures (read/parse/chdir) exit 127 — the shell
@@ -423,16 +249,6 @@ pub fn run() {
     }
 }
 
-fn resolve_lookup_mode(is_worktree: bool, is_branch: bool) -> Option<&'static str> {
-    if is_worktree {
-        Some("worktree")
-    } else if is_branch {
-        Some("branch")
-    } else {
-        None
-    }
-}
-
 fn generate_completions(shell_name: &str) {
     use clap::CommandFactory;
     use clap_complete::{generate, Shell};
@@ -454,80 +270,6 @@ fn generate_completions(shell_name: &str) {
 
     let mut cmd = Cli::command();
     generate(shell, &mut cmd, "gw", &mut std::io::stdout());
-}
-
-fn list_hooks(event: Option<&str>) {
-    let events: Vec<&str> = if let Some(e) = event {
-        vec![e]
-    } else {
-        hooks::HOOK_EVENTS.to_vec()
-    };
-
-    let mut has_any = false;
-    for evt in &events {
-        let hook_list = hooks::get_hooks(evt, None);
-        if hook_list.is_empty() && event.is_none() {
-            continue;
-        }
-        if !hook_list.is_empty() {
-            has_any = true;
-            println!("\n{}:", evt);
-            for h in &hook_list {
-                let status = if h.enabled { "enabled" } else { "disabled" };
-                let desc = if h.description.is_empty() {
-                    String::new()
-                } else {
-                    format!(" - {}", h.description)
-                };
-                println!("  {} [{}]: {}{}", h.id, status, h.command, desc);
-            }
-        } else {
-            println!("\n{}:", evt);
-            println!("  (no hooks)");
-        }
-    }
-
-    if event.is_none() && !has_any {
-        println!("No hooks configured. Use 'gw hook add' to add one.");
-    }
-}
-
-fn run_hooks_manual(event: &str, dry_run: bool) -> Result<()> {
-    let hook_list = hooks::get_hooks(event, None);
-    if hook_list.is_empty() {
-        println!("No hooks configured for {}", event);
-        return Ok(());
-    }
-
-    let enabled: Vec<_> = hook_list.iter().filter(|h| h.enabled).collect();
-    if enabled.is_empty() {
-        println!("All hooks for {} are disabled", event);
-        return Ok(());
-    }
-
-    if dry_run {
-        println!("Would run {} hook(s) for {}:", enabled.len(), event);
-        for h in &hook_list {
-            let status = if h.enabled {
-                "enabled"
-            } else {
-                "disabled (skipped)"
-            };
-            let desc = if h.description.is_empty() {
-                String::new()
-            } else {
-                format!(" - {}", h.description)
-            };
-            println!("  {} [{}]: {}{}", h.id, status, h.command, desc);
-        }
-        return Ok(());
-    }
-
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let context = helpers::build_hook_context("", "", &cwd, &cwd, event, "manual");
-
-    hooks::run_hooks(event, &context, Some(&cwd), None)?;
-    Ok(())
 }
 
 fn shell_setup() {

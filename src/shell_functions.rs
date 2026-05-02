@@ -15,62 +15,44 @@ const BASH_ZSH_FUNCTION: &str = r#"# git-worktree-manager shell functions for ba
 # Source this file to enable shell functions:
 #   source <(gw _shell-function bash)
 
-# Navigate to a worktree by branch name
-# If no argument is provided, show interactive worktree selector
-# Use -g/--global to search across all registered repositories
-# Supports repo:branch notation (auto-enables global mode)
+# Navigate to a worktree by branch name or worktree name.
+# If no argument is provided, show interactive worktree selector.
 gw-cd() {
-    local branch=""
-    local global_mode=0
+    local target=""
 
     # Parse arguments
     while [ $# -gt 0 ]; do
         case "$1" in
-            -g|--global)
-                global_mode=1
-                shift
-                ;;
             -*)
                 echo "Error: Unknown option '$1'" >&2
-                echo "Usage: gw-cd [-g|--global] [branch|repo:branch]" >&2
+                echo "Usage: gw-cd [branch|worktree-name]" >&2
                 return 1
                 ;;
             *)
-                branch="$1"
+                target="$1"
                 shift
                 ;;
         esac
     done
 
-    # Auto-detect repo:branch notation → enable global mode
-    if [ $global_mode -eq 0 ] && [[ "$branch" == *:* ]]; then
-        global_mode=1
-    fi
-
     local worktree_path
 
-    if [ -z "$branch" ]; then
+    if [ -z "$target" ]; then
         # No argument — interactive selector
-        if [ $global_mode -eq 1 ]; then
-            worktree_path=$(gw _path -g --interactive)
-        else
-            worktree_path=$(gw _path --interactive)
-        fi
-        if [ $? -ne 0 ]; then return 1; fi
-    elif [ $global_mode -eq 1 ]; then
-        # Global mode: delegate to gw _path -g
-        worktree_path=$(gw _path -g "$branch")
+        worktree_path=$(gw _path --interactive)
         if [ $? -ne 0 ]; then return 1; fi
     else
-        # Local mode: get worktree path from git directly
-        worktree_path=$(git worktree list --porcelain 2>/dev/null | awk -v branch="$branch" '
-            /^worktree / { path=$2 }
-            /^branch / && $2 == "refs/heads/"branch { print path; exit }
+        # Resolve via git worktree list (branch name or worktree name)
+        worktree_path=$(git worktree list --porcelain 2>/dev/null | awk -v t="$target" '
+            /^worktree / { path=$2; name=path; sub(".*/", "", name) }
+            /^branch / && $2 == "refs/heads/"t { print path; exit }
+            /^worktree / && name == t { found_path=path }
+            END { if (found_path != "") print found_path }
         ')
     fi
 
     if [ -z "$worktree_path" ]; then
-        echo "Error: No worktree found for branch '$branch'" >&2
+        echo "Error: No worktree found for '$target'" >&2
         return 1
     fi
 
@@ -86,32 +68,10 @@ gw-cd() {
 # Tab completion for gw-cd (bash)
 _gw_cd_completion() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
-    local has_global=0
 
-    # Remove colon from word break chars for repo:branch completion
-    COMP_WORDBREAKS=${COMP_WORDBREAKS//:}
-
-    # Check if -g or --global is already in the command
-    local i
-    for i in "${COMP_WORDS[@]}"; do
-        case "$i" in -g|--global) has_global=1 ;; esac
-    done
-
-    # If current word starts with -, complete flags
-    if [[ "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "-g --global" -- "$cur"))
-        return
-    fi
-
-    local branches
-    if [ $has_global -eq 1 ]; then
-        # Global mode: get repo:branch from all registered repos
-        branches=$(gw _path --list-branches -g 2>/dev/null)
-    else
-        # Local mode: get branches directly from git
-        branches=$(git worktree list --porcelain 2>/dev/null | grep "^branch " | sed 's/^branch refs\/heads\///' | sort -u)
-    fi
-    COMPREPLY=($(compgen -W "$branches" -- "$cur"))
+    local targets
+    targets=$(gw _complete-targets 2>/dev/null)
+    COMPREPLY=($(compgen -W "$targets" -- "$cur"))
 }
 
 # Register completion for bash
@@ -120,88 +80,31 @@ if [ -n "$BASH_VERSION" ]; then
     complete -F _gw_cd_completion cw-cd
     eval "$(gw --generate-completion bash 2>/dev/null || true)"
 
-    # Wrap _gw to add dynamic completion (config keys + branch names)
+    # Wrap _gw to add dynamic completion for positional-target subcommands
     _gw_with_config() {
         local cur="${COMP_WORDS[COMP_CWORD]}"
         local subcmd="${COMP_WORDS[1]}"
 
-        # --term/-T value completion for new/resume commands
-        if [[ ($subcmd == "new" || $subcmd == "resume") && (${COMP_WORDS[COMP_CWORD-1]} == "--term" || ${COMP_WORDS[COMP_CWORD-1]} == "-T") ]]; then
-            local methods
-            methods=$(gw _term-values 2>/dev/null)
-            COMPREPLY=($(compgen -W "$methods" -- "$cur"))
-            return
-        fi
-
-        # Config key completion: "config get <key>" or "config set <key>"
-        if [[ $subcmd == "config" && ( ${COMP_WORDS[2]} == "get" || ${COMP_WORDS[2]} == "set" ) && $COMP_CWORD -eq 3 ]]; then
-            local keys
-            keys=$(gw _config-keys 2>/dev/null)
-            COMPREPLY=($(compgen -W "$keys" -- "$cur"))
-            return
-        fi
-
-        # Config set value completion: "config set <key> <value>"
-        if [[ $subcmd == "config" && ${COMP_WORDS[2]} == "set" && $COMP_CWORD -eq 4 ]]; then
-            local key="${COMP_WORDS[3]}"
-            case "$key" in
-                launch.method)
-                    COMPREPLY=($(compgen -W "$(gw _term-values 2>/dev/null)" -- "$cur"))
-                    return ;;
-                ai_tool.command)
-                    COMPREPLY=($(compgen -W "$(gw _preset-names 2>/dev/null)" -- "$cur"))
-                    return ;;
-            esac
-        fi
-
-        # Branch completion for subcommands with positional branch args
         if [[ "$cur" != -* ]]; then
-            # Check for global mode
-            local gflag=""
-            local i
-            for i in "${COMP_WORDS[@]}"; do
-                case "$i" in -g|--global) gflag="-g" ;; esac
-            done
-
-            # Count non-flag positional args after subcommand (skip flag values)
             local pos_count=0
             local start_idx=2
-            local max_pos=1
+            local max_pos=0
 
             case "$subcmd" in
-                pr|merge|resume|shell|delete|sync)
+                rm|resume|spawn|exec)
                     max_pos=1
-                    ;;
-                diff|change-base)
-                    max_pos=2
-                    ;;
-                backup)
-                    if [[ ${COMP_WORDS[2]} =~ ^(create|list|restore)$ ]]; then
-                        start_idx=3; max_pos=1
-                    else
-                        max_pos=0
-                    fi
-                    ;;
-                stash)
-                    if [[ ${COMP_WORDS[2]} == "apply" ]]; then
-                        start_idx=3; max_pos=1
-                    else
-                        max_pos=0
-                    fi
-                    ;;
-                *)
-                    max_pos=0
                     ;;
             esac
 
             if [[ $max_pos -gt 0 ]]; then
+                local i
                 for ((i=start_idx; i<COMP_CWORD; i++)); do
                     [[ ${COMP_WORDS[i]} != -* ]] && ((pos_count++))
                 done
                 if [[ $pos_count -lt $max_pos ]]; then
-                    local branches
-                    branches=$(gw _path --list-branches $gflag 2>/dev/null)
-                    COMPREPLY=($(compgen -W "$branches" -- "$cur"))
+                    local targets
+                    targets=$(gw _complete-targets 2>/dev/null)
+                    COMPREPLY=($(compgen -W "$targets" -- "$cur"))
                     return
                 fi
             fi
@@ -218,72 +121,18 @@ if [ -n "$ZSH_VERSION" ]; then
     # Register clap completion for gw/cw CLI inline
     eval "$(gw --generate-completion zsh 2>/dev/null)"
 
-    # Wrap _gw to add dynamic completion (config keys + branch names)
+    # Wrap _gw to add dynamic completion (targets)
     _gw_with_config() {
         local subcmd="${words[2]}"
 
-        # --term/-T value completion for new/resume commands
-        if [[ ($subcmd == "new" || $subcmd == "resume") && (${words[CURRENT-1]} == "--term" || ${words[CURRENT-1]} == "-T") ]]; then
-            local -a methods
-            methods=(${(f)"$(gw _term-values 2>/dev/null)"})
-            compadd -a methods
-            return
-        fi
-
-        # Config key completion: "config get <key>" or "config set <key>"
-        if [[ $subcmd == "config" && ( ${words[3]} == "get" || ${words[3]} == "set" ) && $CURRENT -eq 4 ]]; then
-            local -a keys
-            keys=(${(f)"$(gw _config-keys 2>/dev/null)"})
-            _describe 'config key' keys
-            return
-        fi
-
-        # Config set value completion: "config set <key> <value>"
-        if [[ $subcmd == "config" && ${words[3]} == "set" && $CURRENT -eq 5 ]]; then
-            local key="${words[4]}"
-            case "$key" in
-                launch.method)
-                    local -a methods
-                    methods=(${(f)"$(gw _term-values 2>/dev/null)"})
-                    compadd -a methods
-                    return ;;
-                ai_tool.command)
-                    local -a presets
-                    presets=(${(f)"$(gw _preset-names 2>/dev/null)"})
-                    compadd -a presets
-                    return ;;
-            esac
-        fi
-
-        # Branch completion for subcommands with positional branch args
         if [[ "${words[CURRENT]}" != -* ]]; then
-            # Check for global mode
-            local gflag=""
-            local w
-            for w in "${words[@]}"; do
-                case "$w" in -g|--global) gflag="-g" ;; esac
-            done
-
-            # Count non-flag positional args after subcommand
             local -i pos_count=0
             local -i start_idx=3
             local -i max_pos=0
 
             case "$subcmd" in
-                pr|merge|resume|shell|delete|sync)
+                rm|resume|spawn|exec)
                     max_pos=1
-                    ;;
-                diff|change-base)
-                    max_pos=2
-                    ;;
-                backup)
-                    case "${words[3]}" in create|list|restore)
-                        start_idx=4; max_pos=1 ;; esac
-                    ;;
-                stash)
-                    if [[ ${words[3]} == "apply" ]]; then
-                        start_idx=4; max_pos=1
-                    fi
                     ;;
             esac
 
@@ -293,9 +142,9 @@ if [ -n "$ZSH_VERSION" ]; then
                     [[ ${words[i]} != -* ]] && ((pos_count++))
                 done
                 if [[ $pos_count -lt $max_pos ]]; then
-                    local -a branches
-                    branches=(${(f)"$(gw _path --list-branches $gflag 2>/dev/null)"})
-                    compadd -a branches
+                    local -a targets
+                    targets=(${(f)"$(gw _complete-targets 2>/dev/null)"})
+                    compadd -a targets
                     return
                 fi
             fi
@@ -307,27 +156,9 @@ if [ -n "$ZSH_VERSION" ]; then
     compdef _gw_with_config cw
 
     _gw_cd_zsh() {
-        local has_global=0
-        local i
-        for i in "${words[@]}"; do
-            case "$i" in -g|--global) has_global=1 ;; esac
-        done
-
-        # Complete flags
-        if [[ "$PREFIX" == -* ]]; then
-            local -a flags
-            flags=('-g:Search all registered repositories' '--global:Search all registered repositories')
-            _describe 'flags' flags
-            return
-        fi
-
-        local -a branches
-        if [ $has_global -eq 1 ]; then
-            branches=(${(f)"$(gw _path --list-branches -g 2>/dev/null)"})
-        else
-            branches=(${(f)"$(git worktree list --porcelain 2>/dev/null | grep '^branch ' | sed 's/^branch refs\/heads\///' | sort -u)"})
-        fi
-        compadd -a branches
+        local -a targets
+        targets=(${(f)"$(gw _complete-targets 2>/dev/null)"})
+        compadd -a targets
     }
     compdef _gw_cd_zsh gw-cd
 fi
@@ -346,65 +177,43 @@ const FISH_FUNCTION: &str = r#"# git-worktree-manager shell functions for fish
 # Source this file to enable shell functions:
 #   gw _shell-function fish | source
 
-# Navigate to a worktree by branch name
-# If no argument is provided, show interactive worktree selector
-# Use -g/--global to search across all registered repositories
-# Supports repo:branch notation (auto-enables global mode)
+# Navigate to a worktree by branch name or worktree name.
+# If no argument is provided, show interactive worktree selector.
 function gw-cd
-    set -l global_mode 0
-    set -l branch ""
+    set -l target ""
 
     # Parse arguments
     for arg in $argv
         switch $arg
-            case -g --global
-                set global_mode 1
             case '-*'
                 echo "Error: Unknown option '$arg'" >&2
-                echo "Usage: gw-cd [-g|--global] [branch|repo:branch]" >&2
+                echo "Usage: gw-cd [branch|worktree-name]" >&2
                 return 1
             case '*'
-                set branch $arg
+                set target $arg
         end
-    end
-
-    # Auto-detect repo:branch notation → enable global mode
-    if test $global_mode -eq 0; and string match -q '*:*' -- "$branch"
-        set global_mode 1
     end
 
     set -l worktree_path
 
-    if test -z "$branch"
+    if test -z "$target"
         # No argument — interactive selector
-        if test $global_mode -eq 1
-            set worktree_path (gw _path -g --interactive)
-        else
-            set worktree_path (gw _path --interactive)
-        end
-        if test $status -ne 0
-            return 1
-        end
-    else if test $global_mode -eq 1
-        # Global mode: delegate to gw _path -g
-        set worktree_path (gw _path -g "$branch")
+        set worktree_path (gw _path --interactive)
         if test $status -ne 0
             return 1
         end
     else
-        # Local mode: get worktree path from git directly
-        set worktree_path (git worktree list --porcelain 2>/dev/null | awk -v branch="$branch" '
-            /^worktree / { path=$2 }
-            /^branch / && $2 == "refs/heads/"branch { print path; exit }
+        # Resolve via git worktree list (branch name or worktree name)
+        set worktree_path (git worktree list --porcelain 2>/dev/null | awk -v t="$target" '
+            /^worktree / { path=$2; name=path; sub(".*/", "", name) }
+            /^branch / && $2 == "refs/heads/"t { print path; exit }
+            /^worktree / && name == t { found_path=path }
+            END { if (found_path != "") print found_path }
         ')
     end
 
     if test -z "$worktree_path"
-        if test -z "$branch"
-            echo "Error: No worktree found (not in a git repository?)" >&2
-        else
-            echo "Error: No worktree found for branch '$branch'" >&2
-        end
+        echo "Error: No worktree found for '$target'" >&2
         return 1
     end
 
@@ -417,116 +226,72 @@ function gw-cd
     end
 end
 
-# Tab completion for gw-cd
-# Complete -g/--global flag
-complete -c gw-cd -s g -l global -d 'Search all registered repositories'
-
-# Complete branch names: global mode if -g is present, otherwise local git
-complete -c gw-cd -f -n '__fish_contains_opt -s g global' -a '(gw _path --list-branches -g 2>/dev/null)'
-complete -c gw-cd -f -n 'not __fish_contains_opt -s g global' -a '(git worktree list --porcelain 2>/dev/null | grep "^branch " | sed "s|^branch refs/heads/||" | sort -u)'
-
 # Backward compatibility: cw-cd alias
 function cw-cd; gw-cd $argv; end
 complete -c cw-cd -w gw-cd
 
+# Tab completion for gw-cd
+complete -c gw-cd -f -a '(gw _complete-targets 2>/dev/null)'
+
 # Tab completion for gw/cw CLI (clap-generated)
 gw --generate-completion fish 2>/dev/null | source
 
-# Config key completion for gw config get/set
-complete -c gw -f -n '__fish_seen_subcommand_from config; and __fish_seen_subcommand_from get set' -a '(gw _config-keys 2>/dev/null)'
-complete -c cw -f -n '__fish_seen_subcommand_from config; and __fish_seen_subcommand_from get set' -a '(gw _config-keys 2>/dev/null)'
-
-# Branch completion for subcommands with positional branch args
-for cmd in pr merge resume shell delete sync diff change-base
-    complete -c gw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _path --list-branches 2>/dev/null)'
-    complete -c cw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _path --list-branches 2>/dev/null)'
+# Target completion for subcommands with positional target args
+for cmd in rm resume spawn exec
+    complete -c gw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _complete-targets 2>/dev/null)'
+    complete -c cw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _complete-targets 2>/dev/null)'
 end
 
-# Branch completion for nested subcommands: backup create/list/restore, stash apply
-complete -c gw -f -n '__fish_seen_subcommand_from backup; and __fish_seen_subcommand_from create list restore' -a '(gw _path --list-branches 2>/dev/null)'
-complete -c cw -f -n '__fish_seen_subcommand_from backup; and __fish_seen_subcommand_from create list restore' -a '(gw _path --list-branches 2>/dev/null)'
-complete -c gw -f -n '__fish_seen_subcommand_from stash; and __fish_seen_subcommand_from apply' -a '(gw _path --list-branches 2>/dev/null)'
-complete -c cw -f -n '__fish_seen_subcommand_from stash; and __fish_seen_subcommand_from apply' -a '(gw _path --list-branches 2>/dev/null)'
-
-# --term/-T value completion for new/resume commands
-function __gw_prev_arg_is_term
-    set -l tokens (commandline -opc)
-    set -l prev $tokens[-1]
-    test "$prev" = "--term" -o "$prev" = "-T"
-end
-complete -c gw -f -n '__fish_seen_subcommand_from new resume; and __gw_prev_arg_is_term' -a '(gw _term-values 2>/dev/null)'
-complete -c cw -f -n '__fish_seen_subcommand_from new resume; and __gw_prev_arg_is_term' -a '(gw _term-values 2>/dev/null)'
-
-# Config set value completion: "config set launch.method <value>" / "config set ai_tool.command <value>"
-function __gw_config_set_value_launch
-    set -l tokens (commandline -opc)
-    test (count $tokens) -ge 4; and test "$tokens[2]" = "config"; and test "$tokens[3]" = "set"; and test "$tokens[4]" = "launch.method"
-end
-function __gw_config_set_value_ai_tool
-    set -l tokens (commandline -opc)
-    test (count $tokens) -ge 4; and test "$tokens[2]" = "config"; and test "$tokens[3]" = "set"; and test "$tokens[4]" = "ai_tool.command"
-end
-complete -c gw -f -n '__gw_config_set_value_launch' -a '(gw _term-values 2>/dev/null)'
-complete -c cw -f -n '__gw_config_set_value_launch' -a '(gw _term-values 2>/dev/null)'
-complete -c gw -f -n '__gw_config_set_value_ai_tool' -a '(gw _preset-names 2>/dev/null)'
-complete -c cw -f -n '__gw_config_set_value_ai_tool' -a '(gw _preset-names 2>/dev/null)'
 "#;
 
 const POWERSHELL_FUNCTION: &str = r#"# git-worktree-manager shell functions for PowerShell
 # Source this file to enable shell functions:
 #   gw _shell-function powershell | Out-String | Invoke-Expression
 
-# Navigate to a worktree by branch name
-# If no argument is provided, show interactive worktree selector
-# Use -g to search across all registered repositories
-# Supports repo:branch notation (auto-enables global mode)
+# Navigate to a worktree by branch name or worktree name.
+# If no argument is provided, show interactive worktree selector.
 function gw-cd {
     param(
         [Parameter(Mandatory=$false, Position=0)]
-        [string]$Branch,
-        [Alias('global')]
-        [switch]$g
+        [string]$Target
     )
-
-    # Auto-detect repo:branch notation → enable global mode
-    if (-not $g -and $Branch -match ':') {
-        $g = [switch]::Present
-    }
 
     $worktreePath = $null
 
-    if (-not $Branch) {
+    if (-not $Target) {
         # No argument — interactive selector
-        if ($g) {
-            $worktreePath = gw _path -g --interactive
-        } else {
-            $worktreePath = gw _path --interactive
-        }
-        if ($LASTEXITCODE -ne 0) {
-            return
-        }
-    } elseif ($g) {
-        # Global mode: delegate to gw _path -g
-        $worktreePath = gw _path -g $Branch
+        $worktreePath = gw _path --interactive
         if ($LASTEXITCODE -ne 0) {
             return
         }
     } else {
-        # Local mode: get worktree path from git directly
-        $worktreePath = git worktree list --porcelain 2>&1 |
-            Where-Object { $_ -is [string] } |
-            ForEach-Object {
-                if ($_ -match '^worktree (.+)$') { $path = $Matches[1] }
-                if ($_ -match "^branch refs/heads/$Branch$") { $path }
-            } | Select-Object -First 1
+        # Resolve via git worktree list (branch name or worktree name)
+        $lines = git worktree list --porcelain 2>&1 | Where-Object { $_ -is [string] }
+        $currentPath = $null
+        foreach ($line in $lines) {
+            if ($line -match '^worktree (.+)$') {
+                $currentPath = $Matches[1]
+            } elseif ($line -match "^branch refs/heads/$([regex]::Escape($Target))$") {
+                $worktreePath = $currentPath
+                break
+            }
+        }
+        if (-not $worktreePath) {
+            # Try matching by worktree directory name
+            foreach ($line in $lines) {
+                if ($line -match '^worktree (.+)$') {
+                    $p = $Matches[1]
+                    if ([System.IO.Path]::GetFileName($p) -eq $Target) {
+                        $worktreePath = $p
+                        break
+                    }
+                }
+            }
+        }
     }
 
     if (-not $worktreePath) {
-        if (-not $Branch) {
-            Write-Error "Error: No worktree found (not in a git repository?)"
-        } else {
-            Write-Error "Error: No worktree found for branch '$Branch'"
-        }
+        Write-Error "Error: No worktree found for '$Target'"
         return
     }
 
@@ -543,49 +308,49 @@ function gw-cd {
 Set-Alias -Name cw-cd -Value gw-cd
 
 # Tab completion for gw-cd
-Register-ArgumentCompleter -CommandName gw-cd -ParameterName Branch -ScriptBlock {
+Register-ArgumentCompleter -CommandName gw-cd -ParameterName Target -ScriptBlock {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
 
-    $branches = $null
-    if ($fakeBoundParameters.ContainsKey('g')) {
-        # Global mode: get repo:branch from all registered repos
-        $branches = gw _path --list-branches -g 2>&1 |
-            Where-Object { $_ -is [string] -and $_.Trim() } |
-            Sort-Object -Unique
-    } else {
-        # Local mode: get branches from git
-        $branches = git worktree list --porcelain 2>&1 |
-            Where-Object { $_ -is [string] } |
-            Select-String -Pattern '^branch ' |
-            ForEach-Object { $_ -replace '^branch refs/heads/', '' } |
-            Sort-Object -Unique
-    }
+    $targets = gw _complete-targets 2>&1 |
+        Where-Object { $_ -is [string] -and $_.Trim() } |
+        Sort-Object -Unique
 
-    # Filter branches that match the current word
-    $branches | Where-Object { $_ -like "$wordToComplete*" } |
+    $targets | Where-Object { $_ -like "$wordToComplete*" } |
         ForEach-Object {
             [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
         }
 }
 
 # Tab completion for cw-cd (backward compat)
-Register-ArgumentCompleter -CommandName cw-cd -ParameterName Branch -ScriptBlock {
+Register-ArgumentCompleter -CommandName cw-cd -ParameterName Target -ScriptBlock {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
 
-    $branches = $null
-    if ($fakeBoundParameters.ContainsKey('g')) {
-        $branches = gw _path --list-branches -g 2>&1 |
-            Where-Object { $_ -is [string] -and $_.Trim() } |
-            Sort-Object -Unique
-    } else {
-        $branches = git worktree list --porcelain 2>&1 |
-            Where-Object { $_ -is [string] } |
-            Select-String -Pattern '^branch ' |
-            ForEach-Object { $_ -replace '^branch refs/heads/', '' } |
-            Sort-Object -Unique
-    }
+    $targets = gw _complete-targets 2>&1 |
+        Where-Object { $_ -is [string] -and $_.Trim() } |
+        Sort-Object -Unique
 
-    $branches | Where-Object { $_ -like "$wordToComplete*" } |
+    $targets | Where-Object { $_ -like "$wordToComplete*" } |
+        ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+}
+
+# Native target completion for `gw` / `cw` subcommands: rm, resume, spawn, exec
+Register-ArgumentCompleter -CommandName gw, cw -Native -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+
+    # Find the subcommand (first non-flag element after the command name)
+    $elements = $commandAst.CommandElements
+    if ($elements.Count -lt 2) { return }
+    $subcmd = $elements[1].Value
+
+    # Only complete positional targets for these subcommands
+    if ($subcmd -notin @('rm', 'resume', 'spawn', 'exec')) { return }
+
+    # Get completion targets from gw
+    $targets = & gw _complete-targets 2>$null
+
+    $targets | Where-Object { $_ -like "$wordToComplete*" } |
         ForEach-Object {
             [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
         }
@@ -640,6 +405,19 @@ mod tests {
     }
 
     #[test]
+    fn test_powershell_uses_complete_targets() {
+        let script = generate("powershell").unwrap();
+        assert!(
+            script.contains("gw _complete-targets"),
+            "PowerShell script should call gw _complete-targets"
+        );
+        assert!(
+            script.contains("Register-ArgumentCompleter -CommandName gw"),
+            "PowerShell script should register a completer for `gw`"
+        );
+    }
+
+    #[test]
     fn test_generate_pwsh_alias() {
         let result = generate("pwsh");
         assert!(result.is_some());
@@ -651,6 +429,20 @@ mod tests {
     fn test_generate_unknown() {
         assert!(generate("unknown").is_none());
         assert!(generate("").is_none());
+    }
+
+    /// Verify bash/zsh script uses _complete-targets as the completion source.
+    #[test]
+    fn test_bash_uses_complete_targets() {
+        let script = generate("bash").unwrap();
+        assert!(
+            script.contains("gw _complete-targets"),
+            "bash script should use gw _complete-targets for completions"
+        );
+        assert!(
+            !script.contains("_path --list-branches"),
+            "bash script should not reference the removed _path --list-branches"
+        );
     }
 
     /// Verify bash/zsh script has valid syntax using `bash -n`.

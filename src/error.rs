@@ -22,10 +22,6 @@ pub enum CwError {
     #[error("{0}")]
     Merge(String),
 
-    /// Raised when a rebase operation fails.
-    #[error("{0}")]
-    Rebase(String),
-
     /// Raised when a hook execution fails.
     #[error("{0}")]
     Hook(String),

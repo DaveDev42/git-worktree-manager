@@ -3,7 +3,7 @@
 /// Supports multiple AI coding assistants with customizable commands.
 /// Configuration stored in ~/.config/git-worktree-manager/config.json.
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -21,6 +21,8 @@ pub struct Config {
     pub git: GitConfig,
     pub update: UpdateConfig,
     pub shell_completion: ShellCompletionConfig,
+    #[serde(default)]
+    pub hooks: HookConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +41,14 @@ pub struct LaunchConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GitConfig {
     // default_base_branch removed — auto-detected per repo via git::detect_default_branch()
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct HookConfig {
+    #[serde(default)]
+    pub post_new: Option<String>,
+    #[serde(default)]
+    pub pre_rm: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +80,7 @@ impl Default for Config {
                 prompted: false,
                 installed: false,
             },
+            hooks: HookConfig::default(),
         }
     }
 }
@@ -293,6 +304,69 @@ pub fn load_config() -> Result<Config> {
     })
 }
 
+/// Load configuration with the repo-local `.cwconfig.json` (if any) deep-merged
+/// over the global config. Layer order (lowest to highest precedence):
+///
+///   1. `Config::default()`
+///   2. Global `~/.config/git-worktree-manager/config.json` (or legacy path)
+///   3. Repo-local `.cwconfig.json` walked up from `cwd`
+///
+/// Returns `Config::default()` if no config files are found.
+pub fn load_effective_config(cwd: &Path) -> Result<Config> {
+    load_effective_config_with_global(cwd, &get_config_path())
+}
+
+/// Same as [`load_effective_config`] but accepts an explicit global config path.
+/// Carved out so tests can drive the global layer without setting `HOME`.
+pub fn load_effective_config_with_global(cwd: &Path, global_path: &Path) -> Result<Config> {
+    let mut merged = serde_json::to_value(Config::default())?;
+
+    // Layer 2: global file (or legacy fallback if explicit path absent).
+    let global_value = if global_path.exists() {
+        Some(read_json_value(global_path)?)
+    } else if global_path == get_config_path().as_path() {
+        // Only fall through to legacy when the caller passed the *default* path —
+        // tests that pass an explicit synthetic path should not pick up the user's
+        // real legacy file.
+        let legacy = get_legacy_config_path();
+        if legacy.exists() {
+            Some(read_json_value(&legacy)?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    if let Some(v) = global_value {
+        merged = deep_merge(merged, v);
+    }
+
+    // Layer 3: repo-local `.cwconfig.json` walked up from cwd.
+    if let Some(repo_value) = crate::repo_config::load_repo_config(cwd)? {
+        merged = deep_merge(merged, repo_value);
+    }
+
+    serde_json::from_value(merged)
+        .map_err(|e| CwError::Config(format!("invalid effective config: {}", e)))
+}
+
+fn read_json_value(path: &Path) -> Result<serde_json::Value> {
+    let content = std::fs::read_to_string(path).map_err(|e| {
+        CwError::Config(format!(
+            "failed to load config from {}: {}",
+            path.display(),
+            e
+        ))
+    })?;
+    serde_json::from_str(&content).map_err(|e| {
+        CwError::Config(format!(
+            "failed to parse config from {}: {}",
+            path.display(),
+            e
+        ))
+    })
+}
+
 /// Save configuration to file.
 pub fn save_config(config: &Config) -> Result<()> {
     let config_path = get_config_path();
@@ -314,6 +388,12 @@ pub fn save_config(config: &Config) -> Result<()> {
 ///
 /// Priority: CW_AI_TOOL env > config file > default ("claude").
 pub fn get_ai_tool_command() -> Result<Vec<String>> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    get_ai_tool_command_for_cwd(&cwd)
+}
+
+/// Like [`get_ai_tool_command`] but resolves config from `cwd` so a repo-local `.cwconfig.json` can override the global `ai_tool` block.
+pub fn get_ai_tool_command_for_cwd(cwd: &Path) -> Result<Vec<String>> {
     // Check environment variable first
     if let Ok(env_tool) = std::env::var("CW_AI_TOOL") {
         if env_tool.trim().is_empty() {
@@ -322,7 +402,7 @@ pub fn get_ai_tool_command() -> Result<Vec<String>> {
         return Ok(env_tool.split_whitespace().map(String::from).collect());
     }
 
-    let config = load_config()?;
+    let config = load_effective_config(cwd)?;
     let command = &config.ai_tool.command;
     let args = &config.ai_tool.args;
 
@@ -344,6 +424,12 @@ pub fn get_ai_tool_command() -> Result<Vec<String>> {
 
 /// Get the AI tool resume command.
 pub fn get_ai_tool_resume_command() -> Result<Vec<String>> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    get_ai_tool_resume_command_for_cwd(&cwd)
+}
+
+/// Like [`get_ai_tool_resume_command`] but resolves config from `cwd` so a repo-local `.cwconfig.json` can override the global `ai_tool` block.
+pub fn get_ai_tool_resume_command_for_cwd(cwd: &Path) -> Result<Vec<String>> {
     if let Ok(env_tool) = std::env::var("CW_AI_TOOL") {
         if env_tool.trim().is_empty() {
             return Ok(Vec::new());
@@ -353,7 +439,7 @@ pub fn get_ai_tool_resume_command() -> Result<Vec<String>> {
         return Ok(parts);
     }
 
-    let config = load_config()?;
+    let config = load_effective_config(cwd)?;
     let command = &config.ai_tool.command;
     let args = &config.ai_tool.args;
 
@@ -387,6 +473,12 @@ pub fn get_ai_tool_resume_command() -> Result<Vec<String>> {
 
 /// Get the AI tool merge command.
 pub fn get_ai_tool_merge_command(prompt: &str) -> Result<Vec<String>> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    get_ai_tool_merge_command_for_cwd(&cwd, prompt)
+}
+
+/// Like [`get_ai_tool_merge_command`] but resolves config from `cwd` so a repo-local `.cwconfig.json` can override the global `ai_tool` block.
+pub fn get_ai_tool_merge_command_for_cwd(cwd: &Path, prompt: &str) -> Result<Vec<String>> {
     if let Ok(env_tool) = std::env::var("CW_AI_TOOL") {
         if env_tool.trim().is_empty() {
             return Ok(Vec::new());
@@ -396,7 +488,7 @@ pub fn get_ai_tool_merge_command(prompt: &str) -> Result<Vec<String>> {
         return Ok(parts);
     }
 
-    let config = load_config()?;
+    let config = load_effective_config(cwd)?;
     let command = &config.ai_tool.command;
     let args = &config.ai_tool.args;
 
@@ -450,7 +542,13 @@ pub fn get_ai_tool_merge_command(prompt: &str) -> Result<Vec<String>> {
 /// Appends the prompt as a positional argument so the AI tool starts in interactive mode
 /// with the given task. For Claude Code: `claude "<prompt>"` starts interactive with initial prompt.
 pub fn get_ai_tool_delegate_command(prompt: &str) -> Result<Vec<String>> {
-    let mut cmd = get_ai_tool_command()?;
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    get_ai_tool_delegate_command_for_cwd(&cwd, prompt)
+}
+
+/// Like [`get_ai_tool_delegate_command`] but resolves config from `cwd` so a repo-local `.cwconfig.json` can override the global `ai_tool` block.
+pub fn get_ai_tool_delegate_command_for_cwd(cwd: &Path, prompt: &str) -> Result<Vec<String>> {
+    let mut cmd = get_ai_tool_command_for_cwd(cwd)?;
     if cmd.is_empty() {
         return Ok(cmd);
     }
@@ -460,39 +558,18 @@ pub fn get_ai_tool_delegate_command(prompt: &str) -> Result<Vec<String>> {
 
 /// Check if the currently configured AI tool is Claude-based.
 pub fn is_claude_tool() -> Result<bool> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    is_claude_tool_for_cwd(&cwd)
+}
+
+/// Like [`is_claude_tool`] but resolves config from `cwd` so a repo-local `.cwconfig.json` can override the global `ai_tool` block.
+pub fn is_claude_tool_for_cwd(cwd: &Path) -> Result<bool> {
     if let Ok(env_tool) = std::env::var("CW_AI_TOOL") {
         let first_word = env_tool.split_whitespace().next().unwrap_or("");
         return Ok(first_word == "claude");
     }
-    let config = load_config()?;
+    let config = load_effective_config(cwd)?;
     Ok(claude_preset_names().contains(&config.ai_tool.command.as_str()))
-}
-
-/// Set the AI tool command in configuration.
-pub fn set_ai_tool(tool: &str, args: Option<Vec<String>>) -> Result<()> {
-    let mut config = load_config()?;
-    config.ai_tool.command = tool.to_string();
-    config.ai_tool.args = args.unwrap_or_default();
-    save_config(&config)
-}
-
-/// Use a predefined AI tool preset.
-pub fn use_preset(preset_name: &str) -> Result<()> {
-    let presets = ai_tool_presets();
-    if !presets.contains_key(preset_name) {
-        let available: Vec<&str> = presets.keys().copied().collect();
-        return Err(CwError::Config(format!(
-            "Unknown preset: {}. Available: {}",
-            preset_name,
-            available.join(", ")
-        )));
-    }
-    set_ai_tool(preset_name, None)
-}
-
-/// Reset configuration to defaults.
-pub fn reset_config() -> Result<()> {
-    save_config(&Config::default())
 }
 
 /// Resolve a launch method value (possibly an alias) to its display name.
@@ -502,269 +579,6 @@ pub fn resolve_launch_display_name(method: &str) -> String {
     LaunchMethod::from_str_opt(canonical)
         .map(|m| format!("{} ({})", m.display_name(), method))
         .unwrap_or_else(|| method.to_string())
-}
-
-/// All known configuration keys with descriptions.
-pub const CONFIG_KEYS: &[(&str, &str)] = &[
-    (
-        "ai_tool.command",
-        "AI tool command name (e.g., claude, codex)",
-    ),
-    ("ai_tool.args", "Additional arguments passed to AI tool"),
-    (
-        "launch.method",
-        "Terminal launch method (foreground, tmux, wezterm, ...)",
-    ),
-    (
-        "launch.tmux_session_prefix",
-        "Prefix for tmux session names",
-    ),
-    (
-        "launch.wezterm_ready_timeout",
-        "Timeout (seconds) waiting for WezTerm",
-    ),
-    (
-        "update.auto_check",
-        "Automatically check for updates on startup",
-    ),
-    (
-        "shell_completion.prompted",
-        "Whether shell completion setup was prompted",
-    ),
-    (
-        "shell_completion.installed",
-        "Whether shell completion is installed",
-    ),
-];
-
-/// List all configuration keys with their current values and descriptions.
-pub fn list_config() -> Result<()> {
-    use console::style;
-
-    let config = load_config()?;
-    let json = serde_json::to_value(&config)?;
-
-    println!();
-    println!(
-        "  {:<35} {:<25} {}",
-        style("KEY").dim(),
-        style("VALUE").dim(),
-        style("DESCRIPTION").dim(),
-    );
-    println!("  {}", style("─".repeat(90)).dim());
-
-    for (key, desc) in CONFIG_KEYS {
-        let keys: Vec<&str> = key.split('.').collect();
-        let mut current = &json;
-        let mut found = true;
-        for &k in &keys {
-            match current.get(k) {
-                Some(v) => current = v,
-                None => {
-                    found = false;
-                    break;
-                }
-            }
-        }
-
-        let value_str = if !found {
-            style("(unset)".to_string()).dim().to_string()
-        } else {
-            let raw = match current {
-                serde_json::Value::String(s) => s.clone(),
-                serde_json::Value::Bool(b) => b.to_string(),
-                serde_json::Value::Number(n) => n.to_string(),
-                serde_json::Value::Null => "null".to_string(),
-                serde_json::Value::Array(a) => {
-                    if a.is_empty() {
-                        "[]".to_string()
-                    } else {
-                        serde_json::to_string(a).unwrap_or_default()
-                    }
-                }
-                other => serde_json::to_string(other).unwrap_or_default(),
-            };
-            // Show display name for launch.method
-            if *key == "launch.method" && raw != "null" {
-                resolve_launch_display_name(&raw)
-            } else {
-                raw
-            }
-        };
-
-        println!(
-            "  {:<35} {:<25} {}",
-            style(key).bold(),
-            value_str,
-            style(desc).dim(),
-        );
-    }
-    println!();
-
-    Ok(())
-}
-
-/// Get a configuration value by dot-separated key path.
-pub fn get_config_value(key_path: &str) -> Result<()> {
-    let config = load_config()?;
-    let json = serde_json::to_value(&config)?;
-
-    let keys: Vec<&str> = key_path.split('.').collect();
-    let mut current = &json;
-    for &key in &keys {
-        current = current
-            .get(key)
-            .ok_or_else(|| CwError::Config(format!("Unknown config key: {}", key_path)))?;
-    }
-
-    match current {
-        serde_json::Value::String(s) => println!("{}", s),
-        serde_json::Value::Bool(b) => println!("{}", b),
-        serde_json::Value::Number(n) => println!("{}", n),
-        serde_json::Value::Null => println!("null"),
-        other => println!(
-            "{}",
-            serde_json::to_string_pretty(other).unwrap_or_default()
-        ),
-    }
-
-    Ok(())
-}
-
-/// Set a configuration value by dot-separated key path.
-///
-/// Special handling:
-/// - `ai_tool <preset>` — sets command + args from preset (e.g., `ai_tool claude-yolo`)
-/// - `launch.method <alias>` — resolves alias (e.g., `w-t` → `wezterm-tab`)
-pub fn set_config_value(key_path: &str, value: &str) -> Result<()> {
-    // Shortcut: "ai_tool <preset_name>" applies the preset
-    if key_path == "ai_tool" {
-        let presets = ai_tool_presets();
-        if presets.contains_key(value) {
-            return use_preset(value);
-        }
-        // Not a preset — treat as raw command name
-        return set_ai_tool(value, None);
-    }
-
-    // Shortcut: resolve launch method aliases
-    if key_path == "launch.method" {
-        let aliases = launch_method_aliases();
-        let canonical = aliases.get(value).copied().unwrap_or(value);
-        // Validate
-        if value != "null"
-            && LaunchMethod::from_str_opt(canonical).is_none()
-            && LaunchMethod::from_str_opt(value).is_none()
-        {
-            return Err(CwError::Config(format!(
-                "Unknown launch method: '{}'. Use 'gw config list-presets' or 'gw --help' for options.",
-                value
-            )));
-        }
-    }
-
-    let mut config = load_config()?;
-    let mut json = serde_json::to_value(&config)?;
-
-    let keys: Vec<&str> = key_path.split('.').collect();
-
-    // Convert string boolean values
-    let json_value: Value = match value.to_lowercase().as_str() {
-        "true" => Value::Bool(true),
-        "false" => Value::Bool(false),
-        _ => {
-            // Try to parse as number
-            if let Ok(n) = value.parse::<f64>() {
-                serde_json::Number::from_f64(n)
-                    .map(Value::Number)
-                    .unwrap_or(Value::String(value.to_string()))
-            } else {
-                Value::String(value.to_string())
-            }
-        }
-    };
-
-    // Navigate to parent and set value
-    let mut current = &mut json;
-    for &key in &keys[..keys.len() - 1] {
-        if !current.is_object() {
-            return Err(CwError::Config(format!(
-                "Invalid config path: {}",
-                key_path
-            )));
-        }
-        current = current
-            .as_object_mut()
-            .ok_or_else(|| CwError::Config(format!("Invalid config path: {}", key_path)))?
-            .entry(key)
-            .or_insert(Value::Object(serde_json::Map::new()));
-    }
-
-    if let Some(obj) = current.as_object_mut() {
-        obj.insert(keys[keys.len() - 1].to_string(), json_value);
-    } else {
-        return Err(CwError::Config(format!(
-            "Invalid config path: {}",
-            key_path
-        )));
-    }
-
-    // Deserialize back to Config and save
-    config = serde_json::from_value(json)
-        .map_err(|e| CwError::Config(format!("Invalid config value: {}", e)))?;
-    save_config(&config)
-}
-
-/// Get a formatted string of the current configuration.
-pub fn show_config() -> Result<String> {
-    let config = load_config()?;
-    let mut lines = Vec::new();
-
-    lines.push("Current configuration:".to_string());
-    lines.push(String::new());
-    lines.push(format!("  AI Tool: {}", config.ai_tool.command));
-
-    if !config.ai_tool.args.is_empty() {
-        lines.push(format!("    Args: {}", config.ai_tool.args.join(" ")));
-    }
-
-    let cmd = get_ai_tool_command()?;
-    lines.push(format!("    Effective command: {}", cmd.join(" ")));
-    lines.push(String::new());
-
-    if let Some(ref method) = config.launch.method {
-        let display = resolve_launch_display_name(method);
-        lines.push(format!("  Launch method: {}", display));
-    } else {
-        lines.push("  Launch method: Foreground (default)".to_string());
-    }
-
-    // Show auto-detected default branch for current repo
-    let detected = crate::git::detect_default_branch(None);
-    lines.push(format!(
-        "  Default base branch: {} (auto-detected)",
-        detected,
-    ));
-    lines.push(String::new());
-    lines.push(format!("Config file: {}", get_config_path().display()));
-
-    Ok(lines.join("\n"))
-}
-
-/// Get a formatted list of available presets.
-pub fn list_presets() -> String {
-    let presets = ai_tool_presets();
-    let mut lines = vec!["Available AI tool presets:".to_string(), String::new()];
-
-    let mut preset_names: Vec<&str> = presets.keys().copied().collect();
-    preset_names.sort();
-
-    for name in preset_names {
-        let cmd = presets[name].join(" ");
-        lines.push(format!("  {:<20} -> {}", name, cmd));
-    }
-
-    lines.join("\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -911,6 +725,12 @@ pub fn parse_term_option(term_value: Option<&str>) -> Result<(LaunchMethod, Opti
 
 /// Get default launch method from config or environment.
 pub fn get_default_launch_method() -> Result<LaunchMethod> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    get_default_launch_method_for_cwd(&cwd)
+}
+
+/// Like [`get_default_launch_method`] but resolves config from `cwd` so a repo-local `.cwconfig.json` can override the global `launch` block.
+pub fn get_default_launch_method_for_cwd(cwd: &Path) -> Result<LaunchMethod> {
     // 1. Environment variable
     if let Ok(env_val) = std::env::var("CW_LAUNCH_METHOD") {
         let resolved = resolve_launch_alias(&env_val);
@@ -920,7 +740,7 @@ pub fn get_default_launch_method() -> Result<LaunchMethod> {
     }
 
     // 2. Config file
-    let config = load_config()?;
+    let config = load_effective_config(cwd)?;
     if let Some(ref method) = config.launch.method {
         let resolved = resolve_launch_alias(method);
         if let Some(m) = LaunchMethod::from_str_opt(&resolved) {
@@ -975,13 +795,5 @@ mod tests {
         assert!(presets.contains_key("codex"));
         assert_eq!(presets["no-op"].len(), 0);
         assert_eq!(presets["claude"], vec!["claude"]);
-    }
-
-    #[test]
-    fn test_list_presets_format() {
-        let output = list_presets();
-        assert!(output.contains("Available AI tool presets:"));
-        assert!(output.contains("claude"));
-        assert!(output.contains("no-op"));
     }
 }

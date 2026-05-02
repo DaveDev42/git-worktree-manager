@@ -13,7 +13,7 @@ use ratatui::{backend::CrosstermBackend, Terminal, TerminalOptions, Viewport};
 use crate::console as cwconsole;
 use crate::constants::{
     format_config_key, path_age_days, sanitize_branch_name, CONFIG_KEY_BASE_BRANCH,
-    CONFIG_KEY_BASE_PATH, CONFIG_KEY_INTENDED_BRANCH,
+    CONFIG_KEY_INTENDED_BRANCH,
 };
 use crate::error::Result;
 use crate::git;
@@ -59,8 +59,7 @@ pub fn get_worktree_status(
     // takes ~1.5s on macOS and dominates `gw list` latency. This narrows
     // exclusion to ancestors only (no siblings) since the fast path must
     // avoid `self_siblings`, which internally triggers the cwd scan.
-    // Destructive commands (`gw delete`, `gw clean`) still use the full
-    // `detect_busy`.
+    // Destructive commands (`gw rm`) still use the full `detect_busy`.
     if !crate::operations::busy::detect_busy_lockfile_only(path).is_empty() {
         return "busy".to_string();
     }
@@ -138,7 +137,7 @@ pub fn format_age(age_days: f64) -> String {
     }
 }
 
-/// Compose a single row for the `gw delete -i` multi-select TUI.
+/// Compose a single row for the `gw rm -i` multi-select TUI.
 ///
 /// Columns, left to right, separated by one space:
 ///   branch (padded to `branch_col`) | age (padded to 9) | busy (7, colored) | path
@@ -241,29 +240,150 @@ fn prewarm_busy_caches() {
     std::thread::spawn(crate::operations::claude_process::prewarm);
 }
 
-/// List all worktrees for the current repository.
-pub fn list_worktrees(no_cache: bool) -> Result<()> {
-    let repo = git::get_repo_root(None)?;
-    let worktrees = git::parse_worktrees(&repo)?;
+/// List all worktrees, grouped by repository, using cwd-based scope discovery.
+pub fn list_worktrees() -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let scope = crate::scope::discover_scope(&cwd)?;
 
+    if scope.is_empty() {
+        println!("  {}\n", style("No worktrees found.").dim());
+        return Ok(());
+    }
+
+    // Group by repo_root, preserving first-seen order.
+    // Using Vec<(PathBuf, Vec<(String, PathBuf)>)> instead of HashMap to keep
+    // a stable, deterministic order for multi-repo output.
+    let mut groups: Vec<(std::path::PathBuf, Vec<(String, std::path::PathBuf)>)> = Vec::new();
+    for w in scope.worktrees() {
+        let key = &w.repo_root;
+        let entry = match groups.iter_mut().find(|(k, _)| k == key) {
+            Some(e) => e,
+            None => {
+                groups.push((key.clone(), Vec::new()));
+                groups.last_mut().unwrap()
+            }
+        };
+        // Re-derive (branch_raw, path) tuple shape that the existing rendering
+        // pipeline expects. For detached HEAD, use "(detached)" so downstream
+        // normalize_branch_name keeps working.
+        let branch_raw = w.branch.clone().unwrap_or_else(|| "(detached)".to_string());
+        entry.1.push((branch_raw, w.path.clone()));
+    }
+
+    for (i, (repo, worktrees)) in groups.iter().enumerate() {
+        if i > 0 {
+            println!(); // separator between sections
+        }
+        render_repo_section(repo, worktrees)?;
+    }
+    Ok(())
+}
+
+/// Print all worktrees as TSV — scriptable, machine-readable surface.
+///
+/// Six tab-separated columns, no header, no colors:
+///   `<worktree_id>\t<branch>\t<status>\t<age>\t<repo_root>\t<path>`
+///
+/// Silent when no worktrees are found (unlike `list_worktrees` which prints a
+/// message). Order matches `discover_scope`, grouped by repo in first-seen order.
+pub fn list_worktrees_tsv() -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let scope = crate::scope::discover_scope(&cwd)?;
+
+    if scope.is_empty() {
+        return Ok(());
+    }
+
+    // Group by repo_root in first-seen order.
+    let mut groups: Vec<(std::path::PathBuf, Vec<(String, std::path::PathBuf)>)> = Vec::new();
+    for w in scope.worktrees() {
+        let key = &w.repo_root;
+        let entry = match groups.iter_mut().find(|(k, _)| k == key) {
+            Some(e) => e,
+            None => {
+                groups.push((key.clone(), Vec::new()));
+                groups.last_mut().unwrap()
+            }
+        };
+        let branch_raw = w.branch.clone().unwrap_or_else(|| "(detached)".to_string());
+        entry.1.push((branch_raw, w.path.clone()));
+    }
+
+    for (repo, worktrees) in &groups {
+        let pr_cache = PrCache::load_or_fetch(repo, false);
+
+        // Serial prep: cheap local work (branch normalization, age, intended_branch).
+        let inputs: Vec<RowInput> = worktrees
+            .iter()
+            .map(|(branch, path)| {
+                let current_branch = git::normalize_branch_name(branch).to_string();
+                let age = path_age_str(path);
+                let intended_branch = lookup_intended_branch(repo, &current_branch, path);
+                let worktree_id = intended_branch.unwrap_or_else(|| current_branch.clone());
+                RowInput {
+                    path: path.clone(),
+                    current_branch,
+                    worktree_id,
+                    age,
+                    // rel_path not needed for TSV; repo_root and abs path are the columns.
+                    rel_path: String::new(),
+                }
+            })
+            .collect();
+
+        // Parallel status computation (same pattern as the static path in render_repo_section).
+        // IndexedParallelIterator preserves source-vec order on collect — required for the zip below.
+        let rows: Vec<WorktreeRow> = inputs
+            .into_par_iter()
+            .map(|i| {
+                let status = get_worktree_status(&i.path, repo, Some(&i.current_branch), &pr_cache);
+                i.into_row(status)
+            })
+            .collect();
+
+        for (row, (_, path)) in rows.iter().zip(worktrees.iter()) {
+            println!(
+                "{}\t{}\t{}\t{}\t{}\t{}",
+                row.worktree_id,
+                row.current_branch,
+                row.status,
+                row.age,
+                repo.display(),
+                path.display(),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Render a single repository's worktree list section.
+///
+/// This is the extracted body of the original `list_worktrees`, parameterised
+/// over `(repo, worktrees)` so the outer function can call it once per repo
+/// family found by `scope::discover_scope`.
+fn render_repo_section(
+    repo: &std::path::Path,
+    worktrees: &[(String, std::path::PathBuf)],
+) -> Result<()> {
     println!(
         "\n{}  {}\n",
         style("Worktrees for repository:").cyan().bold(),
         repo.display()
     );
 
-    let pr_cache = PrCache::load_or_fetch(&repo, no_cache);
+    let pr_cache = PrCache::load_or_fetch(repo, false);
 
     // Serial prep: cheap local work. Keep single-threaded for clarity.
     let inputs: Vec<RowInput> = worktrees
         .iter()
         .map(|(branch, path)| {
             let current_branch = git::normalize_branch_name(branch).to_string();
-            let rel_path = pathdiff::diff_paths(path, &repo)
+            let rel_path = pathdiff::diff_paths(path, repo)
                 .map(|p: std::path::PathBuf| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| path.to_string_lossy().to_string());
             let age = path_age_str(path);
-            let intended_branch = lookup_intended_branch(&repo, &current_branch, path);
+            let intended_branch = lookup_intended_branch(repo, &current_branch, path);
             let worktree_id = intended_branch.unwrap_or_else(|| current_branch.clone());
             RowInput {
                 path: path.clone(),
@@ -275,10 +395,9 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
         })
         .collect();
 
-    if inputs.is_empty() {
-        println!("  {}\n", style("No worktrees found.").dim());
-        return Ok(());
-    }
+    // A repo section with zero worktrees produces an empty table — acceptable
+    // in practice since a repo always has at least the main worktree.
+    // (The outer scope-level empty check handles the truly empty case.)
 
     prewarm_busy_caches();
 
@@ -292,14 +411,13 @@ pub fn list_worktrees(no_cache: bool) -> Result<()> {
     let use_progressive = is_tty && !narrow;
 
     let rows: Vec<WorktreeRow> = if use_progressive {
-        render_rows_progressive(&repo, &pr_cache, inputs)?
+        render_rows_progressive(repo, &pr_cache, inputs)?
     } else {
         // rayon borrows &pr_cache across workers via the type system.
         inputs
             .into_par_iter()
             .map(|i| {
-                let status =
-                    get_worktree_status(&i.path, &repo, Some(&i.current_branch), &pr_cache);
+                let status = get_worktree_status(&i.path, repo, Some(&i.current_branch), &pr_cache);
                 i.into_row(status)
             })
             .collect()
@@ -562,10 +680,10 @@ fn lookup_intended_branch(repo: &Path, current_branch: &str, path: &Path) -> Opt
 }
 
 /// Print a multi-line block per busy worktree showing the same body
-/// sections `gw delete` uses (Active Claude session / Lockfile holder /
+/// sections `gw rm` uses (Active Claude session / Lockfile holder /
 /// processes with cwd in this worktree), via the shared
 /// `busy_messages::render_busy_block`. Skips the `--force` guidance —
-/// `gw status` is read-only.
+/// `gw list` is read-only.
 ///
 /// No-op when there are zero busy rows. The cwd scan is `OnceLock`-cached
 /// for the process, so calling this after `get_worktree_status` adds no
@@ -714,460 +832,6 @@ fn print_worktree_compact(rows: &[WorktreeRow]) {
             println!("      {}", details.join("  "));
         }
     }
-}
-
-/// Show status of current worktree and list all worktrees.
-pub fn show_status(no_cache: bool) -> Result<()> {
-    let repo = git::get_repo_root(None)?;
-
-    match git::get_current_branch(Some(&std::env::current_dir().unwrap_or_default())) {
-        Ok(branch) => {
-            let base_key = format_config_key(CONFIG_KEY_BASE_BRANCH, &branch);
-            let path_key = format_config_key(CONFIG_KEY_BASE_PATH, &branch);
-            let base = git::get_config(&base_key, Some(&repo));
-            let base_path = git::get_config(&path_key, Some(&repo));
-
-            println!("\n{}", style("Current worktree:").cyan().bold());
-            println!("  Feature:  {}", style(&branch).green());
-            println!(
-                "  Base:     {}",
-                style(base.as_deref().unwrap_or("N/A")).green()
-            );
-            println!(
-                "  Base path: {}\n",
-                style(base_path.as_deref().unwrap_or("N/A")).blue()
-            );
-        }
-        Err(_) => {
-            println!(
-                "\n{}\n",
-                style("Current directory is not a feature worktree or is the main repository.")
-                    .yellow()
-            );
-        }
-    }
-
-    list_worktrees(no_cache)
-}
-
-/// Display worktree hierarchy in a visual tree format.
-pub fn show_tree(no_cache: bool) -> Result<()> {
-    prewarm_busy_caches();
-    let repo = git::get_repo_root(None)?;
-    let cwd = std::env::current_dir().unwrap_or_default();
-
-    let repo_name = repo
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "repo".to_string());
-
-    println!(
-        "\n{} (base repository)",
-        style(format!("{}/", repo_name)).cyan().bold()
-    );
-    println!("{}\n", style(repo.display().to_string()).dim());
-
-    let feature_worktrees = git::get_feature_worktrees(Some(&repo))?;
-
-    if feature_worktrees.is_empty() {
-        println!("{}\n", style("  (no feature worktrees)").dim());
-        return Ok(());
-    }
-
-    let mut sorted = feature_worktrees;
-    sorted.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let pr_cache = PrCache::load_or_fetch(&repo, no_cache);
-
-    for (i, (branch_name, path)) in sorted.iter().enumerate() {
-        let is_last = i == sorted.len() - 1;
-        let prefix = if is_last { "└── " } else { "├── " };
-
-        let status = get_worktree_status(path, &repo, Some(branch_name.as_str()), &pr_cache);
-        let is_current = cwd
-            .to_string_lossy()
-            .starts_with(&path.to_string_lossy().to_string());
-
-        let icon = cwconsole::status_icon(&status);
-        let st = cwconsole::status_style(&status);
-
-        let branch_display = if is_current {
-            st.clone()
-                .bold()
-                .apply_to(format!("★ {}", branch_name))
-                .to_string()
-        } else {
-            st.clone().apply_to(branch_name.as_str()).to_string()
-        };
-
-        let age = path_age_str(path);
-        let age_display = if age.is_empty() {
-            String::new()
-        } else {
-            format!("  {}", style(age).dim())
-        };
-
-        println!(
-            "{}{} {}{}",
-            prefix,
-            st.apply_to(icon),
-            branch_display,
-            age_display
-        );
-
-        let path_display = if let Ok(rel) = path.strip_prefix(repo.parent().unwrap_or(&repo)) {
-            format!("../{}", rel.display())
-        } else {
-            path.display().to_string()
-        };
-
-        let continuation = if is_last { "    " } else { "│   " };
-        println!("{}{}", continuation, style(&path_display).dim());
-    }
-
-    // Legend
-    println!("\n{}", style("Legend:").bold());
-    println!(
-        "  {} active (current)",
-        cwconsole::status_style("active").apply_to("●")
-    );
-    println!("  {} clean", cwconsole::status_style("clean").apply_to("○"));
-    println!(
-        "  {} modified",
-        cwconsole::status_style("modified").apply_to("◉")
-    );
-    println!(
-        "  {} pr-open",
-        cwconsole::status_style("pr-open").apply_to("⬆")
-    );
-    println!(
-        "  {} merged",
-        cwconsole::status_style("merged").apply_to("✓")
-    );
-    println!(
-        "  {} busy (other session)",
-        cwconsole::status_style("busy").apply_to("🔒")
-    );
-    println!("  {} stale", cwconsole::status_style("stale").apply_to("x"));
-    println!(
-        "  {} currently active worktree\n",
-        style("★").green().bold()
-    );
-
-    Ok(())
-}
-
-/// Display usage analytics for worktrees.
-pub fn show_stats(no_cache: bool) -> Result<()> {
-    prewarm_busy_caches();
-    let repo = git::get_repo_root(None)?;
-    let feature_worktrees = git::get_feature_worktrees(Some(&repo))?;
-
-    if feature_worktrees.is_empty() {
-        println!("\n{}\n", style("No feature worktrees found").yellow());
-        return Ok(());
-    }
-
-    println!();
-    println!("  {}", style("Worktree Statistics").cyan().bold());
-    println!("  {}", style("─".repeat(40)).dim());
-    println!();
-
-    struct WtData {
-        branch: String,
-        status: String,
-        age_days: f64,
-        commit_count: usize,
-    }
-
-    let mut data: Vec<WtData> = Vec::new();
-
-    let pr_cache = PrCache::load_or_fetch(&repo, no_cache);
-
-    for (branch_name, path) in &feature_worktrees {
-        let status = get_worktree_status(path, &repo, Some(branch_name.as_str()), &pr_cache);
-        let age_days = path_age_days(path).unwrap_or(0.0);
-
-        let commit_count = git::git_command(
-            &["rev-list", "--count", branch_name],
-            Some(path),
-            false,
-            true,
-        )
-        .ok()
-        .and_then(|r| {
-            if r.returncode == 0 {
-                r.stdout.trim().parse::<usize>().ok()
-            } else {
-                None
-            }
-        })
-        .unwrap_or(0);
-
-        data.push(WtData {
-            branch: branch_name.clone(),
-            status,
-            age_days,
-            commit_count,
-        });
-    }
-
-    // Overview
-    let mut status_counts: std::collections::HashMap<&str, usize> =
-        std::collections::HashMap::new();
-    for d in &data {
-        *status_counts.entry(d.status.as_str()).or_insert(0) += 1;
-    }
-
-    println!("  {} {}", style("Total:").bold(), data.len());
-
-    // Status bar visualization
-    let total = data.len();
-    let bar_width = 30;
-    let clean = *status_counts.get("clean").unwrap_or(&0);
-    let modified = *status_counts.get("modified").unwrap_or(&0);
-    let active = *status_counts.get("active").unwrap_or(&0);
-    let pr_open = *status_counts.get("pr-open").unwrap_or(&0);
-    let merged = *status_counts.get("merged").unwrap_or(&0);
-    let busy = *status_counts.get("busy").unwrap_or(&0);
-    let stale = *status_counts.get("stale").unwrap_or(&0);
-
-    let bar_clean = (clean * bar_width) / total.max(1);
-    let bar_modified = (modified * bar_width) / total.max(1);
-    let bar_active = (active * bar_width) / total.max(1);
-    let bar_pr_open = (pr_open * bar_width) / total.max(1);
-    let bar_merged = (merged * bar_width) / total.max(1);
-    let bar_busy = (busy * bar_width) / total.max(1);
-    let bar_stale = (stale * bar_width) / total.max(1);
-    // Fill remaining with clean if rounding left gaps
-    let bar_remainder = bar_width
-        - bar_clean
-        - bar_modified
-        - bar_active
-        - bar_pr_open
-        - bar_merged
-        - bar_busy
-        - bar_stale;
-
-    print!("  ");
-    print!("{}", style("█".repeat(bar_clean + bar_remainder)).green());
-    print!("{}", style("█".repeat(bar_modified)).yellow());
-    print!("{}", style("█".repeat(bar_active)).green().bold());
-    print!("{}", style("█".repeat(bar_pr_open)).cyan());
-    print!("{}", style("█".repeat(bar_merged)).magenta());
-    print!("{}", style("█".repeat(bar_busy)).red().bold());
-    print!("{}", style("█".repeat(bar_stale)).red());
-    println!();
-
-    let mut parts = Vec::new();
-    if clean > 0 {
-        parts.push(format!("{}", style(format!("○ {} clean", clean)).green()));
-    }
-    if modified > 0 {
-        parts.push(format!(
-            "{}",
-            style(format!("◉ {} modified", modified)).yellow()
-        ));
-    }
-    if active > 0 {
-        parts.push(format!(
-            "{}",
-            style(format!("● {} active", active)).green().bold()
-        ));
-    }
-    if pr_open > 0 {
-        parts.push(format!(
-            "{}",
-            style(format!("⬆ {} pr-open", pr_open)).cyan()
-        ));
-    }
-    if merged > 0 {
-        parts.push(format!(
-            "{}",
-            style(format!("✓ {} merged", merged)).magenta()
-        ));
-    }
-    if busy > 0 {
-        parts.push(format!(
-            "{}",
-            style(format!("🔒 {} busy", busy)).red().bold()
-        ));
-    }
-    if stale > 0 {
-        parts.push(format!("{}", style(format!("x {} stale", stale)).red()));
-    }
-    println!("  {}", parts.join("  "));
-    println!();
-
-    // Age statistics
-    let ages: Vec<f64> = data
-        .iter()
-        .filter(|d| d.age_days > 0.0)
-        .map(|d| d.age_days)
-        .collect();
-    if !ages.is_empty() {
-        let avg = ages.iter().sum::<f64>() / ages.len() as f64;
-        let oldest = ages.iter().cloned().fold(0.0_f64, f64::max);
-        let newest = ages.iter().cloned().fold(f64::MAX, f64::min);
-
-        println!("  {} Age", style("◷").dim());
-        println!(
-            "    avg {}  oldest {}  newest {}",
-            style(format!("{:.1}d", avg)).bold(),
-            style(format!("{:.1}d", oldest)).yellow(),
-            style(format!("{:.1}d", newest)).green(),
-        );
-        println!();
-    }
-
-    // Commit statistics
-    let commits: Vec<usize> = data
-        .iter()
-        .filter(|d| d.commit_count > 0)
-        .map(|d| d.commit_count)
-        .collect();
-    if !commits.is_empty() {
-        let total: usize = commits.iter().sum();
-        let avg = total as f64 / commits.len() as f64;
-        let max_c = *commits.iter().max().unwrap_or(&0);
-
-        println!("  {} Commits", style("⟲").dim());
-        println!(
-            "    total {}  avg {:.1}  max {}",
-            style(total).bold(),
-            avg,
-            style(max_c).bold(),
-        );
-        println!();
-    }
-
-    // Top by age
-    println!("  {}", style("Oldest Worktrees").bold());
-    let mut by_age = data.iter().collect::<Vec<_>>();
-    by_age.sort_by(|a, b| b.age_days.total_cmp(&a.age_days));
-    let max_age = by_age.first().map(|d| d.age_days).unwrap_or(1.0).max(1.0);
-    for d in by_age.iter().take(5) {
-        if d.age_days > 0.0 {
-            let icon = cwconsole::status_icon(&d.status);
-            let st = cwconsole::status_style(&d.status);
-            let bar_len = ((d.age_days / max_age) * 15.0) as usize;
-            println!(
-                "    {} {:<25} {} {}",
-                st.apply_to(icon),
-                d.branch,
-                style("▓".repeat(bar_len.max(1))).dim(),
-                style(format_age(d.age_days)).dim(),
-            );
-        }
-    }
-    println!();
-
-    // Top by commits
-    println!("  {}", style("Most Active (by commits)").bold());
-    let mut by_commits = data.iter().collect::<Vec<_>>();
-    by_commits.sort_by_key(|b| std::cmp::Reverse(b.commit_count));
-    let max_commits = by_commits
-        .first()
-        .map(|d| d.commit_count)
-        .unwrap_or(1)
-        .max(1);
-    for d in by_commits.iter().take(5) {
-        if d.commit_count > 0 {
-            let icon = cwconsole::status_icon(&d.status);
-            let st = cwconsole::status_style(&d.status);
-            let bar_len = (d.commit_count * 15) / max_commits;
-            println!(
-                "    {} {:<25} {} {}",
-                st.apply_to(icon),
-                d.branch,
-                style("▓".repeat(bar_len.max(1))).cyan(),
-                style(format!("{} commits", d.commit_count)).dim(),
-            );
-        }
-    }
-    println!();
-
-    Ok(())
-}
-
-/// Compare two branches.
-pub fn diff_worktrees(branch1: &str, branch2: &str, summary: bool, files: bool) -> Result<()> {
-    let repo = git::get_repo_root(None)?;
-
-    if !git::branch_exists(branch1, Some(&repo)) {
-        return Err(crate::error::CwError::InvalidBranch(format!(
-            "Branch '{}' not found",
-            branch1
-        )));
-    }
-    if !git::branch_exists(branch2, Some(&repo)) {
-        return Err(crate::error::CwError::InvalidBranch(format!(
-            "Branch '{}' not found",
-            branch2
-        )));
-    }
-
-    println!("\n{}", style("Comparing branches:").cyan().bold());
-    println!("  {} {} {}\n", branch1, style("...").yellow(), branch2);
-
-    if files {
-        let result = git::git_command(
-            &["diff", "--name-status", branch1, branch2],
-            Some(&repo),
-            true,
-            true,
-        )?;
-        println!("{}\n", style("Changed files:").bold());
-        if result.stdout.trim().is_empty() {
-            println!("  {}", style("No differences found").dim());
-        } else {
-            for line in result.stdout.trim().lines() {
-                let parts: Vec<&str> = line.splitn(2, char::is_whitespace).collect();
-                if parts.len() == 2 {
-                    let (status_char, filename) = (parts[0], parts[1]);
-                    let c = status_char.chars().next().unwrap_or('?');
-                    let status_name = match c {
-                        'M' => "Modified",
-                        'A' => "Added",
-                        'D' => "Deleted",
-                        'R' => "Renamed",
-                        'C' => "Copied",
-                        _ => "Changed",
-                    };
-                    let styled_status = match c {
-                        'M' => style(status_char).yellow(),
-                        'A' => style(status_char).green(),
-                        'D' => style(status_char).red(),
-                        'R' | 'C' => style(status_char).cyan(),
-                        _ => style(status_char),
-                    };
-                    println!("  {}  {} ({})", styled_status, filename, status_name);
-                }
-            }
-        }
-    } else if summary {
-        let result = git::git_command(
-            &["diff", "--stat", branch1, branch2],
-            Some(&repo),
-            true,
-            true,
-        )?;
-        println!("{}\n", style("Diff summary:").bold());
-        if result.stdout.trim().is_empty() {
-            println!("  {}", style("No differences found").dim());
-        } else {
-            println!("{}", result.stdout);
-        }
-    } else {
-        let result = git::git_command(&["diff", branch1, branch2], Some(&repo), true, true)?;
-        if result.stdout.trim().is_empty() {
-            println!("{}\n", style("No differences found").dim());
-        } else {
-            println!("{}", result.stdout);
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

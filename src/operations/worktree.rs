@@ -10,24 +10,17 @@ use crate::constants::{
 };
 use crate::error::{CwError, Result};
 use crate::git;
-use crate::hooks;
-use crate::registry;
 use crate::shared_files;
 
-use super::helpers::{build_hook_context, resolve_worktree_target};
 use crate::messages;
 
 /// Create a new worktree with a feature branch.
-#[allow(clippy::too_many_arguments)]
 pub fn create_worktree(
     branch_name: &str,
     base_branch: Option<&str>,
     path: Option<&str>,
-    term: Option<&str>,
     no_ai: bool,
     initial_prompt: Option<&str>,
-    bg: bool,
-    fg: bool,
 ) -> Result<PathBuf> {
     let repo = git::get_repo_root(None)?;
 
@@ -117,17 +110,6 @@ pub fn create_worktree(
     println!("  New branch:  {}", style(branch_name).green());
     println!("  Path:        {}\n", style(worktree_path.display()).blue());
 
-    // Pre-create hooks
-    let mut hook_ctx = build_hook_context(
-        branch_name,
-        &base,
-        &worktree_path,
-        &repo,
-        "worktree.pre_create",
-        "new",
-    );
-    hooks::run_hooks("worktree.pre_create", &hook_ctx, Some(&repo), Some(&repo))?;
-
     // Create parent dir
     if let Some(parent) = worktree_path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -176,9 +158,6 @@ pub fn create_worktree(
     git::set_config(&bp_key, &repo.to_string_lossy(), Some(&repo))?;
     git::set_config(&ib_key, branch_name, Some(&repo))?;
 
-    // Register in global registry (non-fatal)
-    let _ = registry::register_repo(&repo);
-
     println!(
         "{} Worktree created successfully\n",
         style("*").green().bold()
@@ -187,26 +166,16 @@ pub fn create_worktree(
     // Copy shared files
     shared_files::share_files(&repo, &worktree_path);
 
-    // Post-create hooks
-    hook_ctx.insert("event".into(), "worktree.post_create".into());
-    let _ = hooks::run_hooks(
-        "worktree.post_create",
-        &hook_ctx,
-        Some(&worktree_path),
-        Some(&repo),
-    );
+    // post_new fires after the worktree is on disk, so a non-zero exit
+    // can't unwind the create. We propagate the error so the CLI exits
+    // non-zero (the standard `Error: ...` printer in `entrypoint::run`
+    // surfaces the cause); the worktree itself stays. The AI-tool launch
+    // is skipped because the user signalled "this worktree isn't ready."
+    crate::hooks::run_event("post_new", &worktree_path)?;
 
-    // Launch AI tool in the new worktree
+    // Launch AI tool in the new worktree.
     if !no_ai {
-        let _ = super::ai_tools::launch_ai_tool(
-            &worktree_path,
-            term,
-            false,
-            None,
-            initial_prompt,
-            bg,
-            fg,
-        );
+        let _ = super::ai_tools::spawn_in_worktree(&worktree_path, initial_prompt);
     }
 
     Ok(worktree_path)
@@ -216,7 +185,7 @@ pub fn create_worktree(
 ///
 /// `delete_one` itself returns only `Deleted` or `Failed` today; `Skipped` is
 /// carried for the batch orchestrator, which may classify an entry as skipped
-/// before `delete_one` would even be called (see `delete_batch::PlanEntry`).
+/// before `delete_one` would even be called (see `rm_batch::PlanEntry`).
 #[derive(Debug)]
 pub enum DeletionOutcome {
     Deleted {
@@ -233,7 +202,7 @@ pub enum DeletionOutcome {
 
 /// Flags that apply uniformly to every target in a batch.
 #[derive(Debug, Clone, Copy)]
-pub struct DeleteFlags {
+pub struct RmFlags {
     pub keep_branch: bool,
     pub delete_remote: bool,
     /// Passes through to `git worktree remove --force` (historical semantic).
@@ -252,7 +221,7 @@ pub(crate) fn delete_one(
     worktree_path: &Path,
     branch_name: Option<&str>,
     main_repo: &Path,
-    flags: DeleteFlags,
+    flags: RmFlags,
 ) -> DeletionOutcome {
     // Safety: never delete the main worktree.
     let wt_resolved = git::canonicalize_or(worktree_path);
@@ -274,28 +243,10 @@ pub(crate) fn delete_one(
         }
     }
 
-    // Pre-delete hook
-    let base_branch = branch_name
-        .and_then(|b| {
-            let key = format_config_key(CONFIG_KEY_BASE_BRANCH, b);
-            git::get_config(&key, Some(main_repo))
-        })
-        .unwrap_or_default();
-
-    let mut hook_ctx = build_hook_context(
-        branch_name.unwrap_or(""),
-        &base_branch,
-        worktree_path,
-        main_repo,
-        "worktree.pre_delete",
-        "delete",
-    );
-    if let Err(e) = hooks::run_hooks(
-        "worktree.pre_delete",
-        &hook_ctx,
-        Some(main_repo),
-        Some(main_repo),
-    ) {
+    // pre_rm fires unconditionally — `--force` bypasses the busy-detection
+    // gate, not the user's hook. A non-zero exit from the hook aborts the
+    // remove (matches the README contract).
+    if let Err(e) = crate::hooks::run_event("pre_rm", worktree_path) {
         return DeletionOutcome::Failed { error: e };
     }
 
@@ -352,16 +303,6 @@ pub(crate) fn delete_one(
         }
     }
 
-    // Post-delete hook
-    hook_ctx.insert("event".into(), "worktree.post_delete".into());
-    let _ = hooks::run_hooks(
-        "worktree.post_delete",
-        &hook_ctx,
-        Some(main_repo),
-        Some(main_repo),
-    );
-    let _ = registry::update_last_seen(main_repo);
-
     DeletionOutcome::Deleted {
         branch: branch_name.map(str::to_string),
         path: worktree_path.to_path_buf(),
@@ -388,10 +329,9 @@ pub fn delete_worktree(
     delete_remote: bool,
     force: bool,
     allow_busy: bool,
-    lookup_mode: Option<&str>,
 ) -> Result<()> {
     let main_repo = git::get_main_repo_root(None)?;
-    let (worktree_path, branch_name) = resolve_delete_target(target, &main_repo, lookup_mode)?;
+    let (worktree_path, branch_name) = resolve_delete_target(target, &main_repo)?;
 
     // Main-repo safety guard (mirrors delete_one, but we want the error
     // surfaced up before prompting).
@@ -431,7 +371,7 @@ pub fn delete_worktree(
         )));
     }
 
-    let flags = DeleteFlags {
+    let flags = RmFlags {
         keep_branch,
         delete_remote,
         git_force: force,
@@ -446,10 +386,12 @@ pub fn delete_worktree(
 }
 
 /// Resolve delete target to (worktree_path, branch_name).
+///
+/// Uses strict ordered resolution: exact worktree name → exact branch → exact path.
+/// When `target` is `None`, falls back to cwd as the target path.
 fn resolve_delete_target(
     target: Option<&str>,
     main_repo: &Path,
-    lookup_mode: Option<&str>,
 ) -> Result<(PathBuf, Option<String>)> {
     let target = target.map(|t| t.to_string()).unwrap_or_else(|| {
         std::env::current_dir()
@@ -458,176 +400,6 @@ fn resolve_delete_target(
             .to_string()
     });
 
-    let target_path = PathBuf::from(&target);
-
-    // Check if it's a filesystem path
-    if target_path.exists() {
-        let resolved = target_path.canonicalize().unwrap_or(target_path);
-        let branch = super::helpers::get_branch_for_worktree(main_repo, &resolved);
-        return Ok((resolved, branch));
-    }
-
-    // Try branch lookup (skip if lookup_mode is "worktree")
-    if lookup_mode != Some("worktree") {
-        if let Some(path) = git::find_worktree_by_intended_branch(main_repo, &target)? {
-            return Ok((path, Some(target)));
-        }
-    }
-
-    // Try worktree name lookup (skip if lookup_mode is "branch")
-    if lookup_mode != Some("branch") {
-        if let Some(path) = git::find_worktree_by_name(main_repo, &target)? {
-            let branch = super::helpers::get_branch_for_worktree(main_repo, &path);
-            return Ok((path, branch));
-        }
-    }
-
-    Err(CwError::WorktreeNotFound(messages::worktree_not_found(
-        &target,
-    )))
-}
-
-/// Sync worktree with base branch.
-pub fn sync_worktree(
-    target: Option<&str>,
-    all: bool,
-    _fetch_only: bool,
-    ai_merge: bool,
-    lookup_mode: Option<&str>,
-) -> Result<()> {
-    let repo = git::get_repo_root(None)?;
-
-    // Fetch first
-    println!("{}", style("Fetching updates from remote...").yellow());
-    let fetch_result = git::git_command(&["fetch", "--all", "--prune"], Some(&repo), false, true)?;
-    if fetch_result.returncode != 0 {
-        println!(
-            "{} Fetch failed or no remote configured\n",
-            style("!").yellow()
-        );
-    }
-
-    if _fetch_only {
-        println!("{} Fetch complete\n", style("*").green().bold());
-        return Ok(());
-    }
-
-    // Determine worktrees to sync
-    let worktrees_to_sync = if all {
-        let all_wt = git::parse_worktrees(&repo)?;
-        all_wt
-            .into_iter()
-            .filter(|(b, _)| b != "(detached)")
-            .map(|(b, p)| {
-                let branch = git::normalize_branch_name(&b).to_string();
-                (branch, p)
-            })
-            .collect::<Vec<_>>()
-    } else {
-        let resolved = resolve_worktree_target(target, lookup_mode)?;
-        vec![(resolved.branch, resolved.path)]
-    };
-
-    for (branch, wt_path) in &worktrees_to_sync {
-        let base_key = format_config_key(CONFIG_KEY_BASE_BRANCH, branch);
-        let base_branch = git::get_config(&base_key, Some(&repo));
-
-        if let Some(base) = base_branch {
-            println!("\n{}", style("Syncing worktree:").cyan().bold());
-            println!("  Branch: {}", style(branch).green());
-            println!("  Base:   {}", style(&base).green());
-            println!("  Path:   {}\n", style(wt_path.display()).blue());
-
-            // Determine rebase target (fetch already done above)
-            let rebase_target = {
-                let origin_base = format!("origin/{}", base);
-                if git::branch_exists(&origin_base, Some(wt_path)) {
-                    origin_base
-                } else {
-                    base.clone()
-                }
-            };
-
-            println!(
-                "{}",
-                style(messages::rebase_in_progress(branch, &rebase_target)).yellow()
-            );
-
-            match git::git_command(&["rebase", &rebase_target], Some(wt_path), false, true) {
-                Ok(r) if r.returncode == 0 => {
-                    println!("{} Rebase successful\n", style("*").green().bold());
-                }
-                _ => {
-                    if ai_merge {
-                        let conflicts = git::list_conflicted_files(wt_path);
-                        let _ =
-                            git::git_command(&["rebase", "--abort"], Some(wt_path), false, false);
-
-                        let conflict_list = conflicts.as_deref().unwrap_or("(unknown)");
-                        let prompt = format!(
-                            "Resolve merge conflicts in this repository. The rebase of '{}' onto '{}' \
-                             failed with conflicts in: {}\n\
-                             Please examine the conflicted files and resolve them.",
-                            branch, rebase_target, conflict_list
-                        );
-
-                        println!(
-                            "\n{} Launching AI to resolve conflicts for '{}'...\n",
-                            style("*").cyan().bold(),
-                            branch
-                        );
-                        let _ = super::ai_tools::launch_ai_tool(
-                            wt_path,
-                            None,
-                            false,
-                            Some(&prompt),
-                            None,
-                            false,
-                            false,
-                        );
-                    } else {
-                        // Abort rebase on failure
-                        let _ =
-                            git::git_command(&["rebase", "--abort"], Some(wt_path), false, false);
-                        println!(
-                            "{} Rebase failed for '{}'. Resolve conflicts manually.\n\
-                             Tip: Use --ai-merge flag to get AI assistance with conflicts\n",
-                            style("!").yellow(),
-                            branch
-                        );
-                    }
-                }
-            }
-        } else {
-            // No base branch metadata — try origin/branch
-            let origin_ref = format!("origin/{}", branch);
-            if git::branch_exists(&origin_ref, Some(wt_path)) {
-                println!("\n{}", style("Syncing worktree:").cyan().bold());
-                println!("  Branch: {}", style(branch).green());
-                println!("  Path:   {}\n", style(wt_path.display()).blue());
-
-                println!(
-                    "{}",
-                    style(messages::rebase_in_progress(branch, &origin_ref)).yellow()
-                );
-
-                match git::git_command(&["rebase", &origin_ref], Some(wt_path), false, true) {
-                    Ok(r) if r.returncode == 0 => {
-                        println!("{} Rebase successful\n", style("*").green().bold());
-                    }
-                    _ => {
-                        let _ =
-                            git::git_command(&["rebase", "--abort"], Some(wt_path), false, false);
-                        println!(
-                            "{} Rebase failed for '{}'. Resolve conflicts manually.\n",
-                            style("!").yellow(),
-                            branch
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
+    let strict = super::helpers::resolve_target_strict(main_repo, &target)?;
+    Ok((strict.path, strict.branch))
 }

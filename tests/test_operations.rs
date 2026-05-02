@@ -1,6 +1,6 @@
 /// Integration tests for core operations — ported from Python test_core.py.
-/// Covers: create_worktree, finish/merge, delete, sync, clean, change-base,
-/// list, status, resume, and remote-branch scenarios.
+/// Covers: create_worktree, delete, list, resume, and remote-branch
+/// scenarios.
 mod common;
 
 use common::TestRepo;
@@ -343,187 +343,16 @@ fn test_create_worktree_local_branch_takes_precedence_over_remote() {
 }
 
 // ===========================================================================
-// finish/merge — success
-// ===========================================================================
-
-#[test]
-fn test_finish_worktree_success() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("finish-test");
-
-    // Commit in worktree
-    TestRepo::commit_file_at(&wt, "test.txt", "test content", "Add test file");
-
-    // Merge from worktree directory
-    let output = TestRepo::cw_at(&wt, &["merge"]);
-    assert!(
-        output.status.success(),
-        "merge failed: {}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
-
-    // Worktree removed
-    assert!(!wt.exists());
-
-    // Branch deleted
-    let branches = repo.git_stdout(&["branch", "--list", "finish-test"]);
-    assert!(!branches.contains("finish-test"));
-
-    // Changes merged to main
-    assert!(repo.path().join("test.txt").exists());
-    assert_eq!(
-        std::fs::read_to_string(repo.path().join("test.txt")).unwrap(),
-        "test content"
-    );
-}
-
-// ===========================================================================
-// finish/merge — with rebase
-// ===========================================================================
-
-#[test]
-fn test_finish_worktree_with_rebase() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("rebase-test");
-
-    // Commit in worktree
-    TestRepo::commit_file_at(&wt, "feature.txt", "feature", "Add feature");
-
-    // Commit in main (simulating other work)
-    repo.commit_file("main.txt", "main work", "Work on main");
-
-    // Merge from worktree
-    let output = TestRepo::cw_at(&wt, &["merge"]);
-    assert!(output.status.success());
-
-    // Both files should exist in main
-    assert!(repo.path().join("feature.txt").exists());
-    assert!(repo.path().join("main.txt").exists());
-}
-
-// ===========================================================================
-// finish/merge — dry run
-// ===========================================================================
-
-#[test]
-fn test_finish_worktree_dry_run() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("dry-run-test");
-
-    TestRepo::commit_file_at(&wt, "feature.txt", "feature content", "Add feature");
-
-    let output = TestRepo::cw_at(&wt, &["merge", "--dry-run"]);
-    assert!(output.status.success());
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("DRY RUN")
-            || stdout.contains("dry run")
-            || stdout.contains("Dry run")
-            || stdout.contains("Would"),
-        "Expected dry-run indicator in output, got: {}",
-        stdout
-    );
-
-    // Nothing should have changed
-    assert!(wt.exists());
-    assert!(wt.join("feature.txt").exists());
-
-    // Branch should still exist
-    let branches = repo.git_stdout(&["branch", "--list", "dry-run-test"]);
-    assert!(branches.contains("dry-run-test"));
-
-    // Changes should NOT be in main
-    assert!(!repo.path().join("feature.txt").exists());
-}
-
-// ===========================================================================
-// merge — success (alias for finish)
-// ===========================================================================
-
-#[test]
-fn test_merge_worktree_success() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("merge-test");
-
-    TestRepo::commit_file_at(&wt, "merge.txt", "merge content", "Add merge file");
-
-    let output = TestRepo::cw_at(&wt, &["merge"]);
-    assert!(output.status.success());
-
-    assert!(!wt.exists());
-
-    let branches = repo.git_stdout(&["branch", "--list", "merge-test"]);
-    assert!(!branches.contains("merge-test"));
-
-    assert!(repo.path().join("merge.txt").exists());
-    assert_eq!(
-        std::fs::read_to_string(repo.path().join("merge.txt")).unwrap(),
-        "merge content"
-    );
-}
-
-// ===========================================================================
-// merge — with rebase
-// ===========================================================================
-
-#[test]
-fn test_merge_worktree_with_rebase() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("merge-rebase-test");
-
-    TestRepo::commit_file_at(&wt, "feature.txt", "feature", "Add feature");
-    repo.commit_file("main.txt", "main work", "Work on main");
-
-    let output = TestRepo::cw_at(&wt, &["merge"]);
-    assert!(output.status.success());
-
-    assert!(repo.path().join("feature.txt").exists());
-    assert!(repo.path().join("main.txt").exists());
-}
-
-// ===========================================================================
-// merge — dry run
-// ===========================================================================
-
-#[test]
-fn test_merge_worktree_dry_run() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("merge-dry-run-test");
-
-    TestRepo::commit_file_at(&wt, "feature.txt", "feature content", "Add feature");
-
-    let output = TestRepo::cw_at(&wt, &["merge", "--dry-run"]);
-    assert!(output.status.success());
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("DRY RUN")
-            || stdout.contains("dry run")
-            || stdout.contains("Dry run")
-            || stdout.contains("Would"),
-    );
-
-    assert!(wt.exists());
-
-    let branches = repo.git_stdout(&["branch", "--list", "merge-dry-run-test"]);
-    assert!(branches.contains("merge-dry-run-test"));
-
-    assert!(!repo.path().join("feature.txt").exists());
-}
-
-// ===========================================================================
 // delete — by branch name
 // ===========================================================================
 
 #[test]
-fn test_delete_worktree_by_branch() {
+fn test_rm_worktree_by_branch() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("delete-me");
     assert!(wt.exists());
 
-    let output = repo.cw(&["delete", "delete-me"]);
+    let output = repo.cw(&["rm", "delete-me"]);
     assert!(output.status.success());
 
     assert!(!wt.exists());
@@ -537,11 +366,11 @@ fn test_delete_worktree_by_branch() {
 // ===========================================================================
 
 #[test]
-fn test_delete_worktree_by_path() {
+fn test_rm_worktree_by_path() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("delete-by-path");
 
-    let output = repo.cw(&["delete", wt.to_str().unwrap()]);
+    let output = repo.cw(&["rm", wt.to_str().unwrap()]);
     assert!(output.status.success());
     assert!(!wt.exists());
 }
@@ -551,11 +380,11 @@ fn test_delete_worktree_by_path() {
 // ===========================================================================
 
 #[test]
-fn test_delete_worktree_keep_branch() {
+fn test_rm_worktree_keep_branch() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("keep-branch");
 
-    let output = repo.cw(&["delete", "keep-branch", "--keep-branch"]);
+    let output = repo.cw(&["rm", "keep-branch", "--keep-branch"]);
     assert!(output.status.success());
 
     assert!(!wt.exists());
@@ -570,9 +399,9 @@ fn test_delete_worktree_keep_branch() {
 // ===========================================================================
 
 #[test]
-fn test_delete_worktree_nonexistent() {
+fn test_rm_worktree_nonexistent() {
     let repo = TestRepo::new();
-    let output = repo.cw(&["delete", "nonexistent-branch"]);
+    let output = repo.cw(&["rm", "nonexistent-branch"]);
     assert!(!output.status.success());
 }
 
@@ -581,9 +410,9 @@ fn test_delete_worktree_nonexistent() {
 // ===========================================================================
 
 #[test]
-fn test_delete_main_repo_protection() {
+fn test_rm_main_repo_protection() {
     let repo = TestRepo::new();
-    let output = repo.cw(&["delete", repo.path().to_str().unwrap()]);
+    let output = repo.cw(&["rm", repo.path().to_str().unwrap()]);
     assert!(!output.status.success());
     let combined = format!(
         "{}{}",
@@ -605,7 +434,7 @@ fn test_delete_main_repo_protection() {
 // ===========================================================================
 
 #[test]
-fn test_delete_worktree_created_from_remote() {
+fn test_rm_worktree_created_from_remote() {
     let mut repo = TestRepo::new();
     let _remote = repo.setup_remote();
 
@@ -619,7 +448,7 @@ fn test_delete_worktree_created_from_remote() {
     let wt = worktree_path(&repo, "delete-remote-test");
     assert!(wt.exists());
 
-    let del = repo.cw(&["delete", "delete-remote-test"]);
+    let del = repo.cw(&["rm", "delete-remote-test"]);
     assert!(del.status.success());
     assert!(!wt.exists());
 }
@@ -646,352 +475,6 @@ fn test_list_in_repo() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Worktrees for repository:"));
-}
-
-// ===========================================================================
-// status
-// ===========================================================================
-
-#[test]
-fn test_status_in_repo() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["status"]);
-    assert!(output.status.success());
-}
-
-#[test]
-fn test_show_status_in_worktree() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("status-test");
-
-    let stdout = TestRepo::cw_stdout_at(&wt, &["status"]);
-    assert!(stdout.contains("status-test"));
-}
-
-#[test]
-fn test_show_status_in_main_repo() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["status"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Worktree") || stdout.contains("worktree") || stdout.contains("main"));
-}
-
-// ===========================================================================
-// sync — single worktree
-// ===========================================================================
-
-#[test]
-fn test_sync_worktree_success() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("sync-success-test");
-
-    TestRepo::commit_file_at(&wt, "sync-feature.txt", "feature content", "Add feature");
-    repo.commit_file("main-work.txt", "main work", "Main work");
-
-    let output = TestRepo::cw_at(&wt, &["sync"]);
-    assert!(
-        output.status.success(),
-        "sync failed: {}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
-
-    // After sync (rebase), both files should be in worktree
-    assert!(wt.join("sync-feature.txt").exists());
-    assert!(wt.join("main-work.txt").exists());
-}
-
-// ===========================================================================
-// sync — all worktrees
-// ===========================================================================
-
-#[test]
-fn test_sync_all_worktrees() {
-    let repo = TestRepo::new();
-    let wt1 = repo.create_worktree("wt1");
-    let wt2 = repo.create_worktree("wt2");
-
-    TestRepo::commit_file_at(&wt1, "wt1-file.txt", "wt1 content", "wt1 work");
-    TestRepo::commit_file_at(&wt2, "wt2-file.txt", "wt2 content", "wt2 work");
-    repo.commit_file("main-work.txt", "main work", "Main work");
-
-    let output = repo.cw(&["sync", "--all"]);
-    assert!(
-        output.status.success(),
-        "sync --all failed: {}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
-
-    assert!(wt1.join("main-work.txt").exists());
-    assert!(wt1.join("wt1-file.txt").exists());
-    assert!(wt2.join("main-work.txt").exists());
-    assert!(wt2.join("wt2-file.txt").exists());
-}
-
-// ===========================================================================
-// sync — fetch only
-// ===========================================================================
-
-#[test]
-fn test_sync_fetch_only() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("fetch-only-test");
-
-    TestRepo::commit_file_at(&wt, "feature.txt", "feature", "Add feature");
-    repo.commit_file("main-work.txt", "main work", "Main work");
-
-    let output = TestRepo::cw_at(&wt, &["sync", "--fetch-only"]);
-    assert!(output.status.success());
-
-    // fetch-only should NOT rebase, so main-work.txt should not appear in worktree
-    assert!(wt.join("feature.txt").exists());
-    // main-work.txt should NOT be in the worktree since no rebase happened
-    assert!(!wt.join("main-work.txt").exists());
-}
-
-// ===========================================================================
-// sync — named branch
-// ===========================================================================
-
-#[test]
-fn test_sync_named_branch() {
-    let repo = TestRepo::new();
-    let _wt = repo.create_worktree("sync-test");
-
-    // Sync by branch name from main repo
-    let output = repo.cw(&["sync", "sync-test"]);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Fetching")
-            || stdout.contains("Syncing")
-            || stdout.contains("Sync")
-            || stdout.contains("sync")
-            || stdout.contains("Rebase")
-            || output.status.success(),
-    );
-}
-
-// ===========================================================================
-// sync — nested worktrees (topological sort)
-// ===========================================================================
-
-#[test]
-fn test_sync_nested_worktrees() {
-    let repo = TestRepo::new();
-    let wt_a = repo.create_worktree("feature-a");
-
-    TestRepo::commit_file_at(&wt_a, "feature-a.txt", "feature A", "Add feature A");
-
-    // Create nested worktree from feature-a
-    let output = repo.cw(&[
-        "new",
-        "feature-a-refinement",
-        "--no-term",
-        "--base",
-        "feature-a",
-    ]);
-    assert!(output.status.success());
-    let wt_a_ref = worktree_path(&repo, "feature-a-refinement");
-
-    TestRepo::commit_file_at(&wt_a_ref, "refinement.txt", "refinement", "Add refinement");
-
-    // Make a new commit in main
-    repo.commit_file("main-update.txt", "main update", "Update main");
-
-    // Sync all
-    let output = repo.cw(&["sync", "--all"]);
-    assert!(
-        output.status.success(),
-        "sync --all failed: {}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
-
-    // feature-a should have main's update
-    assert!(wt_a.join("main-update.txt").exists());
-    assert!(wt_a.join("feature-a.txt").exists());
-
-    // feature-a-refinement should have both
-    assert!(wt_a_ref.join("main-update.txt").exists());
-    assert!(wt_a_ref.join("feature-a.txt").exists());
-    assert!(wt_a_ref.join("refinement.txt").exists());
-}
-
-// ===========================================================================
-// clean — no criteria
-// ===========================================================================
-
-#[test]
-fn test_clean_no_criteria() {
-    let repo = TestRepo::new();
-    let combined = repo.cw_combined(&["clean"]);
-    assert!(
-        combined.contains("filter") || combined.contains("requires"),
-        "Expected error about missing filter, got: {}",
-        combined
-    );
-    assert!(
-        combined.contains("gw delete -i"),
-        "Expected redirect to 'gw delete -i', got: {}",
-        combined
-    );
-}
-
-// ===========================================================================
-// clean — merged (dry run)
-// ===========================================================================
-
-#[test]
-fn test_clean_merged_dry_run() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["clean", "--merged", "--dry-run"]);
-    assert!(output.status.success());
-}
-
-// ===========================================================================
-// clean — merged
-// ===========================================================================
-
-#[test]
-fn test_clean_merged() {
-    let repo = TestRepo::new();
-    let _wt = repo.create_worktree("clean-merged-test");
-
-    let output = repo.cw(&["clean", "--merged"]);
-    assert!(output.status.success());
-}
-
-// ===========================================================================
-// clean — older than
-// ===========================================================================
-
-#[test]
-fn test_clean_older_than_dry_run() {
-    let repo = TestRepo::new();
-    repo.create_worktree("old-wt");
-
-    let output = repo.cw(&["clean", "--older-than", "0", "--dry-run"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // --older-than 0 means "age >= 0 days" = all worktrees
-    assert!(
-        stdout.contains("old-wt")
-            || stdout.contains("Would")
-            || stdout.contains("would")
-            || stdout.contains("dry"),
-        "Expected worktree mention in dry-run output, got: {}",
-        stdout
-    );
-}
-
-// ===========================================================================
-// change-base — success
-// ===========================================================================
-
-#[test]
-fn test_change_base_branch_success() {
-    let repo = TestRepo::new();
-    repo.create_branch("master");
-
-    let wt = repo.create_worktree("feature-test");
-    TestRepo::commit_file_at(&wt, "feature.txt", "feature content", "Add feature");
-
-    let output = TestRepo::cw_at(&wt, &["change-base", "master"]);
-    assert!(
-        output.status.success(),
-        "change-base failed: {}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
-
-    // Verify metadata updated
-    let meta = repo.git_stdout(&[
-        "config",
-        "--local",
-        "--get",
-        "branch.feature-test.worktreeBase",
-    ]);
-    assert!(
-        meta.trim() == "master",
-        "Expected 'master', got '{}'",
-        meta.trim()
-    );
-}
-
-// ===========================================================================
-// change-base — with target
-// ===========================================================================
-
-#[test]
-fn test_change_base_branch_with_target() {
-    let repo = TestRepo::new();
-    repo.create_branch("master");
-
-    let wt = repo.create_worktree("target-test");
-    TestRepo::commit_file_at(&wt, "file.txt", "content", "Add file");
-
-    // Change base from main repo by specifying target branch
-    let output = repo.cw(&["change-base", "master", "target-test"]);
-    assert!(output.status.success());
-
-    let meta = repo.git_stdout(&[
-        "config",
-        "--local",
-        "--get",
-        "branch.target-test.worktreeBase",
-    ]);
-    assert!(meta.trim() == "master");
-}
-
-// ===========================================================================
-// change-base — dry run
-// ===========================================================================
-
-#[test]
-fn test_change_base_branch_dry_run() {
-    let repo = TestRepo::new();
-    repo.create_branch("master");
-
-    let wt = repo.create_worktree("dry-run-base");
-
-    let output = TestRepo::cw_at(&wt, &["change-base", "master", "--dry-run"]);
-    assert!(output.status.success());
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("DRY RUN")
-            || stdout.contains("dry run")
-            || stdout.contains("Dry run")
-            || stdout.contains("Would"),
-    );
-
-    // Base branch should NOT have changed
-    let meta = repo.git_stdout(&[
-        "config",
-        "--local",
-        "--get",
-        "branch.dry-run-base.worktreeBase",
-    ]);
-    assert!(
-        meta.trim() == "main",
-        "Expected 'main', got '{}'",
-        meta.trim()
-    );
-}
-
-// ===========================================================================
-// change-base — invalid base
-// ===========================================================================
-
-#[test]
-fn test_change_base_branch_invalid_base() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("invalid-base-test");
-
-    let output = TestRepo::cw_at(&wt, &["change-base", "nonexistent-branch"]);
-    assert!(!output.status.success());
 }
 
 // ===========================================================================
@@ -1108,27 +591,6 @@ fn test_get_worktree_status_merged() {
 }
 
 // ===========================================================================
-// worktree status detection — merged shows icon in tree
-// ===========================================================================
-
-#[test]
-fn test_get_worktree_status_merged_tree() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("merged-tree-test");
-
-    // Make a commit and merge into main
-    TestRepo::commit_file_at(&wt, "feature.txt", "work", "feat: work");
-    repo.git(&["merge", "merged-tree-test"]);
-
-    let stdout = repo.cw_stdout(&["tree"]);
-    assert!(
-        stdout.contains("✓") || stdout.contains("merged"),
-        "Expected merged icon or status in tree output, got: {}",
-        stdout
-    );
-}
-
-// ===========================================================================
 // worktree status detection — clean
 // ===========================================================================
 
@@ -1157,19 +619,6 @@ fn test_doctor() {
 }
 
 // ===========================================================================
-// config show
-// ===========================================================================
-
-#[test]
-fn test_config_show() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["config", "show"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("AI Tool:") || stdout.contains("Config") || stdout.contains("config"));
-}
-
-// ===========================================================================
 // path --list-branches
 // ===========================================================================
 
@@ -1194,237 +643,18 @@ fn test_diff_nonexistent_branch() {
 }
 
 // ===========================================================================
-// prune — empty
-// ===========================================================================
-
-#[test]
-fn test_prune_empty() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["prune"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("stale")
-            || stdout.contains("No stale")
-            || stdout.contains("Prune")
-            || stdout.contains("prune")
-    );
-}
-
-// ===========================================================================
-// tree (basic)
-// ===========================================================================
-
-#[test]
-fn test_tree_in_repo() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["tree"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("(base repository)"));
-}
-
-// ===========================================================================
-// stats (no worktrees)
-// ===========================================================================
-
-#[test]
-fn test_stats_no_worktrees() {
-    let repo = TestRepo::new();
-    let output = repo.cw(&["stats"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("No feature worktrees found"));
-}
-
-// ===========================================================================
-// export creates file
-// ===========================================================================
-
-#[test]
-fn test_export_creates_file() {
-    let repo = TestRepo::new();
-    let export_path = repo.path().join("test-export.json");
-    let output = repo.cw(&["export", "--output", export_path.to_str().unwrap()]);
-    assert!(output.status.success());
-    assert!(export_path.exists());
-
-    let content = std::fs::read_to_string(&export_path).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-    assert_eq!(
-        parsed.get("export_version").unwrap().as_str().unwrap(),
-        "1.0"
-    );
-}
-
-// ===========================================================================
-// import preview
-// ===========================================================================
-
-#[test]
-fn test_import_preview() {
-    let repo = TestRepo::new();
-    let export_path = repo.path().join("import-test.json");
-    repo.cw(&["export", "--output", export_path.to_str().unwrap()]);
-
-    let output = repo.cw(&["import", export_path.to_str().unwrap()]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Preview") || stdout.contains("preview"));
-}
-
-// ===========================================================================
-// change-base — no metadata (manually created worktree)
-// ===========================================================================
-
-#[test]
-fn test_change_base_branch_no_metadata() {
-    let repo = TestRepo::new();
-
-    // Create a branch and worktree manually (without metadata)
-    repo.create_branch("manual-branch");
-    let repo_name = repo.path().file_name().unwrap().to_str().unwrap();
-    let manual_path = repo
-        .path()
-        .parent()
-        .unwrap()
-        .join(format!("{}-manual-worktree", repo_name));
-    repo.git(&[
-        "worktree",
-        "add",
-        manual_path.to_str().unwrap(),
-        "manual-branch",
-    ]);
-
-    // The Rust implementation allows change-base on worktrees without pre-existing
-    // metadata (it creates the metadata). Verify it works and sets the base.
-    let output = repo.cw(&["change-base", "main", "manual-branch"]);
-    let combined = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
-    assert!(
-        output.status.success() || combined.contains("metadata") || combined.contains("error"),
-        "Expected success or metadata error, got: {}",
-        combined
-    );
-
-    // If successful, verify the metadata was created
-    if output.status.success() {
-        let meta = repo.git_stdout(&["config", "--get", "branch.manual-branch.worktreeBase"]);
-        assert_eq!(meta.trim(), "main");
-    }
-}
-
-// ===========================================================================
-// change-base — with conflicts (rebase fails)
-// ===========================================================================
-
-#[test]
-fn test_change_base_branch_with_conflicts() {
-    let repo = TestRepo::new();
-
-    // Create develop branch with conflicting change
-    repo.git(&["checkout", "-b", "develop"]);
-    std::fs::write(repo.path().join("conflict.txt"), "develop content").unwrap();
-    repo.git(&["add", "."]);
-    repo.git(&["commit", "-m", "Develop change"]);
-
-    // Switch back to main
-    repo.git(&["checkout", "main"]);
-
-    // Create worktree from main with conflicting change
-    let wt = repo.create_worktree("conflict-test");
-    std::fs::write(wt.join("conflict.txt"), "main content").unwrap();
-    TestRepo::git_at(&wt, &["add", "."]);
-    TestRepo::git_at(&wt, &["commit", "-m", "Main change"]);
-
-    // Try to change base to develop (should fail with conflicts)
-    let output = TestRepo::cw_at(&wt, &["change-base", "develop"]);
-    assert!(
-        !output.status.success(),
-        "Expected failure due to rebase conflicts"
-    );
-
-    // Base branch should NOT have changed
-    let meta = repo.git_stdout(&[
-        "config",
-        "--local",
-        "--get",
-        "branch.conflict-test.worktreeBase",
-    ]);
-    assert_eq!(
-        meta.trim(),
-        "main",
-        "Base branch should still be 'main' after failed rebase"
-    );
-}
-
-// ===========================================================================
-// sync — with conflicts (rebase fails)
-// ===========================================================================
-
-#[test]
-fn test_sync_worktree_with_conflicts() {
-    let repo = TestRepo::new();
-
-    // Create develop branch with conflicting change
-    repo.git(&["checkout", "-b", "develop"]);
-    std::fs::write(repo.path().join("sync-conflict.txt"), "develop content").unwrap();
-    repo.git(&["add", "."]);
-    repo.git(&["commit", "-m", "Develop change"]);
-
-    // Switch back to main
-    repo.git(&["checkout", "main"]);
-
-    // Create worktree from main
-    let wt = repo.create_worktree("sync-conflict-test");
-
-    // Make conflicting change in worktree
-    std::fs::write(wt.join("sync-conflict.txt"), "main content").unwrap();
-    TestRepo::git_at(&wt, &["add", "."]);
-    TestRepo::git_at(&wt, &["commit", "-m", "Main change"]);
-
-    // Update base to develop
-    repo.git(&[
-        "config",
-        "--local",
-        "branch.sync-conflict-test.worktreeBase",
-        "develop",
-    ]);
-
-    // Sync should fail with conflicts or report conflict
-    let output = TestRepo::cw_at(&wt, &["sync"]);
-    let combined = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
-    assert!(
-        !output.status.success()
-            || combined.contains("conflict")
-            || combined.contains("Conflict")
-            || combined.contains("failed")
-            || combined.contains("CONFLICT"),
-        "Expected failure or conflict message during sync, got: {}",
-        combined
-    );
-}
-
-// ===========================================================================
 // delete — from inside worktree (current directory)
 // ===========================================================================
 
 #[test]
 #[cfg_attr(windows, ignore)] // Windows cannot delete cwd
-fn test_delete_worktree_current_directory() {
+fn test_rm_worktree_current_directory() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("delete-current");
     assert!(wt.exists());
 
     // Delete from inside the worktree
-    let output = TestRepo::cw_at(&wt, &["delete", "delete-current"]);
+    let output = TestRepo::cw_at(&wt, &["rm", "delete-current"]);
     assert!(
         output.status.success(),
         "delete from inside worktree failed: {}{}",
@@ -1440,13 +670,13 @@ fn test_delete_worktree_current_directory() {
 // ===========================================================================
 
 #[test]
-fn test_delete_worktree_same_branch_and_worktree_name() {
+fn test_rm_worktree_same_branch_and_worktree_name() {
     let repo = TestRepo::new();
     let wt = repo.create_worktree("matching");
     assert!(wt.exists());
 
     // "matching" as branch should work without ambiguity
-    let output = repo.cw(&["delete", "matching"]);
+    let output = repo.cw(&["rm", "matching"]);
     assert!(output.status.success());
     assert!(!wt.exists());
 }
@@ -1470,22 +700,4 @@ fn test_create_worktree_from_remote_stores_metadata() {
     // Verify metadata is stored
     let base_branch = repo.git_stdout(&["config", "--get", "branch.meta-test.worktreeBase"]);
     assert_eq!(base_branch.trim(), "main");
-}
-
-// ===========================================================================
-// get_worktree_status — active (running from within worktree)
-// ===========================================================================
-
-#[test]
-fn test_get_worktree_status_active() {
-    let repo = TestRepo::new();
-    let wt = repo.create_worktree("active-test");
-
-    // Run status from inside the worktree
-    let stdout = TestRepo::cw_stdout_at(&wt, &["status"]);
-    assert!(
-        stdout.contains("active-test") || stdout.contains("active") || stdout.contains("Active"),
-        "Expected active worktree info, got: {}",
-        stdout
-    );
 }

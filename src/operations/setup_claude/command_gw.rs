@@ -29,7 +29,7 @@ Brief recap (the delegate skill has the full version):
    gw new <branch-name> --prompt-file /tmp/gw-prompt-$$.txt
    ```
 4. If the user did not specify a terminal launcher, omit `-T` (uses the
-   default from `gw config get launch.method`).
+   default from `launch.method` in `~/.config/git-worktree-manager/config.json`).
 
 If the task is ambiguous, ask one clarifying question before spawning —
 the delegated session is fire-and-forget.

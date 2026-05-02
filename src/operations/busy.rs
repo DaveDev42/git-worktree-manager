@@ -1,11 +1,11 @@
 //! Busy detection: determine whether a worktree is currently in use.
 //!
 //! Two signals are combined:
-//!   1. Session lockfile (explicit — `gw shell`/`gw start` write one)
+//!   1. Session lockfile (explicit — `gw start` / AI-tool sessions write one)
 //!   2. Process cwd scan (implicit — catches external `cd` + tool usage)
 //!
 //! The current process and its ancestor chain are excluded so that Claude
-//! Code or a parent shell invoking `gw delete` on its own worktree does
+//! Code or a parent shell invoking `gw rm` on its own worktree does
 //! not self-detect as busy.
 
 use std::collections::HashSet;
@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 use super::{claude_process, claude_session, lockfile};
 use chrono::Duration as ChronoDuration;
 
-/// Tier of a busy signal — controls refusal *strength* in `gw delete`.
+/// Tier of a busy signal — controls refusal *strength* in `gw rm`.
 /// Hard signals (active Claude session, explicit lockfile) refuse with a
 /// strong message. Soft signals (process cwd scan) refuse with a warning.
 /// Both tiers are overridable by the same `--force` flag.
@@ -394,7 +394,7 @@ fn raw_cwd_scan() -> Vec<(u32, String, PathBuf)> {
 /// Detect busy processes for a given worktree path.
 ///
 /// Combines the lockfile signal and a process cwd scan. Filters out the
-/// current process tree so `gw delete` invoked from within the worktree
+/// current process tree so `gw rm` invoked from within the worktree
 /// does not self-report as busy.
 ///
 /// Note: `detect_busy` calls `lockfile::read_and_clean_stale`, which removes
@@ -448,9 +448,9 @@ pub fn detect_busy(worktree: &Path) -> Vec<BusyInfo> {
 /// display paths use this variant.
 ///
 /// This trades coverage for speed: worktrees entered via external `cd`
-/// without a `gw shell`/`gw start` session will not be flagged as busy.
-/// Commands that need strong busy guarantees (`gw delete`, `gw clean`)
-/// continue to use [`detect_busy`].
+/// without a `gw start` session will not be flagged as busy.
+/// Commands that need strong busy guarantees (`gw rm`) continue to
+/// use [`detect_busy`].
 ///
 /// Like [`detect_busy`], this calls [`lockfile::read_and_clean_stale`]
 /// and may silently remove a stale `<worktree>/.git/gw-session.lock` as
@@ -461,7 +461,7 @@ pub fn detect_busy_lockfile_only(worktree: &Path) -> Vec<BusyInfo> {
     // Skip self_siblings: it internally triggers cwd_scan (lsof / /proc walk)
     // which is exactly what this fast path exists to avoid. Pipeline co-members
     // of this gw invocation are short-lived CLI tools (e.g. `gw list | head`)
-    // that never call `gw shell`/`gw start`, so they cannot own a lockfile.
+    // that never call `gw start`, so they cannot own a lockfile.
     // Ancestor-only exclusion is sufficient in practice — and in the rare case
     // where a true sibling (e.g. a backgrounded `gw start`) does own a
     // lockfile, reporting its worktree as busy is correct, not a false positive.
@@ -495,9 +495,9 @@ const CLAUDE_ACTIVITY_THRESHOLD_MIN: i64 = 10;
 /// fd). Returns `None` when either gate fails or no project dir is found.
 ///
 /// This is the single source of truth for the gate — `detect_busy_tiered`
-/// uses it for the full hard/soft dispatch in `gw delete`, and
-/// `display::get_worktree_status` uses it as the "busy" check for read-
-/// only surfaces (`gw status` / `gw list`).
+/// uses it for the full hard/soft dispatch in `gw rm`, and
+/// `display::get_worktree_status` uses it as the "busy" check for the
+/// read-only `gw list` surface.
 pub fn active_claude_sessions(worktree: &Path) -> Option<Vec<claude_session::ActiveSession>> {
     let proj_dir = claude_session::project_dir_for(worktree)?;
     let threshold = ChronoDuration::minutes(CLAUDE_ACTIVITY_THRESHOLD_MIN);
@@ -544,7 +544,7 @@ pub fn detect_busy_tiered(worktree: &Path) -> (Vec<BusyInfo>, Vec<BusyInfo>) {
 
     // Hard: active Claude sessions. The two-stage gate (jsonl event AND
     // live `claude` process) lives in `active_claude_sessions` so that
-    // read-only surfaces (`gw status` / `gw list`) share the same check.
+    // the read-only `gw list` surface shares the same check.
     if let Some(sessions) = active_claude_sessions(worktree) {
         for s in sessions {
             // session_id is a UUID; surface as cmd "claude (session <id>)" with
@@ -583,7 +583,7 @@ pub fn detect_busy_tiered(worktree: &Path) -> (Vec<BusyInfo>, Vec<BusyInfo>) {
 /// within a worktree but does not meaningfully "occupy" it — the real work
 /// happens in child shells / tools, which the cwd scan reports independently.
 /// Reporting the multiplexer itself just produces noise when running
-/// `gw delete` from a pane hosted by that multiplexer.
+/// `gw rm` from a pane hosted by that multiplexer.
 ///
 /// Matched against `/proc/<pid>/comm` on Linux (≤15 chars; may reflect
 /// `prctl(PR_SET_NAME)` rather than argv[0], e.g. "tmux: server") or `lsof`'s

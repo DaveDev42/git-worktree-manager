@@ -4,6 +4,9 @@ use clap::Parser;
 use git_worktree_manager::cli::{Cli, Commands};
 use predicates::prelude::*;
 
+// Note: gw config, gw export, and gw import were removed in 1.0.
+// Edit ~/.config/git-worktree-manager/config.json directly instead.
+
 fn cw() -> Command {
     Command::cargo_bin("gw").unwrap()
 }
@@ -16,18 +19,11 @@ fn test_help() {
         .stdout(predicate::str::contains("git worktree manager"))
         .stdout(predicate::str::contains("new"))
         .stdout(predicate::str::contains("list"))
-        .stdout(predicate::str::contains("merge"))
-        .stdout(predicate::str::contains("pr"))
         .stdout(predicate::str::contains("resume"))
-        .stdout(predicate::str::contains("delete"))
+        .stdout(predicate::str::contains("rm"))
         .stdout(predicate::str::contains("doctor"))
-        .stdout(predicate::str::contains("stash"))
         .stdout(predicate::str::contains("hook"))
-        .stdout(predicate::str::contains("clean"))
-        .stdout(predicate::str::contains("shell"))
-        .stdout(predicate::str::contains("export"))
-        .stdout(predicate::str::contains("import"))
-        .stdout(predicate::str::contains("backup"));
+        .stdout(predicate::str::contains("shell-setup"));
 }
 
 #[test]
@@ -43,16 +39,6 @@ fn test_no_args_shows_help() {
     cw().assert()
         .failure()
         .stderr(predicate::str::contains("Usage"));
-}
-
-#[test]
-fn test_config_list_presets() {
-    cw().args(["config", "list-presets"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("claude"))
-        .stdout(predicate::str::contains("codex"))
-        .stdout(predicate::str::contains("no-op"));
 }
 
 #[test]
@@ -87,51 +73,6 @@ fn test_shell_function_invalid() {
     cw().args(["_shell-function", "tcsh"]).assert().failure();
 }
 
-#[test]
-fn test_config_subcommands_help() {
-    cw().args(["config", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("show"))
-        .stdout(predicate::str::contains("set"))
-        .stdout(predicate::str::contains("reset"))
-        .stdout(predicate::str::contains("use-preset"))
-        .stdout(predicate::str::contains("list-presets"));
-}
-
-#[test]
-fn test_backup_subcommands_help() {
-    cw().args(["backup", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("create"))
-        .stdout(predicate::str::contains("list"))
-        .stdout(predicate::str::contains("restore"));
-}
-
-#[test]
-fn test_stash_subcommands_help() {
-    cw().args(["stash", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("save"))
-        .stdout(predicate::str::contains("list"))
-        .stdout(predicate::str::contains("apply"));
-}
-
-#[test]
-fn test_hook_subcommands_help() {
-    cw().args(["hook", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("add"))
-        .stdout(predicate::str::contains("remove"))
-        .stdout(predicate::str::contains("list"))
-        .stdout(predicate::str::contains("enable"))
-        .stdout(predicate::str::contains("disable"))
-        .stdout(predicate::str::contains("run"));
-}
-
 // --- Additional CLI tests ported from test_cli.py ---
 
 #[test]
@@ -142,46 +83,40 @@ fn test_new_help() {
         .stdout(predicate::str::contains("--path"))
         .stdout(predicate::str::contains("--base"))
         .stdout(predicate::str::contains("--no-term"))
-        .stdout(predicate::str::contains("--term"))
-        .stdout(predicate::str::contains("--bg"))
-        .stdout(predicate::str::contains("--fg"))
+        .stdout(predicate::str::contains("--term").not())
+        .stdout(predicate::str::contains("--bg").not())
+        .stdout(predicate::str::contains("--fg").not())
         .stdout(predicate::str::contains("--prompt "))
         .stdout(predicate::str::contains("--prompt-file"))
         .stdout(predicate::str::contains("--prompt-stdin"));
 }
 
 #[test]
-fn test_new_bg_fg_conflict() {
-    cw().args(["new", "x", "--bg", "--fg", "--no-term"])
+fn gw_new_rejects_dropped_launch_flags() {
+    // --bg, --fg, --term were removed in Phase 6.3; clap should reject them
+    cw().args(["new", "x", "--bg", "--no-term"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("cannot be used"));
-}
-
-#[test]
-fn test_pr_help() {
-    cw().args(["pr", "--help"])
+        .stderr(
+            predicate::str::contains("unexpected argument").or(predicate::str::contains("--bg")),
+        );
+    cw().args(["new", "x", "--fg", "--no-term"])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("--title"))
-        .stdout(predicate::str::contains("--body"))
-        .stdout(predicate::str::contains("--draft"))
-        .stdout(predicate::str::contains("--no-push"));
-}
-
-#[test]
-fn test_merge_help() {
-    cw().args(["merge", "--help"])
+        .failure()
+        .stderr(
+            predicate::str::contains("unexpected argument").or(predicate::str::contains("--fg")),
+        );
+    cw().args(["new", "x", "--term", "tmux", "--no-term"])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("--interactive"))
-        .stdout(predicate::str::contains("--dry-run"))
-        .stdout(predicate::str::contains("--push"));
+        .failure()
+        .stderr(
+            predicate::str::contains("unexpected argument").or(predicate::str::contains("--term")),
+        );
 }
 
 #[test]
-fn test_delete_help() {
-    cw().args(["delete", "--help"])
+fn test_rm_help() {
+    cw().args(["rm", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("--keep-branch"))
@@ -190,31 +125,11 @@ fn test_delete_help() {
 }
 
 #[test]
-fn test_delete_interactive_help_mentions_multiselect() {
-    cw().args(["delete", "--help"])
+fn test_rm_interactive_help_mentions_multiselect() {
+    cw().args(["rm", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("--interactive"));
-}
-
-#[test]
-fn test_sync_help() {
-    cw().args(["sync", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--all"))
-        .stdout(predicate::str::contains("--fetch-only"));
-}
-
-#[test]
-fn test_clean_help() {
-    cw().args(["clean", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--merged"))
-        .stdout(predicate::str::contains("--older-than"))
-        .stdout(predicate::str::contains("--dry-run"))
-        .stdout(predicate::str::contains("gw delete -i"));
 }
 
 #[test]
@@ -222,32 +137,47 @@ fn test_resume_help() {
     cw().args(["resume", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("--term"))
-        .stdout(predicate::str::contains("--bg"))
-        .stdout(predicate::str::contains("--fg"));
+        .stdout(predicate::str::contains("--term").not())
+        .stdout(predicate::str::contains("--bg").not())
+        .stdout(predicate::str::contains("--fg").not());
 }
 
 #[test]
-fn test_resume_bg_fg_conflict() {
-    cw().args(["resume", "some-branch", "--bg", "--fg"])
+fn gw_resume_rejects_dropped_launch_flags() {
+    // --bg, --fg, --term were removed in Phase 6.3; clap should reject them
+    cw().args(["resume", "some-branch", "--bg"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("cannot be used"));
+        .stderr(
+            predicate::str::contains("unexpected argument").or(predicate::str::contains("--bg")),
+        );
+    cw().args(["resume", "some-branch", "--fg"])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("unexpected argument").or(predicate::str::contains("--fg")),
+        );
+    cw().args(["resume", "some-branch", "--term", "tmux"])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("unexpected argument").or(predicate::str::contains("--term")),
+        );
 }
 
 #[test]
-fn test_delete_accepts_multiple_targets() {
+fn test_rm_accepts_multiple_targets() {
     use clap::Parser;
     use git_worktree_manager::cli::{Cli, Commands};
-    let cli = Cli::try_parse_from(["gw", "delete", "feat/a", "feat/b", "feat/c"]).expect("parses");
-    let Some(Commands::Delete {
+    let cli = Cli::try_parse_from(["gw", "rm", "feat/a", "feat/b", "feat/c"]).expect("parses");
+    let Some(Commands::Rm {
         targets,
         interactive,
         dry_run,
         ..
     }) = cli.command
     else {
-        panic!("expected Delete, got {:?}", cli.command);
+        panic!("expected Rm, got {:?}", cli.command);
     };
     assert_eq!(targets, vec!["feat/a", "feat/b", "feat/c"]);
     assert!(!interactive);
@@ -255,42 +185,42 @@ fn test_delete_accepts_multiple_targets() {
 }
 
 #[test]
-fn test_delete_interactive_flag_parses() {
+fn test_rm_interactive_flag_parses() {
     use clap::Parser;
     use git_worktree_manager::cli::{Cli, Commands};
-    let cli = Cli::try_parse_from(["gw", "delete", "-i"]).expect("parses");
-    let Some(Commands::Delete {
+    let cli = Cli::try_parse_from(["gw", "rm", "-i"]).expect("parses");
+    let Some(Commands::Rm {
         targets,
         interactive,
         ..
     }) = cli.command
     else {
-        panic!("expected Delete");
+        panic!("expected Rm");
     };
     assert!(targets.is_empty());
     assert!(interactive);
 }
 
 #[test]
-fn test_delete_dry_run_flag_parses() {
+fn test_rm_dry_run_flag_parses() {
     use clap::Parser;
     use git_worktree_manager::cli::{Cli, Commands};
-    let cli = Cli::try_parse_from(["gw", "delete", "a", "--dry-run"]).expect("parses");
-    let Some(Commands::Delete {
+    let cli = Cli::try_parse_from(["gw", "rm", "a", "--dry-run"]).expect("parses");
+    let Some(Commands::Rm {
         targets, dry_run, ..
     }) = cli.command
     else {
-        panic!("expected Delete");
+        panic!("expected Rm");
     };
     assert_eq!(targets, vec!["a"]);
     assert!(dry_run);
 }
 
 #[test]
-fn test_delete_interactive_conflicts_with_positional() {
+fn test_rm_interactive_conflicts_with_positional() {
     use clap::Parser;
     use git_worktree_manager::cli::Cli;
-    let err = Cli::try_parse_from(["gw", "delete", "-i", "a"]).unwrap_err();
+    let err = Cli::try_parse_from(["gw", "rm", "-i", "a"]).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("cannot be used") || msg.contains("conflict"),
@@ -299,65 +229,8 @@ fn test_delete_interactive_conflicts_with_positional() {
 }
 
 #[test]
-fn test_change_base_help() {
-    cw().args(["change-base", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--dry-run"));
-}
-
-#[test]
-fn test_export_help() {
-    cw().args(["export", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--output"));
-}
-
-#[test]
-fn test_import_help() {
-    cw().args(["import", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--apply"));
-}
-
-#[test]
-fn test_shell_help() {
-    cw().args(["shell", "--help"]).assert().success();
-}
-
-#[test]
 fn test_doctor_help() {
     cw().args(["doctor", "--help"]).assert().success();
-}
-
-#[test]
-fn test_tree_help() {
-    cw().args(["tree", "--help"]).assert().success();
-}
-
-#[test]
-fn test_stats_help() {
-    cw().args(["stats", "--help"]).assert().success();
-}
-
-#[test]
-fn test_diff_help() {
-    cw().args(["diff", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--summary"))
-        .stdout(predicate::str::contains("--files"));
-}
-
-#[test]
-fn test_global_flag() {
-    // -g flag should be accepted (even without proper context)
-    cw().args(["-g", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--global"));
 }
 
 #[test]
@@ -403,14 +276,6 @@ fn test_upgrade_runs() {
     );
 }
 
-#[test]
-fn test_config_show_runs() {
-    cw().args(["config", "show"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("AI Tool:"));
-}
-
 // --- New CLI option tests ---
 
 #[test]
@@ -423,93 +288,24 @@ fn test_new_base_short_flag() {
 }
 
 #[test]
-fn test_new_term_short_flag() {
+fn test_new_help_does_not_show_term_short_flag() {
+    // -T / --term were removed in Phase 6.3; verify they no longer appear in help
     cw().args(["new", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("-T"))
-        .stdout(predicate::str::contains("--term"));
+        .stdout(predicate::str::contains("-T").not())
+        .stdout(predicate::str::contains("--term").not());
 }
 
 #[test]
-fn test_delete_short_flags() {
-    cw().args(["delete", "--help"])
+fn test_rm_short_flags() {
+    cw().args(["rm", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("-k"))
         .stdout(predicate::str::contains("--keep-branch"))
         .stdout(predicate::str::contains("-r"))
         .stdout(predicate::str::contains("--delete-remote"));
-}
-
-#[test]
-fn test_merge_ai_merge_flag() {
-    cw().args(["merge", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--ai-merge"));
-}
-
-#[test]
-fn test_sync_ai_merge_flag() {
-    cw().args(["sync", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--ai-merge"));
-}
-
-#[test]
-fn test_change_base_interactive_flag() {
-    cw().args(["change-base", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--interactive"))
-        .stdout(predicate::str::contains("-i"));
-}
-
-#[test]
-fn test_pr_worktree_disambiguation_flag() {
-    cw().args(["pr", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--worktree"))
-        .stdout(predicate::str::contains("-w"));
-}
-
-#[test]
-fn test_merge_worktree_disambiguation_flag() {
-    cw().args(["merge", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--worktree"))
-        .stdout(predicate::str::contains("-w"));
-}
-
-#[test]
-fn test_resume_worktree_disambiguation_flag() {
-    cw().args(["resume", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--worktree"))
-        .stdout(predicate::str::contains("-w"));
-}
-
-#[test]
-fn test_sync_worktree_disambiguation_flag() {
-    cw().args(["sync", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--worktree"))
-        .stdout(predicate::str::contains("-w"));
-}
-
-#[test]
-fn test_delete_worktree_disambiguation_flag() {
-    cw().args(["delete", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--worktree"))
-        .stdout(predicate::str::contains("-w"));
 }
 
 #[test]

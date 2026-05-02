@@ -5,59 +5,114 @@ use std::path::Path;
 
 use console::style;
 
-use crate::config::{
-    self, get_ai_tool_command, get_ai_tool_resume_command, is_claude_tool, parse_term_option,
-};
-use crate::constants::{
-    format_config_key, LaunchMethod, CONFIG_KEY_BASE_BRANCH, MAX_SESSION_NAME_LENGTH,
-};
+use crate::config::{self, get_ai_tool_command, get_ai_tool_resume_command, is_claude_tool};
+use crate::constants::{LaunchMethod, MAX_SESSION_NAME_LENGTH};
 use crate::error::Result;
 use crate::git;
-use crate::hooks;
 use crate::messages;
 use crate::session;
 
-use super::helpers::{build_hook_context, resolve_worktree_target};
+use super::helpers::{resolve_target_strict, resolve_worktree_target};
 use super::launchers;
 use super::spawn_spec::{self, SpawnSpec};
 
-/// Launch AI coding assistant in the specified directory.
-#[allow(clippy::too_many_arguments)]
-pub fn launch_ai_tool(
+/// Dispatch a pre-materialized command to the configured launcher.
+///
+/// Both `launch_ai_tool` and `spawn_in_worktree` share this block; keeping it
+/// in one place means any launcher added in the future is automatically
+/// available to both callers.
+fn dispatch_launch(
     path: &Path,
-    term: Option<&str>,
-    resume: bool,
-    prompt: Option<&str>,
-    initial_prompt: Option<&str>,
-    bg: bool,
-    fg: bool,
+    method: LaunchMethod,
+    session_name: Option<String>,
+    cmd: &str,
+    ai_tool_name: &str,
 ) -> Result<()> {
-    let (mut method, session_name) = parse_term_option(term)?;
-    if bg {
-        if let Some(m) = method.to_bg() {
-            method = m;
+    match method {
+        LaunchMethod::Foreground => {
+            println!(
+                "{}\n",
+                style(messages::starting_ai_tool_foreground(ai_tool_name)).cyan()
+            );
+            // `_session_lock` binding is intentional: RAII guard lives for
+            // the foreground AI process lifetime; dropped on return.
+            let _session_lock = match crate::operations::lockfile::acquire(path, ai_tool_name) {
+                Ok(lock) => Some(lock),
+                Err(err @ crate::operations::lockfile::AcquireError::ForeignLock(_)) => {
+                    return Err(crate::error::CwError::Other(format!(
+                        "{}; exit that session first",
+                        err
+                    )));
+                }
+                Err(e) => {
+                    eprintln!(
+                        "{} could not write session lock: {}",
+                        style("warning:").yellow(),
+                        e
+                    );
+                    None
+                }
+            };
+            launchers::foreground::run(path, cmd);
         }
-    } else if fg {
-        if let Some(m) = method.to_fg() {
-            method = m;
+        LaunchMethod::Detach => {
+            launchers::detached::run(path, cmd);
+            println!(
+                "{} {} detached (survives terminal close)\n",
+                style("*").green().bold(),
+                ai_tool_name
+            );
+        }
+        // iTerm
+        LaunchMethod::ItermWindow => launchers::iterm::launch_window(path, cmd, ai_tool_name)?,
+        LaunchMethod::ItermTab => launchers::iterm::launch_tab(path, cmd, ai_tool_name)?,
+        LaunchMethod::ItermPaneH => launchers::iterm::launch_pane(path, cmd, ai_tool_name, true)?,
+        LaunchMethod::ItermPaneV => launchers::iterm::launch_pane(path, cmd, ai_tool_name, false)?,
+        // tmux
+        LaunchMethod::Tmux => {
+            let sn = session_name.unwrap_or_else(|| generate_session_name(path));
+            launchers::tmux::launch_session(path, cmd, ai_tool_name, &sn)?;
+        }
+        LaunchMethod::TmuxWindow => launchers::tmux::launch_window(path, cmd, ai_tool_name)?,
+        LaunchMethod::TmuxPaneH => launchers::tmux::launch_pane(path, cmd, ai_tool_name, true)?,
+        LaunchMethod::TmuxPaneV => launchers::tmux::launch_pane(path, cmd, ai_tool_name, false)?,
+        // Zellij
+        LaunchMethod::Zellij => {
+            let sn = session_name.unwrap_or_else(|| generate_session_name(path));
+            launchers::zellij::launch_session(path, cmd, ai_tool_name, &sn)?;
+        }
+        LaunchMethod::ZellijTab => launchers::zellij::launch_tab(path, cmd, ai_tool_name)?,
+        LaunchMethod::ZellijPaneH => launchers::zellij::launch_pane(path, cmd, ai_tool_name, true)?,
+        LaunchMethod::ZellijPaneV => {
+            launchers::zellij::launch_pane(path, cmd, ai_tool_name, false)?
+        }
+        // WezTerm
+        LaunchMethod::WeztermWindow => launchers::wezterm::launch_window(path, cmd, ai_tool_name)?,
+        LaunchMethod::WeztermTab => launchers::wezterm::launch_tab(path, cmd, ai_tool_name)?,
+        LaunchMethod::WeztermTabBg => launchers::wezterm::launch_tab_bg(path, cmd, ai_tool_name)?,
+        LaunchMethod::WeztermPaneH => {
+            launchers::wezterm::launch_pane(path, cmd, ai_tool_name, true)?
+        }
+        LaunchMethod::WeztermPaneV => {
+            launchers::wezterm::launch_pane(path, cmd, ai_tool_name, false)?
         }
     }
 
+    Ok(())
+}
+
+/// Launch AI coding assistant in the specified directory.
+pub fn launch_ai_tool(path: &Path, resume: bool) -> Result<()> {
+    let method = config::get_default_launch_method()?;
+
     // Determine command
-    let ai_cmd_parts = if let Some(p) = prompt {
-        config::get_ai_tool_merge_command(p)?
-    } else if let Some(ip) = initial_prompt {
-        config::get_ai_tool_delegate_command(ip)?
-    } else if resume {
+    let ai_cmd_parts = if resume {
+        get_ai_tool_resume_command()?
+    } else if is_claude_tool().unwrap_or(false) && session::claude_native_session_exists(path) {
+        eprintln!("Found existing Claude session, using --continue");
         get_ai_tool_resume_command()?
     } else {
-        // Smart --continue for Claude
-        if is_claude_tool().unwrap_or(false) && session::claude_native_session_exists(path) {
-            eprintln!("Found existing Claude session, using --continue");
-            get_ai_tool_resume_command()?
-        } else {
-            get_ai_tool_command()?
-        }
+        get_ai_tool_command()?
     };
 
     if ai_cmd_parts.is_empty() {
@@ -88,113 +143,30 @@ pub fn launch_ai_tool(
     // emulator / multiplexer and return immediately, so a lock acquired here
     // would be released before the AI session really starts — for those we
     // rely on process-cwd scanning in `busy::detect_busy` instead.
-    let ai_tool_name = ai_tool_name.as_str();
-    match method {
-        LaunchMethod::Foreground => {
-            println!(
-                "{}\n",
-                style(messages::starting_ai_tool_foreground(ai_tool_name)).cyan()
-            );
-            // `_session_lock` binding is intentional: RAII guard lives for
-            // the foreground AI process lifetime; dropped on return.
-            let _session_lock = match crate::operations::lockfile::acquire(path, ai_tool_name) {
-                Ok(lock) => Some(lock),
-                Err(err @ crate::operations::lockfile::AcquireError::ForeignLock(_)) => {
-                    return Err(crate::error::CwError::Other(format!(
-                        "{}; exit that session first",
-                        err
-                    )));
-                }
-                Err(e) => {
-                    eprintln!(
-                        "{} could not write session lock: {}",
-                        style("warning:").yellow(),
-                        e
-                    );
-                    None
-                }
-            };
-            launchers::foreground::run(path, &cmd);
-        }
-        LaunchMethod::Detach => {
-            launchers::detached::run(path, &cmd);
-            println!(
-                "{} {} detached (survives terminal close)\n",
-                style("*").green().bold(),
-                ai_tool_name
-            );
-        }
-        // iTerm
-        LaunchMethod::ItermWindow => launchers::iterm::launch_window(path, &cmd, ai_tool_name)?,
-        LaunchMethod::ItermTab => launchers::iterm::launch_tab(path, &cmd, ai_tool_name)?,
-        LaunchMethod::ItermPaneH => launchers::iterm::launch_pane(path, &cmd, ai_tool_name, true)?,
-        LaunchMethod::ItermPaneV => launchers::iterm::launch_pane(path, &cmd, ai_tool_name, false)?,
-        // tmux
-        LaunchMethod::Tmux => {
-            let sn = session_name.unwrap_or_else(|| generate_session_name(path));
-            launchers::tmux::launch_session(path, &cmd, ai_tool_name, &sn)?;
-        }
-        LaunchMethod::TmuxWindow => launchers::tmux::launch_window(path, &cmd, ai_tool_name)?,
-        LaunchMethod::TmuxPaneH => launchers::tmux::launch_pane(path, &cmd, ai_tool_name, true)?,
-        LaunchMethod::TmuxPaneV => launchers::tmux::launch_pane(path, &cmd, ai_tool_name, false)?,
-        // Zellij
-        LaunchMethod::Zellij => {
-            let sn = session_name.unwrap_or_else(|| generate_session_name(path));
-            launchers::zellij::launch_session(path, &cmd, ai_tool_name, &sn)?;
-        }
-        LaunchMethod::ZellijTab => launchers::zellij::launch_tab(path, &cmd, ai_tool_name)?,
-        LaunchMethod::ZellijPaneH => {
-            launchers::zellij::launch_pane(path, &cmd, ai_tool_name, true)?
-        }
-        LaunchMethod::ZellijPaneV => {
-            launchers::zellij::launch_pane(path, &cmd, ai_tool_name, false)?
-        }
-        // WezTerm
-        LaunchMethod::WeztermWindow => launchers::wezterm::launch_window(path, &cmd, ai_tool_name)?,
-        LaunchMethod::WeztermTab => launchers::wezterm::launch_tab(path, &cmd, ai_tool_name)?,
-        LaunchMethod::WeztermTabBg => launchers::wezterm::launch_tab_bg(path, &cmd, ai_tool_name)?,
-        LaunchMethod::WeztermPaneH => {
-            launchers::wezterm::launch_pane(path, &cmd, ai_tool_name, true)?
-        }
-        LaunchMethod::WeztermPaneV => {
-            launchers::wezterm::launch_pane(path, &cmd, ai_tool_name, false)?
-        }
-    }
-
-    Ok(())
+    dispatch_launch(path, method, None, &cmd, ai_tool_name.as_str())
 }
 
 /// Resume AI work in a worktree with context restoration.
-pub fn resume_worktree(
-    worktree: Option<&str>,
-    term: Option<&str>,
-    lookup_mode: Option<&str>,
-    bg: bool,
-    fg: bool,
-) -> Result<()> {
-    let resolved = resolve_worktree_target(worktree, lookup_mode)?;
-    let worktree_path = resolved.path;
-    let branch_name = resolved.branch;
-    let worktree_repo = resolved.repo;
-
-    // Pre-resume hooks
-    let base_key = format_config_key(CONFIG_KEY_BASE_BRANCH, &branch_name);
-    let base_branch = git::get_config(&base_key, Some(&worktree_repo)).unwrap_or_default();
-
-    let mut hook_ctx = build_hook_context(
-        &branch_name,
-        &base_branch,
-        &worktree_path,
-        &worktree_repo,
-        "resume.pre",
-        "resume",
-    );
-    hooks::run_hooks(
-        "resume.pre",
-        &hook_ctx,
-        Some(&worktree_path),
-        Some(&worktree_repo),
-    )?;
+///
+/// Target resolution uses strict ordered rules: exact worktree name → exact branch
+/// name → exact path. When no target is given, the current working directory is used.
+pub fn resume_worktree(worktree: Option<&str>) -> Result<()> {
+    let (worktree_path, branch_name) = if let Some(target) = worktree {
+        let main_repo = git::get_main_repo_root(None)?;
+        let strict = resolve_target_strict(&main_repo, target)?;
+        let branch_name = strict.branch.unwrap_or_else(|| {
+            strict
+                .path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "(detached)".into())
+        });
+        (strict.path, branch_name)
+    } else {
+        // No target — use current working directory.
+        let resolved = resolve_worktree_target(None, None)?;
+        (resolved.path, resolved.branch)
+    };
 
     // Change directory if specified
     if worktree.is_some() {
@@ -264,19 +236,44 @@ pub fn resume_worktree(
             );
         }
 
-        launch_ai_tool(&worktree_path, term, has_session, None, None, bg, fg)?;
+        launch_ai_tool(&worktree_path, has_session)?;
     }
 
-    // Post-resume hooks
-    hook_ctx.insert("event".into(), "resume.post".into());
-    let _ = hooks::run_hooks(
-        "resume.post",
-        &hook_ctx,
-        Some(&worktree_path),
-        Some(&worktree_repo),
-    );
-
     Ok(())
+}
+
+/// Launch the configured AI tool inside an existing worktree.
+///
+/// Used by both `gw new` (after worktree creation) and `gw spawn`. Honors the
+/// default launch method from config; no terminal-override / fg / bg knobs.
+pub fn spawn_in_worktree(worktree_path: &Path, prompt: Option<&str>) -> Result<()> {
+    let method = config::get_default_launch_method()?;
+
+    let ai_cmd_parts = if let Some(p) = prompt {
+        config::get_ai_tool_merge_command(p)?
+    } else {
+        get_ai_tool_command()?
+    };
+
+    if ai_cmd_parts.is_empty() {
+        return Ok(());
+    }
+
+    let ai_tool_name = ai_cmd_parts[0].clone();
+
+    if !git::has_command(&ai_tool_name) {
+        println!(
+            "{} {} not detected. Install it or update config with 'cw config set ai-tool <tool>'.\n",
+            style("!").yellow(),
+            ai_tool_name,
+        );
+        return Ok(());
+    }
+
+    let spec = SpawnSpec::new(ai_cmd_parts, worktree_path.to_path_buf());
+    let (cmd, _) = spawn_spec::materialize(&spec)?;
+
+    dispatch_launch(worktree_path, method, None, &cmd, ai_tool_name.as_str())
 }
 
 /// Generate a session name from path with length limit.

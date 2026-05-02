@@ -1,6 +1,6 @@
 //! Session lockfile — explicit "this worktree is in use" marker.
 //!
-//! Written when a user enters a worktree via `gw shell` or `gw start`.
+//! Written when a user enters a worktree via `gw start` (or AI-tool sessions).
 //! Removed on Drop. Readers verify PID liveness and delete stale files.
 
 use std::fs;

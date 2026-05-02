@@ -3,7 +3,7 @@
 pub fn content() -> &'static str {
     r#"---
 name: delegate
-description: "Delegate coding tasks to isolated git worktrees. Invoke with: /gw <natural language task description>. Also handles worktree management: list, sync, clean, PR, merge, etc."
+description: "Delegate coding tasks to isolated git worktrees. Invoke with: /gw <natural language task description>. Also handles worktree management: list, delete, etc."
 allowed-tools: Bash
 ---
 
@@ -125,7 +125,7 @@ Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be given per invoc
   - "Refactor the database connection pool" → `refactor-db-connection-pool`
 
 ### Terminal method selection
-- **Default: omit the `-T` flag** to use the system default (`gw config get launch.method`). Only add `-T` if the user explicitly requests a specific terminal method.
+- **Default: omit the `-T` flag** to use the system default (configured in `~/.config/git-worktree-manager/config.json` → `launch.method`). Only add `-T` if the user explicitly requests a specific terminal method.
 - If the user explicitly asks for a specific method, use it. Common methods: `w-t` (WezTerm tab), `w-t-b` (WezTerm tab, background — no focus steal), `i-t` (iTerm2 tab), `t` (tmux session), `d` (detached/background)
 - Once the user specifies a method, remember it for subsequent calls in the same session.
 
@@ -134,22 +134,10 @@ Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be given per invoc
 | Command | Description |
 |---------|-------------|
 | `gw new <branch> [--prompt-file <path> \| --prompt "..." \| --prompt-stdin]` | Create worktree + optionally launch AI with task |
-| `gw delete <branch>` | Delete worktree and branch |
+| `gw rm <branch>` | Delete worktree and branch |
 | `gw list` | List all worktrees with status |
-| `gw status` | Show current worktree info |
 | `gw resume [branch]` | Resume AI session in worktree |
-| `gw pr [branch]` | Create GitHub Pull Request |
-| `gw merge [branch]` | Merge branch into base |
-| `gw sync [--all]` | Rebase worktree(s) onto base branch |
-| `gw clean [--merged]` | Batch cleanup of worktrees |
-| `gw diff <b1> <b2>` | Compare two branches |
-| `gw change-base <new> [branch]` | Change base branch |
-| `gw config <action>` | Configuration management |
 | `gw doctor` | Run diagnostics |
-| `gw tree` / `gw stats` | Visual hierarchy / statistics |
-| `gw backup <action>` | Backup and restore worktrees |
-| `gw stash <action>` | Worktree-aware stash management |
-| `gw shell [worktree]` | Open shell in worktree |
 
 ## Delegate a task to a new worktree
 
@@ -196,34 +184,21 @@ trap 'rm -f /tmp/gw-prompt-$$.txt' EXIT
 cat > /tmp/gw-prompt-$$.txt <<'PROMPT'
 Implement feature X
 PROMPT
-# `-T` omitted — uses the default launcher from `gw config get launch.method`.
+# `-T` omitted — uses the default launcher from config (`launch.method` in `~/.config/git-worktree-manager/config.json`).
 gw new feature-x --prompt-file /tmp/gw-prompt-$$.txt
 # ... work is done in the new worktree ...
-gw pr feature-x                    # create PR
-gw delete feature-x                # cleanup after merge
-```
-
-### Keep worktrees in sync
-```bash
-gw sync --all                      # rebase all worktrees onto their base
-gw sync --all --ai-merge           # use AI to resolve conflicts
+gh pr create                       # create PR (run inside the worktree)
+gw rm feature-x                # cleanup after merge
 ```
 
 ### Batch cleanup
 ```bash
-gw clean --merged                  # delete worktrees for merged branches
-gw clean --older-than 30d --dry-run  # preview old worktree cleanup
-```
-
-### Global mode (across repos)
-```bash
-gw -g list                         # list worktrees across all repos
-gw -g scan --dir ~/projects        # discover repositories
+gw rm -i                       # interactive selection of worktrees to delete
 ```
 
 ## Guidelines
 
-- Before running any `gw` subcommand that reads the current worktree (`gw status`, `gw list`, `gw delete` without an explicit target, etc.), make sure the shell's cwd still exists. If another session or an earlier `gw delete`/`gw clean` removed the worktree, the shell holds a stale pwd and commands behave unexpectedly. Quick guard:
+- Before running any `gw` subcommand that reads the current worktree (`gw list`, `gw rm` without an explicit target, etc.), make sure the shell's cwd still exists. If another session or an earlier `gw rm` removed the worktree, the shell holds a stale pwd and commands behave unexpectedly. Quick guard:
   ```bash
   [ -d "$(pwd -P 2>/dev/null)" ] || { echo "FATAL: cwd missing (worktree likely deleted). Abort."; exit 1; }
   ```
@@ -245,6 +220,6 @@ gw -g scan --dir ~/projects        # discover repositories
   - Use `--prompt-file` for complex or skill-generated prompts to manage them conveniently
   - If the user's request is vague or ambiguous, ask clarifying questions BEFORE spawning
   - Do NOT spawn a task assuming you can "correct course later" — you cannot
-- For destructive worktree operations (`gw delete`, `gw clean`), defer to the `manage` skill — in particular the don't-kill-busy-siblings rule.
+- For destructive worktree operations (`gw rm`), defer to the `manage` skill — in particular the don't-kill-busy-siblings rule.
 "#
 }

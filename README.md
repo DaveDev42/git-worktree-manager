@@ -4,11 +4,13 @@
 [![CI](https://github.com/DaveDev42/git-worktree-manager/actions/workflows/test.yml/badge.svg)](https://github.com/DaveDev42/git-worktree-manager/actions)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](LICENSE)
 
-CLI tool integrating git worktree with AI coding assistants. Single static binary (~1.9MB), instant startup (~3ms).
+`gw` is a lean git worktree manager. Inspired by [mr (myrepos)](https://myrepos.branchable.com/), it uses cwd-based scope discovery — no global registry, no cross-repo flags — so commands do exactly what you expect relative to where you run them. Target resolution is strict and consistent: worktree name → branch name → path.
 
-Supports macOS (ARM64/x86), Linux (ARM64/x86), and Windows (x86_64).
+AI coding-assistant integration is built in: `gw new` creates a worktree and launches your AI tool of choice in it (use `--no-term` to skip). Future AI-assisted operations (e.g. `--ai` on merge / rebase) layer on top of the same worktree primitives.
 
-Successor to [claude-worktree](https://github.com/DaveDev42/claude-worktree) (Python).
+Single static binary (~1.9MB), ~3ms startup. Supports macOS (ARM64/x86), Linux (ARM64/x86), and Windows (x86_64).
+
+Successor to [claude-worktree](https://github.com/DaveDev42/claude-worktree) (Python), rewritten in Rust.
 
 > **Backward compatible:** The `cw` command is included as an alias. Existing `cw` workflows, `.cwshare`, and `.cwconfig.json` files work unchanged.
 
@@ -42,82 +44,114 @@ After installing, run `gw upgrade` at any time to update to the latest version (
 ## Quick Start
 
 ```bash
-# Create a worktree and launch your AI coding assistant
+# Create a worktree (and launch your AI coding assistant in it)
 gw new fix-auth
 
-# Create with a specific terminal launcher
-gw new fix-auth --term tmux
+# Just the worktree, no AI tool
+gw new fix-auth --no-term
 
-# Create and pass an initial prompt to the AI tool (short one-liner)
+# Pass an initial prompt to the AI tool
 gw new fix-auth --prompt "Fix the JWT token expiration bug in auth.rs"
 
 # Or read the prompt from a file (recommended for multi-line / quoted content)
 gw new fix-auth --prompt-file /tmp/task.md
 
-# Or pipe it from another command
-generate-spec | gw new fix-auth --prompt-stdin
-```
-
-> **Note:** avoid combining `--prompt-stdin` with `--term` — the spawned
-> terminal may inherit a closed stdin and behave unpredictably.
-
-```bash
-# List all worktrees
+# List all worktrees (rich human-readable output)
 gw list
 
 # Resume an AI session in an existing worktree
 gw resume fix-auth
 
-# Create a GitHub PR
-gw pr
+# Launch AI tool in the current worktree (or a named one)
+gw spawn
+gw spawn fix-auth
 
-# Merge back to base branch and clean up
-gw merge
+# Remove a worktree (interactive multi-select, or by name)
+gw rm fix-auth
+gw rm -i
+
+# Run a command in every worktree in scope
+gw run -- cargo test
+
+# Run a command in one specific worktree
+gw exec fix-auth -- git status
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `gw new <name>` | Create worktree + launch AI tool |
-| `gw resume [branch]` | Resume AI session in worktree |
-| `gw shell [branch]` | Open shell in worktree |
-| `gw pr [branch]` | Create GitHub PR |
-| `gw merge [branch]` | Rebase + merge + cleanup |
-| `gw delete [target...]` | Remove one or more worktrees (use `-i` for multi-select, `--dry-run` to preview) |
-| `gw list` | List all worktrees |
-| `gw status` | Show current worktree info |
-| `gw tree` | Visual tree display |
-| `gw stats` | Usage analytics |
-| `gw diff <b1> <b2>` | Compare branches |
-| `gw sync [branch]` | Rebase on base branch |
-| `gw change-base <new-base> [branch]` | Change base branch for worktree |
-| `gw clean` | Batch cleanup (`--merged`, `--older-than`) |
-| `gw backup create/list/restore` | Git bundle backup (`backup create --output <dir>` to override the default backups root) |
-| `gw stash save/list/apply` | Worktree-aware stash |
-| `gw hook add/remove/list/...` | Lifecycle hooks |
-| `gw config ...` | Configuration management |
-| `gw export` / `gw import` | Config export/import |
-| `gw doctor` | Health check diagnostics |
-| `gw upgrade` | Self-update to latest version |
-| `gw scan` | Register repos for global mode |
-| `gw prune` | Clean up stale registry entries |
-| `gw setup-claude` | Install Claude Code plugin (delegate + manage skills) |
+| `gw new <name>` | Create worktree (and launch AI tool, unless `--no-term`) |
+| `gw resume [target]` | Resume AI session in a worktree |
+| `gw spawn [target]` | Launch AI tool in an existing worktree (default: current) |
+| `gw rm [targets...]` | Remove one or more worktrees (`-i` interactive, `--dry-run`, `--force`) |
+| `gw list` | List all worktrees (rich, human-readable) |
+| `gw ls` | Print all worktrees as TSV (for scripts) |
+| `gw exec <target> -- <cmd>` | Run a command in one specific worktree |
+| `gw run -- <cmd>` | Run a command in every worktree in scope |
+| `gw guard` | Claude Code hook helper: allow or block inbound tool use |
+| `gw doctor` | Run diagnostics (5 health checks) |
+| `gw upgrade` | Check for updates / upgrade |
+| `gw setup-claude` | Install Claude Code skill for worktree task delegation |
 | `gw shell-setup` | Interactive shell integration setup |
-| `gw -g <cmd>` | Global mode (cross-repo) |
+
+## Scope and Target Resolution
+
+### Scope discovery
+
+`gw run`, `gw list`, `gw ls`, and other scope-wide commands discover worktrees relative to the current working directory: it walks up first to find a `.cwconfig.json`-rooted scope, falling back to a downward walk from cwd if none is found. There is no global registry and no cross-repo flags.
+
+### Target resolution
+
+When a command accepts a `[target]` argument, resolution is strict and ordered:
+
+1. Exact worktree name
+2. Branch name
+3. Path
+
+No ambiguity modes, no lookup-mode flags. The first match wins.
+
+## `gw run` and `gw exec`
+
+`gw run` executes a command in every worktree in scope. `gw exec` runs in exactly one.
+
+```bash
+# Run tests in all worktrees, 4 in parallel
+gw run -j 4 -- cargo test
+
+# Only worktrees whose name matches a glob
+gw run --only 'feat-*' -- npm install
+
+# Skip the main worktree
+gw run --no-main -- cargo clippy
+
+# Keep going even if some worktrees fail
+gw run --continue-on-error -- cargo build
+
+# Run in one specific worktree
+gw exec fix-auth -- git log --oneline -5
+```
+
+`gw ls` emits TSV columns (`worktree_id`, `branch`, `status`, `age`, `repo_root`, `path`) for scripting:
+
+```bash
+gw ls | awk -F'\t' '{print $2, $6}'   # branch + path
+```
 
 ## Terminal Launchers
 
-Control how AI tools are launched with `--term` (or configure a default via `gw config set launch.method`):
+The launcher used by `gw new` / `gw spawn` / `gw resume` is configured (not a per-invocation flag). Use `--no-term` on `gw new` to skip the AI tool launch entirely.
+
+Set the default for a project in `.cwconfig.json`:
+
+```json
+{ "launch_method": "tmux" }
+```
+
+…or globally in `~/.config/git-worktree-manager/config.json`. Per-invocation override is via the `CW_LAUNCH_METHOD` env var:
 
 ```bash
-gw new fix-auth --term tmux         # New tmux session
-gw new fix-auth --term iterm-tab    # New iTerm tab
-gw new fix-auth --term zellij       # New Zellij session
-gw new fix-auth --term wezterm-tab  # New WezTerm tab
-gw new fix-auth --bg                # Force background variant of the launcher
-gw resume fix-auth --bg             # Same modifier on resume
-gw resume fix-auth --fg             # Force foreground variant (inverse)
+CW_LAUNCH_METHOD=iterm-tab gw new fix-auth
 ```
 
 | Launcher | Variants |
@@ -128,32 +162,6 @@ gw resume fix-auth --fg             # Force foreground variant (inverse)
 | **tmux** | `tmux`, `tmux-window`, `tmux-pane-h`, `tmux-pane-v` |
 | **Zellij** | `zellij`, `zellij-tab`, `zellij-pane-h`, `zellij-pane-v` |
 | **WezTerm** | `wezterm-window`, `wezterm-tab`, `wezterm-tab-bg`, `wezterm-pane-h`, `wezterm-pane-v` |
-
-Each launcher also has a short alias (e.g., `t` for tmux, `i-t` for iterm-tab).
-
-### `--bg` / `--fg` modifiers
-
-`gw new` and `gw resume` accept `--bg` and `--fg` as launcher modifiers that
-swap to a paired variant of the resolved `--term` (or configured default):
-
-| Base method   | `--bg` maps to    | `--fg` maps to |
-|---------------|-------------------|----------------|
-| `foreground`  | `detach`          | —              |
-| `detach`      | —                 | `foreground`   |
-| `wezterm-tab` | `wezterm-tab-bg`  | —              |
-| `wezterm-tab-bg` | —              | `wezterm-tab`  |
-
-Other launchers have no paired variant — `--bg`/`--fg` are silent no-ops in
-that case (the original launcher runs unchanged). `--bg` and `--fg` cannot be
-combined.
-
-```bash
-# Default config is wezterm-tab-bg → use --fg for a one-off foregrounded launch
-gw resume fix-auth --fg
-
-# Detach a foreground-default launch without editing config
-gw new exploratory-spike --bg
-```
 
 ## Claude Code Integration
 
@@ -166,12 +174,7 @@ gw setup-claude    # One-time: installs the gw plugin to ~/.claude/plugins/gw/
 The plugin bundles two skills:
 
 - **`delegate`** — invoked via `/gw <task description>`. Spawns a new worktree and a Claude Code session inside it with the given task as the initial prompt. One-shot, fire-and-forget.
-- **`manage`** — auto-applies when you (or Claude) run worktree management commands (`gw list/delete/clean/sync/merge/pr/resume`). Encodes a worktree-health rulebook (stale cwd, wrong-base branching, sibling drift, missing test/lint conventions) and a catalog of recommended Claude Code hooks. When relevant, Claude will *suggest* installing a hook into your project's `.claude/settings.json` and edit it on your consent — gw itself never modifies any settings file.
-
-### Behavior changes in this release
-
-- **`gw delete` no longer prompts.** Refusal messages now include a tiered explanation (Hard tier: active Claude session in the worktree, lockfile holder; Soft tier: process cwd scan). Pass `--force` once to override either tier — there is no interactive y/N path. Automation that piped `y` should switch to `--force`.
-- **`gw delete` detects active Claude Code sessions.** A worktree with a Claude Code session that wrote a JSONL event in the last 10 minutes refuses delete, even if the session was started by another `gw new` call. This directly prevents the "second session deletes the worktree the first session is working in" failure mode. Override with `--force`.
+- **`manage`** — auto-applies when you (or Claude) run worktree management commands. Encodes a worktree-health rulebook and a catalog of recommended Claude Code hooks. When relevant, Claude will *suggest* installing a hook into your project's `.claude/settings.json` and edit it on your consent — gw itself never modifies any settings file.
 
 ## Shell Integration
 
@@ -184,7 +187,7 @@ gw shell-setup
 <summary>Manual setup</summary>
 
 ```bash
-# bash/zsh - add to your shell rc file
+# bash/zsh — add to your shell rc file
 source <(gw _shell-function bash)
 
 # fish
@@ -194,68 +197,60 @@ gw _shell-function fish | source
 </details>
 
 This enables:
-- **`gw-cd <branch>`** - Navigate to a worktree directory (interactive selector if no args)
-- **Tab completion** - Branch names, config keys, and options
+- **`gw-cd <target>`** — navigate to a worktree directory (interactive selector if no args)
+- **Tab completion** — worktree names and branch names from the current scope, plus options
 
 Generate shell completions separately with `gw --generate-completion <bash|zsh|fish|powershell|elvish>`.
 
 ## Configuration
 
-Config file: `~/.config/git-worktree-manager/config.json` (also reads legacy `~/.config/claude-worktree/config.json`)
+Config is resolved in layers (later layers override earlier ones): built-in defaults → `~/.config/git-worktree-manager/config.json` → repo-local `.cwconfig.json`. There are no `gw config` subcommands — edit the JSON files directly.
 
-```bash
-gw config show                     # Show current config
-gw config list                     # List all keys with descriptions
-gw config set <key> <value>        # Set a value
-gw config get <key>                # Get a value
-gw config reset                    # Reset to defaults
+Also reads legacy `~/.config/claude-worktree/config.json` from the Python predecessor.
+
+Example `.cwconfig.json`:
+
+```json
+{
+  "default_base": "main",
+  "ai_tool": "claude",
+  "launch_method": "tmux",
+  "hooks": {
+    "post_new": "npm install",
+    "pre_rm": "cargo test --quiet"
+  }
+}
 ```
-
-### AI Tool Presets
-
-```bash
-gw config use-preset claude              # Default
-gw config use-preset claude-yolo         # Skip permission prompts
-gw config use-preset claude-remote       # Remote control mode
-gw config use-preset claude-yolo-remote  # Remote + skip permissions
-gw config use-preset codex               # OpenAI Codex
-gw config use-preset codex-yolo          # Codex without sandbox
-gw config use-preset no-op               # No AI tool
-```
-
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `CW_AI_TOOL` | Override AI tool command (space-separated) |
-| `CW_LAUNCH_METHOD` | Override terminal launch method |
 
 ## Hooks
 
-Run custom commands at lifecycle events. Pre-hooks abort the operation on failure.
+Two lifecycle hooks are available, configured in `.cwconfig.json` (or the global config):
 
-```bash
-gw hook add worktree.post_create "npm install"
-gw hook add pr.pre "cargo test" --description "Run tests before PR"
-gw hook list
-gw hook disable worktree.post_create <hook-id>
-```
+| Hook | Trigger |
+|------|---------|
+| `hooks.post_new` | After `gw new` creates a worktree |
+| `hooks.pre_rm` | Before `gw rm` removes a worktree |
 
-**Available events:** `worktree.pre_create`, `worktree.post_create`, `worktree.pre_delete`, `worktree.post_delete`, `merge.pre`, `merge.post`, `pr.pre`, `pr.post`, `resume.pre`, `resume.post`, `sync.pre`, `sync.post`
+Hooks run as `sh -c <cmd>` with the worktree directory as the working directory.
 
-Hook context is passed via `CW_*` environment variables.
+- `pre_rm` non-zero exit aborts the remove (the worktree stays). This is independent of `--force` — `--force` bypasses busy detection, not user hooks.
+- `post_new` non-zero exit surfaces as a non-zero `gw new` exit code, but the worktree itself remains on disk because the hook runs after `git worktree add`. The AI tool launch is skipped.
 
-## Notes
+There are no `gw hook` CRUD subcommands — set hooks in the config file directly.
 
-### Behavior change in `gw delete`
+## Doctor
 
-Since the multi-target `gw delete` change ([#100](https://github.com/DaveDev42/git-worktree-manager/pull/100)), single-target failures now exit with code `2` instead of `1`. This aligns with the new batch contract:
+`gw doctor` runs 5 lean health checks: git version, worktree accessibility, uncommitted changes, busy worktrees, and Claude Code integration. Pass `--session-start` for hook-friendly non-interactive mode (single-line summary, always exits 0).
 
-- `0` — full success, `--dry-run`, or interactive (`-i`) with no eligible worktrees / nothing selected
-- `1` — user cancelled
-- `2` — any target failed or was skipped (not found, busy, remove error)
+## `gw rm` Exit Codes
 
-Scripts treating exit code `1` as "delete failed" should switch to `!= 0` or specifically handle `2`. See `gw delete --help` for the full contract.
+| Code | Meaning |
+|------|---------|
+| `0` | Full success, `--dry-run`, or `-i` with nothing selected / cancelled at selection UI |
+| `1` | User cancelled at the confirmation prompt |
+| `2` | Any target failed or was skipped (not found, busy, or remove error) |
+
+Scripts should handle `!= 0` or specifically check for `2`.
 
 ## License
 

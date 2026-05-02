@@ -8,7 +8,6 @@ use crate::constants::{
 };
 use crate::error::Result;
 use crate::git;
-use crate::registry;
 
 use super::display::get_worktree_status;
 use super::pr_cache::PrCache;
@@ -35,29 +34,14 @@ pub fn doctor(session_start: bool, quiet: bool) -> Result<()> {
     let mut issues = 0u32;
     let mut warnings = 0u32;
 
-    // 1. Check Git version
     check_git_version(&mut issues);
-
-    // 2. Check worktree accessibility
     let (worktrees, stale_count) = check_worktree_accessibility(&repo, &mut issues)?;
-
-    // 3. Check for uncommitted changes
     check_uncommitted_changes(&worktrees, &mut warnings);
-
-    // 4. Check if worktrees are behind base branch
-    let behind = check_behind_base(&worktrees, &repo, &mut warnings);
-
-    // 5. Check for merge conflicts
-    let conflicted = check_merge_conflicts(&worktrees, &mut issues);
-
-    // 6. Check Claude Code integration
+    check_busy_worktrees(&worktrees);
     check_claude_integration();
 
-    // Summary
     print_summary(issues, warnings);
-
-    // Recommendations
-    print_recommendations(stale_count, &behind, &conflicted);
+    print_recommendations(stale_count);
 
     Ok(())
 }
@@ -72,8 +56,8 @@ fn doctor_session_start(quiet: bool) -> Result<()> {
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "?".into());
 
-    // Branch + base + registration are best-effort: failures here must not
-    // abort the line. Each failed lookup contributes "?" to the output.
+    // Branch + base are best-effort: failures here must not abort the
+    // line. Each failed lookup contributes "?" to the output.
     let repo_root = git::get_repo_root(None).ok();
     let branch = repo_root
         .as_deref()
@@ -90,24 +74,10 @@ fn doctor_session_start(quiet: bool) -> Result<()> {
     } else {
         "?".into()
     };
-    let registered = {
-        let registry = registry::load_registry();
-        cwd.as_ref()
-            .map(|p| {
-                let key = p
-                    .canonicalize()
-                    .unwrap_or_else(|_| p.clone())
-                    .to_string_lossy()
-                    .to_string();
-                registry.repositories.contains_key(&key)
-            })
-            .unwrap_or(false)
-    };
-
     let prefix = if quiet { "gw:" } else { "gw doctor:" };
     println!(
-        "{} cwd={} ok={} branch={} base={} registered={}",
-        prefix, cwd_str, cwd_ok, branch, base, registered,
+        "{} cwd={} ok={} branch={} base={}",
+        prefix, cwd_str, cwd_ok, branch, base,
     );
     Ok(())
 }
@@ -161,8 +131,9 @@ fn check_worktree_accessibility(
     let mut stale_count = 0u32;
     let mut worktrees: Vec<WtInfo> = Vec::new();
 
-    // doctor needs fresh state; bypass the 60s TTL.
-    let pr_cache = PrCache::load_or_fetch(repo, true);
+    // Use a default (empty) cache — stale detection depends only on path
+    // existence, not on PR state, so there is no need for a gh call here.
+    let pr_cache = PrCache::default();
 
     for (branch_name, path) in &feature_worktrees {
         let status = get_worktree_status(path, repo, Some(branch_name.as_str()), &pr_cache);
@@ -225,116 +196,33 @@ fn check_uncommitted_changes(worktrees: &[WtInfo], warnings: &mut u32) {
     println!();
 }
 
-/// Check if worktrees are behind their base branch.
-fn check_behind_base(
-    worktrees: &[WtInfo],
-    repo: &std::path::Path,
-    warnings: &mut u32,
-) -> Vec<(String, String, String)> {
-    println!(
-        "{}",
-        style("4. Checking if worktrees are behind base branch...").bold()
-    );
-    let mut behind: Vec<(String, String, String)> = Vec::new();
-
-    for wt in worktrees {
-        if wt.status == "stale" {
-            continue;
-        }
-        let key = format_config_key(CONFIG_KEY_BASE_BRANCH, &wt.branch);
-        let base = match git::get_config(&key, Some(repo)) {
-            Some(b) => b,
-            None => continue,
-        };
-
-        let origin_base = format!("origin/{}", base);
-        if let Ok(r) = git::git_command(
-            &[
-                "rev-list",
-                "--count",
-                &format!("{}..{}", wt.branch, origin_base),
-            ],
-            Some(&wt.path),
-            false,
-            true,
-        ) {
-            if r.returncode == 0 {
-                let count = r.stdout.trim();
-                if count != "0" {
-                    behind.push((wt.branch.clone(), base.clone(), count.to_string()));
-                }
-            }
-        }
-    }
-
-    if behind.is_empty() {
-        println!(
-            "   {} All worktrees are up-to-date with base",
-            style("*").green()
-        );
+/// Check for worktrees with active sessions in other shells.
+/// This is informational — it tells the user where parallel work is
+/// happening, not whether something is wrong.
+fn check_busy_worktrees(worktrees: &[WtInfo]) {
+    println!("{}", style("4. Checking busy worktrees...").bold());
+    let busy: Vec<&WtInfo> = worktrees
+        .iter()
+        .filter(|w| !crate::operations::busy::detect_busy_lockfile_only(&w.path).is_empty())
+        .collect();
+    if busy.is_empty() {
+        println!("   {} No busy worktrees", style("*").green());
     } else {
         println!(
-            "   {} {} worktree(s) behind base branch:",
-            style("!").yellow(),
-            behind.len()
+            "   {} {} busy worktree(s) (active in another session):",
+            style("i").cyan(),
+            busy.len()
         );
-        for (b, base, count) in &behind {
-            println!("      - {}: {} commit(s) behind {}", b, count, base);
+        for wt in &busy {
+            println!("      - {}", wt.branch);
         }
-        println!(
-            "   {}",
-            style("Tip: Use 'gw sync --all' to update all worktrees").dim()
-        );
-        *warnings += 1;
     }
     println!();
-
-    behind
-}
-
-/// Check for merge conflicts in worktrees.
-fn check_merge_conflicts(worktrees: &[WtInfo], issues: &mut u32) -> Vec<(String, usize)> {
-    println!("{}", style("5. Checking for merge conflicts...").bold());
-    let mut conflicted: Vec<(String, usize)> = Vec::new();
-
-    for wt in worktrees {
-        if wt.status == "stale" {
-            continue;
-        }
-        if let Ok(r) = git::git_command(
-            &["diff", "--name-only", "--diff-filter=U"],
-            Some(&wt.path),
-            false,
-            true,
-        ) {
-            if r.returncode == 0 && !r.stdout.trim().is_empty() {
-                let count = r.stdout.trim().lines().count();
-                conflicted.push((wt.branch.clone(), count));
-            }
-        }
-    }
-
-    if conflicted.is_empty() {
-        println!("   {} No merge conflicts detected", style("*").green());
-    } else {
-        println!(
-            "   {} {} worktree(s) with merge conflicts:",
-            style("x").red(),
-            conflicted.len()
-        );
-        for (b, count) in &conflicted {
-            println!("      - {}: {} conflicted file(s)", b, count);
-        }
-        *issues += 1;
-    }
-    println!();
-
-    conflicted
 }
 
 /// Check Claude Code installation and skill integration.
 fn check_claude_integration() {
-    println!("{}", style("6. Checking Claude Code integration...").bold());
+    println!("{}", style("5. Checking Claude Code integration...").bold());
 
     let has_claude = Command::new("which")
         .arg("claude")
@@ -387,31 +275,16 @@ fn print_summary(issues: u32, warnings: u32) {
 }
 
 /// Print remediation recommendations.
-fn print_recommendations(
-    stale_count: u32,
-    behind: &[(String, String, String)],
-    conflicted: &[(String, usize)],
-) {
-    let has_recommendations = stale_count > 0 || !behind.is_empty() || !conflicted.is_empty();
-    if has_recommendations {
-        println!("{}", style("Recommendations:").bold());
-        if stale_count > 0 {
-            println!(
-                "  - Run {} to clean up stale worktrees",
-                style("gw prune").cyan()
-            );
-        }
-        if !behind.is_empty() {
-            println!(
-                "  - Run {} to update all worktrees",
-                style("gw sync --all").cyan()
-            );
-        }
-        if !conflicted.is_empty() {
-            println!("  - Resolve conflicts in conflicted worktrees");
-        }
-        println!();
+fn print_recommendations(stale_count: u32) {
+    if stale_count == 0 {
+        return;
     }
+    println!("{}", style("Recommendations:").bold());
+    println!(
+        "  - Run {} to clean up stale worktrees",
+        style("gw rm").cyan()
+    );
+    println!();
 }
 
 /// Source-of-truth strings for the Claude Code section of `gw doctor`.

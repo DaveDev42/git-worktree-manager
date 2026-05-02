@@ -1,10 +1,10 @@
 [package]
 name = "git-worktree-manager"
-version = "0.0.42"
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
 default-run = "gw"
-description = "CLI tool integrating git worktree with AI coding assistants"
+description = "Lean git worktree manager with AI coding-assistant integration"
 license = "BSD-3-Clause"
 repository = "https://github.com/DaveDev42/git-worktree-manager"
 homepage = "https://github.com/DaveDev42/git-worktree-manager"

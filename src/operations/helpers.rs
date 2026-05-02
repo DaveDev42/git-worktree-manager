@@ -1,6 +1,5 @@
 /// Helper functions shared across operations modules.
 ///
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::constants::{format_config_key, CONFIG_KEY_BASE_BRANCH, CONFIG_KEY_BASE_PATH};
@@ -15,17 +14,18 @@ pub struct ResolvedTarget {
     pub repo: PathBuf,
 }
 
-// Thread-local global mode flag.
-std::thread_local! {
-    static GLOBAL_MODE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-pub fn set_global_mode(enabled: bool) {
-    GLOBAL_MODE.with(|g| g.set(enabled));
-}
-
-pub fn is_global_mode() -> bool {
-    GLOBAL_MODE.with(|g| g.get())
+/// Strictly-resolved worktree target: name, branch, and path.
+///
+/// Produced by [`resolve_target_strict`].
+#[derive(Debug)]
+pub struct StrictTarget {
+    /// Basename of the worktree directory (e.g. `"repo-feat-x"`).
+    pub name: String,
+    /// Short branch name (e.g. `"feat-x"`), with `refs/heads/` prefix stripped.
+    /// `None` for detached-HEAD worktrees.
+    pub branch: Option<String>,
+    /// Absolute path to the worktree directory.
+    pub path: PathBuf,
 }
 
 /// Parse 'repo:branch' notation.
@@ -63,12 +63,6 @@ pub fn resolve_worktree_target(
     target: Option<&str>,
     lookup_mode: Option<&str>,
 ) -> Result<ResolvedTarget> {
-    if target.is_none() && is_global_mode() {
-        return Err(CwError::WorktreeNotFound(
-            "Global mode requires an explicit target (branch or worktree name).".to_string(),
-        ));
-    }
-
     if target.is_none() {
         // Use current directory
         let cwd = std::env::current_dir()?;
@@ -82,11 +76,6 @@ pub fn resolve_worktree_target(
     }
 
     let target = target.unwrap();
-
-    // Global mode: search all registered repositories
-    if is_global_mode() {
-        return resolve_global_target(target, lookup_mode);
-    }
 
     let main_repo = git::get_main_repo_root(None)?;
 
@@ -149,51 +138,6 @@ pub fn resolve_worktree_target(
     }
 }
 
-/// Global mode target resolution.
-fn resolve_global_target(target: &str, lookup_mode: Option<&str>) -> Result<ResolvedTarget> {
-    let repos = crate::registry::get_all_registered_repos();
-    let (repo_filter, branch_target) = parse_repo_branch_target(target);
-
-    for (name, repo_path) in &repos {
-        if let Some(filter) = repo_filter {
-            if name != filter {
-                continue;
-            }
-        }
-        if !repo_path.exists() {
-            continue;
-        }
-
-        // Try branch lookup (skip if lookup_mode is "worktree")
-        if lookup_mode != Some("worktree") {
-            if let Ok(Some(path)) = git::find_worktree_by_intended_branch(repo_path, branch_target)
-            {
-                let repo = git::get_repo_root(Some(&path)).unwrap_or(repo_path.clone());
-                return Ok(ResolvedTarget {
-                    path,
-                    branch: branch_target.to_string(),
-                    repo,
-                });
-            }
-        }
-
-        // Try worktree name lookup (skip if lookup_mode is "branch")
-        if lookup_mode != Some("branch") {
-            if let Ok(Some(path)) = git::find_worktree_by_name(repo_path, branch_target) {
-                let branch = get_branch_for_worktree(repo_path, &path)
-                    .unwrap_or_else(|| branch_target.to_string());
-                let repo = git::get_repo_root(Some(&path)).unwrap_or(repo_path.clone());
-                return Ok(ResolvedTarget { path, branch, repo });
-            }
-        }
-    }
-
-    Err(CwError::WorktreeNotFound(format!(
-        "'{}' not found in any registered repository. Run 'gw scan' to register repos.",
-        target
-    )))
-}
-
 /// Get worktree metadata (base branch and base repository path).
 ///
 /// If metadata is missing, tries to infer from common defaults.
@@ -253,50 +197,92 @@ pub fn get_worktree_metadata(branch: &str, repo: &Path) -> Result<(String, PathB
     Ok((base, inferred_base_path))
 }
 
-/// Build a hook context HashMap with standard fields.
-pub fn build_hook_context(
-    branch: &str,
-    base_branch: &str,
-    worktree_path: &Path,
-    repo_path: &Path,
-    event: &str,
-    operation: &str,
-) -> HashMap<String, String> {
-    HashMap::from([
-        ("branch".into(), branch.to_string()),
-        ("base_branch".into(), base_branch.to_string()),
-        (
-            "worktree_path".into(),
-            worktree_path.to_string_lossy().to_string(),
-        ),
-        ("repo_path".into(), repo_path.to_string_lossy().to_string()),
-        ("event".into(), event.to_string()),
-        ("operation".into(), operation.to_string()),
-    ])
+/// Strict target resolution: exact worktree name → exact branch name → exact path.
+///
+/// Unlike [`resolve_worktree_target`], this function performs no fuzzy matching
+/// and no metadata look-ups. It calls [`git::parse_worktrees`] once and applies
+/// three ordered exact-match rules:
+///
+/// 1. **Worktree name** — basename of the worktree directory equals `target`.
+/// 2. **Branch name** — short branch name (after stripping `refs/heads/`) equals `target`.
+/// 3. **Absolute path** — the worktree path equals `target`.
+///
+/// Returns [`CwError::WorktreeNotFound`] when no worktree matches.
+pub fn resolve_target_strict(repo_root: &Path, target: &str) -> Result<StrictTarget> {
+    let worktrees = git::parse_worktrees(repo_root)?;
+
+    // Pre-compute the main worktree path so we can skip it when doing name
+    // lookup (the main repo's basename is rarely meaningful as a worktree name).
+    let main_path = worktrees
+        .first()
+        .map(|(_, p)| git::canonicalize_or(p))
+        .unwrap_or_default();
+
+    // Helper: build a StrictTarget from a raw parse_worktrees entry.
+    let make = |(branch_raw, path): &(String, PathBuf)| -> StrictTarget {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let normalized = git::normalize_branch_name(branch_raw);
+        let branch = if normalized == "(detached)" {
+            None
+        } else {
+            Some(normalized.to_string())
+        };
+        StrictTarget {
+            name,
+            branch,
+            path: path.clone(),
+        }
+    };
+
+    // 1) Exact worktree name (basename of path).
+    for entry in &worktrees {
+        let (_, path) = entry;
+        // Skip main repo entry
+        if git::canonicalize_or(path) == main_path {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or_default();
+        if name == target {
+            return Ok(make(entry));
+        }
+    }
+
+    // 2) Exact branch name (refs/heads/ prefix stripped).
+    for entry in &worktrees {
+        let (branch_raw, path) = entry;
+        if git::canonicalize_or(path) == main_path {
+            continue;
+        }
+        if git::normalize_branch_name(branch_raw) == target {
+            return Ok(make(entry));
+        }
+    }
+
+    // 3) Exact absolute path (canonicalize both sides to handle symlinks).
+    let abs = PathBuf::from(target);
+    let abs_resolved = git::canonicalize_or(&abs);
+    for entry in &worktrees {
+        let (_, path) = entry;
+        let path_resolved = git::canonicalize_or(path);
+        if path_resolved == abs_resolved {
+            return Ok(make(entry));
+        }
+    }
+
+    Err(CwError::WorktreeNotFound(messages::target_not_found(
+        target,
+    )))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn test_build_hook_context_all_fields() {
-        let ctx = build_hook_context(
-            "feat/login",
-            "main",
-            Path::new("/tmp/worktree"),
-            Path::new("/tmp/repo"),
-            "worktree.pre_create",
-            "new",
-        );
-
-        assert_eq!(ctx.len(), 6);
-        assert_eq!(ctx["branch"], "feat/login");
-        assert_eq!(ctx["base_branch"], "main");
-        assert_eq!(ctx["worktree_path"], "/tmp/worktree");
-        assert_eq!(ctx["repo_path"], "/tmp/repo");
-        assert_eq!(ctx["event"], "worktree.pre_create");
-        assert_eq!(ctx["operation"], "new");
-    }
 
     #[test]
     fn test_parse_repo_branch_target() {
