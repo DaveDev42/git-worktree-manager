@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.0...v0.1.1) (2026-05-02)
+
+
+### Bug Fixes
+
+* **release:** gate downstream jobs on resolve-release success ([#135](https://github.com/DaveDev42/git-worktree-manager/issues/135)) ([36fd4a9](https://github.com/DaveDev42/git-worktree-manager/commit/36fd4a9a168d3051068ac29a425b1018b288b42b))
+
 ## [0.1.0](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.0...v0.1.0) (2026-05-02)
 
 
