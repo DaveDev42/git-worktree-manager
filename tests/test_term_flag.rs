@@ -67,7 +67,10 @@ fn new_dash_t_fg_overrides_env_and_runs_ai_in_worktree() {
     let gw_bin = std::path::PathBuf::from(env!("CARGO_BIN_EXE_gw"));
 
     // Augment PATH so any inner `gw _spawn-ai` invocation resolves to our
-    // built binary (mirrors with_sentinel_ai's PATH handling).
+    // built binary (mirrors with_sentinel_ai's PATH handling). The library
+    // now emits `<current_exe> _spawn-ai`, so this child gw will spawn
+    // itself by absolute path — but we keep the augment as belt-and-braces
+    // for any indirect shell-out paths that don't go through current_exe.
     let mut path_dirs: Vec<std::path::PathBuf> =
         vec![gw_bin.parent().expect("gw bin has parent").to_path_buf()];
     if let Some(existing) = std::env::var_os("PATH") {
@@ -80,6 +83,7 @@ fn new_dash_t_fg_overrides_env_and_runs_ai_in_worktree() {
         .current_dir(repo.path())
         .env("CW_LAUNCH_METHOD", "tmux")
         .env("CW_AI_TOOL", &script_path)
+        .env("CW_SPAWN_AI_BIN", &gw_bin)
         .env("PATH", &new_path)
         .output()
         .expect("run gw new -T fg");

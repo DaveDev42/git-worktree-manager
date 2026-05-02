@@ -125,7 +125,25 @@ pub fn materialize_in_dir(spec: &SpawnSpec, dir: &Path) -> Result<(String, PathB
         let _ = write_last_to_git_dir(spec, &git_dir);
     }
 
-    let shell_line = format!("gw _spawn-ai {}", quote_path_for_shell(&path));
+    // Use the absolute path of the currently-running binary so that, in
+    // multi-install setups (e.g. `gw` from Homebrew + `gw-new` from cargo),
+    // the new tab/pane invokes the SAME binary that just emitted this line —
+    // not whichever `gw` happens to be first on PATH (which may be a different
+    // version, an alias, or missing entirely).
+    //
+    // Test override: `CW_SPAWN_AI_BIN` lets integration tests point at the
+    // cargo-built `gw` binary instead of the test runner's own `current_exe`
+    // (which would be `target/debug/deps/test_X-…` — a binary that has no
+    // `_spawn-ai` subcommand).
+    let self_exe = std::env::var_os("CW_SPAWN_AI_BIN")
+        .map(|s| quote_path_for_shell(Path::new(&s)))
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .map(|p| quote_path_for_shell(&p))
+        })
+        .unwrap_or_else(|| "gw".to_string());
+    let shell_line = format!("{} _spawn-ai {}", self_exe, quote_path_for_shell(&path));
     Ok((shell_line, path))
 }
 
@@ -336,14 +354,21 @@ mod tests {
         );
         let (shell_line, spec_path) = materialize_in_dir(&spec, dir.path()).unwrap();
 
+        // The launcher line begins with the absolute path of the test binary
+        // (current_exe). We check the `_spawn-ai` subcommand rather than a
+        // fixed `gw` prefix so the line works under any binary name (gw,
+        // gw-new, cw, etc.) — see the comment in materialize_in_dir.
+        let exe = std::env::current_exe().unwrap();
+        let exe_token = quote_path_for_shell(&exe);
+        assert!(
+            shell_line.starts_with(&format!("{} _spawn-ai ", exe_token)),
+            "expected line to start with {:?} _spawn-ai, got {:?}",
+            exe_token,
+            shell_line
+        );
         // No `exec` — the shell must survive after the AI tool exits so the
         // terminal tab/pane stays open (e.g. WezTerm tab keeps the zsh prompt
         // after claude quits).
-        assert!(shell_line.starts_with("gw _spawn-ai "));
-        // Strictly redundant with the prefix check above, but kept as a
-        // self-documenting guard: if someone ever changes the emitted prefix
-        // string in the future, the `exec` ban is load-bearing for tab
-        // lifetime and must not silently regress.
         assert!(
             !shell_line.starts_with("exec "),
             "shell_line must not use exec: {:?}",
@@ -362,10 +387,16 @@ mod tests {
         let spec = SpawnSpec::new(vec!["/bin/true".into()], dir.path().into());
         let (line, _path) = materialize_in_dir(&spec, dir.path()).unwrap();
 
-        // "gw _spawn-ai " + path. path must contain only safe chars OR
-        // be wrapped in double quotes. Temp dir in tests may have unsafe chars;
-        // we only assert the emitted line is one of those two shapes.
-        let tail = line.strip_prefix("gw _spawn-ai ").unwrap();
+        // "<self-exe> _spawn-ai " + path. The path tail must contain only
+        // safe chars OR be wrapped in double quotes. Temp dir in tests may
+        // have unsafe chars; we only assert the emitted tail is one of those
+        // two shapes.
+        let exe = std::env::current_exe().unwrap();
+        let exe_token = quote_path_for_shell(&exe);
+        let prefix = format!("{} _spawn-ai ", exe_token);
+        let tail = line.strip_prefix(&prefix).unwrap_or_else(|| {
+            panic!("line does not start with {:?}: {:?}", prefix, line)
+        });
         let quoted = tail.starts_with('"') && tail.ends_with('"');
         let bare_safe = tail
             .chars()
