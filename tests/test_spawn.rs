@@ -49,6 +49,7 @@ fn with_sentinel_ai<F: FnOnce()>(sentinel_script: &str, f: F) {
         saved: vec![
             ("CW_LAUNCH_METHOD", std::env::var_os("CW_LAUNCH_METHOD")),
             ("CW_AI_TOOL", std::env::var_os("CW_AI_TOOL")),
+            ("CW_SPAWN_AI_BIN", std::env::var_os("CW_SPAWN_AI_BIN")),
             ("PATH", std::env::var_os("PATH")),
         ],
     };
@@ -56,7 +57,12 @@ fn with_sentinel_ai<F: FnOnce()>(sentinel_script: &str, f: F) {
     std::env::set_var("CW_LAUNCH_METHOD", "foreground");
     std::env::set_var("CW_AI_TOOL", sentinel_script);
 
+    // The library now emits `<current_exe> _spawn-ai …` rather than `gw …`,
+    // so PATH augmentation alone won't help: `current_exe()` for this test
+    // process is `target/debug/deps/test_spawn-…`, which has no `_spawn-ai`
+    // subcommand. Point the spawn line at the cargo-built `gw` binary.
     let gw_bin = std::path::PathBuf::from(env!("CARGO_BIN_EXE_gw"));
+    std::env::set_var("CW_SPAWN_AI_BIN", &gw_bin);
     if let Some(bin_dir) = gw_bin.parent() {
         let mut paths: Vec<std::path::PathBuf> = vec![bin_dir.to_path_buf()];
         if let Some(existing) = std::env::var_os("PATH") {
