@@ -770,9 +770,10 @@ pub fn resolve_term_option(
     cwd: &Path,
 ) -> Result<(LaunchMethod, Option<String>)> {
     if let Some(value) = term_override {
-        // parse_term_option also accepts None (for which it returns the
-        // default-method path); we narrow to the Some-arm explicitly so
-        // an empty string from the CLI doesn't silently fall through.
+        // Override path: parse_term_option handles aliases and
+        // method:session syntax. Falls through to the env/config chain
+        // below only when the override is None — that chain needs `cwd`,
+        // which parse_term_option does not take.
         return parse_term_option(Some(value));
     }
     let method = get_default_launch_method_for_cwd(cwd)?;
