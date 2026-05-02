@@ -49,6 +49,19 @@ pub enum Commands {
         #[arg(long = "no-term")]
         no_term: bool,
 
+        /// Terminal launch method for THIS invocation. Overrides config
+        /// and CW_LAUNCH_METHOD. Accepts canonical names (e.g.,
+        /// `wezterm-tab`) or aliases (e.g., `w-t`, `w-t-b`). Supports
+        /// `method:session-name` for tmux/zellij. Mutually exclusive
+        /// with `--no-term`.
+        #[arg(
+            short = 'T',
+            long = "term",
+            value_name = "METHOD",
+            conflicts_with = "no_term"
+        )]
+        term: Option<String>,
+
         /// Initial prompt to pass to the AI tool (starts interactive session with task)
         #[arg(long)]
         prompt: Option<String>,
@@ -66,6 +79,12 @@ pub enum Commands {
     Resume {
         /// Branch name, worktree name, or path to resume (default: current worktree)
         branch: Option<String>,
+
+        /// Terminal launch method for THIS invocation. Overrides config
+        /// and CW_LAUNCH_METHOD. Accepts canonical names or aliases.
+        /// Supports `method:session-name` for tmux/zellij.
+        #[arg(short = 'T', long = "term", value_name = "METHOD")]
+        term: Option<String>,
     },
 
     /// Launch AI tool in an existing worktree (default: current).
@@ -79,6 +98,12 @@ pub enum Commands {
         /// Worktree target — exact worktree name, branch name, or path.
         /// Default: current worktree.
         target: Option<String>,
+
+        /// Terminal launch method for THIS invocation. Overrides config
+        /// and CW_LAUNCH_METHOD. Accepts canonical names or aliases.
+        /// Supports `method:session-name` for tmux/zellij.
+        #[arg(short = 'T', long = "term", value_name = "METHOD")]
+        term: Option<String>,
 
         /// Initial prompt to pass to the AI tool.
         #[arg(long)]

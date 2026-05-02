@@ -21,6 +21,7 @@ pub fn create_worktree(
     path: Option<&str>,
     no_ai: bool,
     initial_prompt: Option<&str>,
+    term_override: Option<&str>,
 ) -> Result<PathBuf> {
     let repo = git::get_repo_root(None)?;
 
@@ -175,7 +176,7 @@ pub fn create_worktree(
 
     // Launch AI tool in the new worktree.
     if !no_ai {
-        let _ = super::ai_tools::spawn_in_worktree(&worktree_path, initial_prompt);
+        let _ = super::ai_tools::spawn_in_worktree(&worktree_path, initial_prompt, term_override);
     }
 
     Ok(worktree_path)

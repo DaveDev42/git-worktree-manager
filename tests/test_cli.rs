@@ -83,7 +83,7 @@ fn test_new_help() {
         .stdout(predicate::str::contains("--path"))
         .stdout(predicate::str::contains("--base"))
         .stdout(predicate::str::contains("--no-term"))
-        .stdout(predicate::str::contains("--term").not())
+        .stdout(predicate::str::contains("--term"))
         .stdout(predicate::str::contains("--bg").not())
         .stdout(predicate::str::contains("--fg").not())
         .stdout(predicate::str::contains("--prompt "))
@@ -93,7 +93,7 @@ fn test_new_help() {
 
 #[test]
 fn gw_new_rejects_dropped_launch_flags() {
-    // --bg, --fg, --term were removed in Phase 6.3; clap should reject them
+    // --bg, --fg were removed in Phase 6.3; clap should reject them
     cw().args(["new", "x", "--bg", "--no-term"])
         .assert()
         .failure()
@@ -106,11 +106,15 @@ fn gw_new_rejects_dropped_launch_flags() {
         .stderr(
             predicate::str::contains("unexpected argument").or(predicate::str::contains("--fg")),
         );
+    // --term is restored in 1.0; --term + --no-term is a conflict (not unexpected argument)
     cw().args(["new", "x", "--term", "tmux", "--no-term"])
         .assert()
         .failure()
         .stderr(
-            predicate::str::contains("unexpected argument").or(predicate::str::contains("--term")),
+            predicate::str::contains("cannot be used with")
+                .or(predicate::str::contains("conflict"))
+                .or(predicate::str::contains("--term"))
+                .or(predicate::str::contains("--no-term")),
         );
 }
 
@@ -137,14 +141,15 @@ fn test_resume_help() {
     cw().args(["resume", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("--term").not())
+        .stdout(predicate::str::contains("--term")) // -T/--term restored in 1.0
         .stdout(predicate::str::contains("--bg").not())
         .stdout(predicate::str::contains("--fg").not());
 }
 
 #[test]
 fn gw_resume_rejects_dropped_launch_flags() {
-    // --bg, --fg, --term were removed in Phase 6.3; clap should reject them
+    // --bg, --fg were removed in Phase 6.3; clap should reject them
+    // --term is restored in 1.0 and is now accepted
     cw().args(["resume", "some-branch", "--bg"])
         .assert()
         .failure()
@@ -156,12 +161,6 @@ fn gw_resume_rejects_dropped_launch_flags() {
         .failure()
         .stderr(
             predicate::str::contains("unexpected argument").or(predicate::str::contains("--fg")),
-        );
-    cw().args(["resume", "some-branch", "--term", "tmux"])
-        .assert()
-        .failure()
-        .stderr(
-            predicate::str::contains("unexpected argument").or(predicate::str::contains("--term")),
         );
 }
 
@@ -288,13 +287,13 @@ fn test_new_base_short_flag() {
 }
 
 #[test]
-fn test_new_help_does_not_show_term_short_flag() {
-    // -T / --term were removed in Phase 6.3; verify they no longer appear in help
+fn test_new_help_shows_term_flags() {
+    // -T / --term were restored; verify they now appear in help
     cw().args(["new", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("-T").not())
-        .stdout(predicate::str::contains("--term").not());
+        .stdout(predicate::str::contains("-T"))
+        .stdout(predicate::str::contains("--term"));
 }
 
 #[test]
@@ -430,4 +429,97 @@ fn new_rejects_file_and_stdin() {
         msg.contains("cannot be used with") || msg.contains("conflict"),
         "expected conflict error, got: {msg}"
     );
+}
+
+#[test]
+fn new_accepts_dash_t_term() {
+    let cli = Cli::try_parse_from(["gw", "new", "feat-x", "-T", "w-t"]).expect("parses with -T");
+    match cli.command {
+        Some(Commands::New { term, .. }) => assert_eq!(term.as_deref(), Some("w-t")),
+        other => panic!("unexpected command variant: {:?}", other),
+    }
+}
+
+#[test]
+fn new_accepts_long_term() {
+    let cli = Cli::try_parse_from(["gw", "new", "feat-x", "--term", "tmux:mywork"])
+        .expect("parses with --term");
+    match cli.command {
+        Some(Commands::New { term, .. }) => {
+            assert_eq!(term.as_deref(), Some("tmux:mywork"))
+        }
+        other => panic!("unexpected command variant: {:?}", other),
+    }
+}
+
+#[test]
+fn new_rejects_term_with_no_term() {
+    let err = Cli::try_parse_from(["gw", "new", "feat-x", "-T", "fg", "--no-term"])
+        .expect_err("clap should reject -T with --no-term");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("--no-term") || msg.contains("--term") || msg.contains("conflict"),
+        "expected conflict message, got: {}",
+        msg
+    );
+}
+
+#[test]
+fn new_rejects_dash_t_without_value() {
+    let err =
+        Cli::try_parse_from(["gw", "new", "feat-x", "-T"]).expect_err("clap should reject bare -T");
+    assert!(err.to_string().to_lowercase().contains("value"));
+}
+
+#[test]
+fn resume_accepts_dash_t_term() {
+    let cli = Cli::try_parse_from(["gw", "resume", "feat-x", "-T", "w-t"])
+        .expect("parses resume with -T");
+    match cli.command {
+        Some(Commands::Resume { branch, term }) => {
+            assert_eq!(branch.as_deref(), Some("feat-x"));
+            assert_eq!(term.as_deref(), Some("w-t"));
+        }
+        other => panic!("unexpected command variant: {:?}", other),
+    }
+}
+
+#[test]
+fn resume_term_without_branch() {
+    // `gw resume -T fg` (no branch) must still parse.
+    let cli =
+        Cli::try_parse_from(["gw", "resume", "-T", "fg"]).expect("parses resume without branch");
+    match cli.command {
+        Some(Commands::Resume { branch, term }) => {
+            assert!(branch.is_none());
+            assert_eq!(term.as_deref(), Some("fg"));
+        }
+        other => panic!("unexpected command variant: {:?}", other),
+    }
+}
+
+#[test]
+fn spawn_accepts_dash_t_term() {
+    let cli =
+        Cli::try_parse_from(["gw", "spawn", "feat-x", "-T", "w-t"]).expect("parses spawn with -T");
+    match cli.command {
+        Some(Commands::Spawn { target, term, .. }) => {
+            assert_eq!(target.as_deref(), Some("feat-x"));
+            assert_eq!(term.as_deref(), Some("w-t"));
+        }
+        other => panic!("unexpected command variant: {:?}", other),
+    }
+}
+
+#[test]
+fn spawn_term_without_target() {
+    let cli =
+        Cli::try_parse_from(["gw", "spawn", "-T", "fg"]).expect("parses spawn without target");
+    match cli.command {
+        Some(Commands::Spawn { target, term, .. }) => {
+            assert!(target.is_none());
+            assert_eq!(term.as_deref(), Some("fg"));
+        }
+        other => panic!("unexpected command variant: {:?}", other),
+    }
 }

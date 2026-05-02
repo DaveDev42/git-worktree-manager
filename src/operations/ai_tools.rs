@@ -102,8 +102,8 @@ fn dispatch_launch(
 }
 
 /// Launch AI coding assistant in the specified directory.
-pub fn launch_ai_tool(path: &Path, resume: bool) -> Result<()> {
-    let method = config::get_default_launch_method()?;
+pub fn launch_ai_tool(path: &Path, resume: bool, term_override: Option<&str>) -> Result<()> {
+    let (method, session_name) = config::resolve_term_option(term_override, path)?;
 
     // Determine command
     let ai_cmd_parts = if resume {
@@ -143,14 +143,14 @@ pub fn launch_ai_tool(path: &Path, resume: bool) -> Result<()> {
     // emulator / multiplexer and return immediately, so a lock acquired here
     // would be released before the AI session really starts — for those we
     // rely on process-cwd scanning in `busy::detect_busy` instead.
-    dispatch_launch(path, method, None, &cmd, ai_tool_name.as_str())
+    dispatch_launch(path, method, session_name, &cmd, ai_tool_name.as_str())
 }
 
 /// Resume AI work in a worktree with context restoration.
 ///
 /// Target resolution uses strict ordered rules: exact worktree name → exact branch
 /// name → exact path. When no target is given, the current working directory is used.
-pub fn resume_worktree(worktree: Option<&str>) -> Result<()> {
+pub fn resume_worktree(worktree: Option<&str>, term_override: Option<&str>) -> Result<()> {
     let (worktree_path, branch_name) = if let Some(target) = worktree {
         let main_repo = git::get_main_repo_root(None)?;
         let strict = resolve_target_strict(&main_repo, target)?;
@@ -236,7 +236,7 @@ pub fn resume_worktree(worktree: Option<&str>) -> Result<()> {
             );
         }
 
-        launch_ai_tool(&worktree_path, has_session)?;
+        launch_ai_tool(&worktree_path, has_session, term_override)?;
     }
 
     Ok(())
@@ -245,9 +245,13 @@ pub fn resume_worktree(worktree: Option<&str>) -> Result<()> {
 /// Launch the configured AI tool inside an existing worktree.
 ///
 /// Used by both `gw new` (after worktree creation) and `gw spawn`. Honors the
-/// default launch method from config; no terminal-override / fg / bg knobs.
-pub fn spawn_in_worktree(worktree_path: &Path, prompt: Option<&str>) -> Result<()> {
-    let method = config::get_default_launch_method()?;
+/// resolved launch method (CLI override > env > config > default).
+pub fn spawn_in_worktree(
+    worktree_path: &Path,
+    prompt: Option<&str>,
+    term_override: Option<&str>,
+) -> Result<()> {
+    let (method, session_name) = config::resolve_term_option(term_override, worktree_path)?;
 
     let ai_cmd_parts = if let Some(p) = prompt {
         config::get_ai_tool_merge_command(p)?
@@ -273,7 +277,13 @@ pub fn spawn_in_worktree(worktree_path: &Path, prompt: Option<&str>) -> Result<(
     let spec = SpawnSpec::new(ai_cmd_parts, worktree_path.to_path_buf());
     let (cmd, _) = spawn_spec::materialize(&spec)?;
 
-    dispatch_launch(worktree_path, method, None, &cmd, ai_tool_name.as_str())
+    dispatch_launch(
+        worktree_path,
+        method,
+        session_name,
+        &cmd,
+        ai_tool_name.as_str(),
+    )
 }
 
 /// Generate a session name from path with length limit.

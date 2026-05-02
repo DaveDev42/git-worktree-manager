@@ -92,7 +92,7 @@ fn spawn_in_worktree_launches_in_existing_worktree() {
     }
 
     with_sentinel_ai(&script_path.to_string_lossy(), || {
-        let result = spawn_in_worktree(&wt_path, None);
+        let result = spawn_in_worktree(&wt_path, None, None);
         assert!(
             result.is_ok(),
             "spawn_in_worktree returned Err: {:?}",
@@ -132,7 +132,7 @@ fn spawn_in_worktree_with_prompt() {
     }
 
     with_sentinel_ai(&script_path.to_string_lossy(), || {
-        let result = spawn_in_worktree(&wt_path, Some("hello"));
+        let result = spawn_in_worktree(&wt_path, Some("hello"), None);
         assert!(
             result.is_ok(),
             "spawn_in_worktree with prompt returned Err: {:?}",

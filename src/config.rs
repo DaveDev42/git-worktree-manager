@@ -751,6 +751,35 @@ pub fn get_default_launch_method_for_cwd(cwd: &Path) -> Result<LaunchMethod> {
     Ok(LaunchMethod::Foreground)
 }
 
+/// Resolve a launch method honoring an optional CLI override.
+///
+/// Resolution order:
+///   1. `term_override` (the `-T/--term` CLI flag), if `Some` — parsed via
+///      [`parse_term_option`], so it understands aliases and the
+///      `method:session-name` syntax.
+///   2. `CW_LAUNCH_METHOD` env var.
+///   3. `.cwconfig.json` (repo-local) `launch.method`.
+///   4. global `~/.config/git-worktree-manager/config.json` `launch.method`.
+///   5. [`LaunchMethod::Foreground`] (the default).
+///
+/// Returns `(method, session_name)` where `session_name` is `Some` only
+/// when the override used the `method:session-name` syntax (env / config
+/// paths can't carry a session name today).
+pub fn resolve_term_option(
+    term_override: Option<&str>,
+    cwd: &Path,
+) -> Result<(LaunchMethod, Option<String>)> {
+    if let Some(value) = term_override {
+        // Override path: parse_term_option handles aliases and
+        // method:session syntax. Falls through to the env/config chain
+        // below only when the override is None — that chain needs `cwd`,
+        // which parse_term_option does not take.
+        return parse_term_option(Some(value));
+    }
+    let method = get_default_launch_method_for_cwd(cwd)?;
+    Ok((method, None))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

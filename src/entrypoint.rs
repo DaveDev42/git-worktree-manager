@@ -65,6 +65,7 @@ pub fn run() {
             path,
             base,
             no_term,
+            term,
             prompt,
             prompt_file,
             prompt_stdin,
@@ -77,7 +78,13 @@ pub fn run() {
                 std::io::stdin().read_to_string(&mut buf)?;
                 Ok(buf)
             })?;
-
+            // Pre-flight `-T <method>` so a typo (`-T does-not-exist`) errors
+            // before we create a worktree on disk. The launch path inside
+            // create_worktree swallows spawn errors with `let _ = …`, which
+            // would otherwise leave a phantom worktree on a bad alias.
+            if !no_term {
+                let _ = config::parse_term_option(term.as_deref())?;
+            }
             cwshare_setup::prompt_cwshare_setup();
 
             worktree::create_worktree(
@@ -86,14 +93,18 @@ pub fn run() {
                 path.as_deref(),
                 no_term,
                 resolved.as_deref(),
+                term.as_deref(),
             )?;
             Ok(())
         })(),
 
-        Some(Commands::Resume { branch }) => ai_tools::resume_worktree(branch.as_deref()),
+        Some(Commands::Resume { branch, term }) => {
+            ai_tools::resume_worktree(branch.as_deref(), term.as_deref())
+        }
 
         Some(Commands::Spawn {
             target,
+            term,
             prompt,
             prompt_file,
             prompt_stdin,
@@ -112,7 +123,7 @@ pub fn run() {
                 }
                 None => crate::git::get_repo_root(Some(&cwd))?,
             };
-            ai_tools::spawn_in_worktree(&target_path, resolved_prompt.as_deref())
+            ai_tools::spawn_in_worktree(&target_path, resolved_prompt.as_deref(), term.as_deref())
         })(),
 
         Some(Commands::Rm {
