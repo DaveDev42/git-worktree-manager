@@ -4,7 +4,9 @@
 [![CI](https://github.com/DaveDev42/git-worktree-manager/actions/workflows/test.yml/badge.svg)](https://github.com/DaveDev42/git-worktree-manager/actions)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](LICENSE)
 
-`gw` 1.0 is a lean CLI tool that pairs git worktrees with AI coding assistants. Inspired by [mr (myrepos)](https://myrepos.branchable.com/), it uses cwd-based scope discovery — no global registry, no cross-repo flags — so commands do exactly what you expect relative to where you run them. Target resolution is strict and consistent: worktree name → branch name → path.
+`gw` is a lean git worktree manager. Inspired by [mr (myrepos)](https://myrepos.branchable.com/), it uses cwd-based scope discovery — no global registry, no cross-repo flags — so commands do exactly what you expect relative to where you run them. Target resolution is strict and consistent: worktree name → branch name → path.
+
+AI coding-assistant integration is built in: `gw new` creates a worktree and launches your AI tool of choice in it (use `--no-term` to skip). Future AI-assisted operations (e.g. `--ai` on merge / rebase) layer on top of the same worktree primitives.
 
 Single static binary (~1.9MB), ~3ms startup. Supports macOS (ARM64/x86), Linux (ARM64/x86), and Windows (x86_64).
 
@@ -42,8 +44,11 @@ After installing, run `gw upgrade` at any time to update to the latest version (
 ## Quick Start
 
 ```bash
-# Create a worktree and launch your AI coding assistant
+# Create a worktree (and launch your AI coding assistant in it)
 gw new fix-auth
+
+# Just the worktree, no AI tool
+gw new fix-auth --no-term
 
 # Create with a specific terminal launcher
 gw new fix-auth --term tmux
@@ -79,7 +84,7 @@ gw exec fix-auth -- git status
 
 | Command | Description |
 |---------|-------------|
-| `gw new <name>` | Create worktree + launch AI tool |
+| `gw new <name>` | Create worktree (and launch AI tool, unless `--no-term`) |
 | `gw resume [target]` | Resume AI session in a worktree |
 | `gw spawn [target]` | Launch AI tool in an existing worktree (default: current) |
 | `gw rm [targets...]` | Remove one or more worktrees (`-i` interactive, `--dry-run`, `--force`) |
