@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.1...v0.1.2) (2026-05-02)
+
+
+### Features
+
+* restore -T/--term per-invocation launcher override ([#138](https://github.com/DaveDev42/git-worktree-manager/issues/138)) ([d60cd52](https://github.com/DaveDev42/git-worktree-manager/commit/d60cd528e8b3353b3b89374fedeaf6200f641627))
+
 ## [0.1.1](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.0...v0.1.1) (2026-05-02)
 
 
