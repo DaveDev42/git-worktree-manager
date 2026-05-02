@@ -45,7 +45,17 @@ pub fn run_in_scope_to_writer<W: Write>(
         .iter()
         .filter(|w| !no_main || !w.is_main)
         .filter(|w| match only {
-            Some(g) => glob_match(g, &w.name),
+            // Match against either the branch name (what users type) or the
+            // worktree directory basename (path layout). Branch is checked
+            // first because it's the natural identifier — `gw ls`, target
+            // resolution, and the Quick Start examples all use it.
+            Some(g) => {
+                w.branch
+                    .as_deref()
+                    .map(|b| glob_match(g, b))
+                    .unwrap_or(false)
+                    || glob_match(g, &w.name)
+            }
             None => true,
         })
         .collect();

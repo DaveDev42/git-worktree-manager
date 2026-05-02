@@ -179,7 +179,8 @@ pub enum Commands {
 
     /// Run cmd in every worktree in scope.
     Run {
-        /// Glob filter on worktree name (e.g. 'feat-*').
+        /// Glob filter on branch name or worktree directory basename
+        /// (e.g. 'feat-*'). Matches if either side does.
         #[arg(long)]
         only: Option<String>,
         /// Skip the main worktree.
