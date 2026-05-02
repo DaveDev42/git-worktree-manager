@@ -78,8 +78,6 @@ pub fn run() {
                 std::io::stdin().read_to_string(&mut buf)?;
                 Ok(buf)
             })?;
-            let _ = term; // wired through in Task 5
-
             cwshare_setup::prompt_cwshare_setup();
 
             worktree::create_worktree(
@@ -88,13 +86,13 @@ pub fn run() {
                 path.as_deref(),
                 no_term,
                 resolved.as_deref(),
+                term.as_deref(),
             )?;
             Ok(())
         })(),
 
         Some(Commands::Resume { branch, term }) => {
-            let _ = term; // wired through in Task 5
-            ai_tools::resume_worktree(branch.as_deref())
+            ai_tools::resume_worktree(branch.as_deref(), term.as_deref())
         }
 
         Some(Commands::Spawn {
@@ -104,7 +102,6 @@ pub fn run() {
             prompt_file,
             prompt_stdin,
         }) => (|| -> Result<()> {
-            let _ = term; // wired through in Task 5
             let resolved_prompt =
                 resolve_prompt(prompt, prompt_file.as_deref(), prompt_stdin, || {
                     let mut buf = String::new();
@@ -119,7 +116,7 @@ pub fn run() {
                 }
                 None => crate::git::get_repo_root(Some(&cwd))?,
             };
-            ai_tools::spawn_in_worktree(&target_path, resolved_prompt.as_deref())
+            ai_tools::spawn_in_worktree(&target_path, resolved_prompt.as_deref(), term.as_deref())
         })(),
 
         Some(Commands::Rm {
