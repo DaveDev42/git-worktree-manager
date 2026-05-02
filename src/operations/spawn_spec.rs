@@ -406,9 +406,9 @@ mod tests {
         let exe = std::env::current_exe().unwrap();
         let exe_token = quote_path_for_shell(&exe);
         let prefix = format!("{} _spawn-ai ", exe_token);
-        let tail = line.strip_prefix(&prefix).unwrap_or_else(|| {
-            panic!("line does not start with {:?}: {:?}", prefix, line)
-        });
+        let tail = line
+            .strip_prefix(&prefix)
+            .unwrap_or_else(|| panic!("line does not start with {:?}: {:?}", prefix, line));
         let quoted = tail.starts_with('"') && tail.ends_with('"');
         let bare_safe = tail
             .chars()
