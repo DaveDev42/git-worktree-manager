@@ -497,3 +497,29 @@ fn resume_term_without_branch() {
         other => panic!("unexpected command variant: {:?}", other),
     }
 }
+
+#[test]
+fn spawn_accepts_dash_t_term() {
+    let cli =
+        Cli::try_parse_from(["gw", "spawn", "feat-x", "-T", "w-t"]).expect("parses spawn with -T");
+    match cli.command {
+        Some(Commands::Spawn { target, term, .. }) => {
+            assert_eq!(target.as_deref(), Some("feat-x"));
+            assert_eq!(term.as_deref(), Some("w-t"));
+        }
+        other => panic!("unexpected command variant: {:?}", other),
+    }
+}
+
+#[test]
+fn spawn_term_without_target() {
+    let cli =
+        Cli::try_parse_from(["gw", "spawn", "-T", "fg"]).expect("parses spawn without target");
+    match cli.command {
+        Some(Commands::Spawn { target, term, .. }) => {
+            assert!(target.is_none());
+            assert_eq!(term.as_deref(), Some("fg"));
+        }
+        other => panic!("unexpected command variant: {:?}", other),
+    }
+}

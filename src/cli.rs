@@ -99,6 +99,12 @@ pub enum Commands {
         /// Default: current worktree.
         target: Option<String>,
 
+        /// Terminal launch method for THIS invocation. Overrides config
+        /// and CW_LAUNCH_METHOD. Accepts canonical names or aliases.
+        /// Supports `method:session-name` for tmux/zellij.
+        #[arg(short = 'T', long = "term", value_name = "METHOD")]
+        term: Option<String>,
+
         /// Initial prompt to pass to the AI tool.
         #[arg(long)]
         prompt: Option<String>,

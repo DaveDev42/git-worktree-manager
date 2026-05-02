@@ -99,10 +99,12 @@ pub fn run() {
 
         Some(Commands::Spawn {
             target,
+            term,
             prompt,
             prompt_file,
             prompt_stdin,
         }) => (|| -> Result<()> {
+            let _ = term; // wired through in Task 5
             let resolved_prompt =
                 resolve_prompt(prompt, prompt_file.as_deref(), prompt_stdin, || {
                     let mut buf = String::new();
