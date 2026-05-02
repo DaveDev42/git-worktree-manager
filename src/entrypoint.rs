@@ -78,6 +78,13 @@ pub fn run() {
                 std::io::stdin().read_to_string(&mut buf)?;
                 Ok(buf)
             })?;
+            // Pre-flight `-T <method>` so a typo (`-T does-not-exist`) errors
+            // before we create a worktree on disk. The launch path inside
+            // create_worktree swallows spawn errors with `let _ = …`, which
+            // would otherwise leave a phantom worktree on a bad alias.
+            if !no_term {
+                let _ = config::parse_term_option(term.as_deref())?;
+            }
             cwshare_setup::prompt_cwshare_setup();
 
             worktree::create_worktree(

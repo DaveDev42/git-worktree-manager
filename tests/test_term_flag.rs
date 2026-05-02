@@ -108,6 +108,52 @@ fn new_dash_t_fg_overrides_env_and_runs_ai_in_worktree() {
 }
 
 #[test]
+fn new_rejects_invalid_term_before_creating_worktree() {
+    // Regression for #85: `gw new <branch> -T <bogus>` used to silently
+    // succeed because the spawn_in_worktree call inside create_worktree was
+    // wrapped in `let _ = …`. The worktree got created, the launch failed
+    // silently, and the user was left with a phantom worktree. Now we
+    // pre-flight `-T` at the entrypoint via parse_term_option.
+    with_clean_env(|| {
+        let repo = TestRepo::new();
+        let out = repo.cw(&["new", "feat-bad-term", "-T", "does-not-exist"]);
+        assert!(
+            !out.status.success(),
+            "expected non-zero exit for invalid -T value. stdout={:?} stderr={:?}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("Invalid launch method") || stderr.contains("does-not-exist"),
+            "expected 'Invalid launch method' in stderr, got: {}",
+            stderr
+        );
+
+        // The worktree must NOT have been created on disk. Also no branch.
+        let wt_path = repo.path().parent().expect("repo has parent").join(format!(
+            "{}-feat-bad-term",
+            repo.path()
+                .file_name()
+                .expect("repo basename")
+                .to_string_lossy()
+        ));
+        assert!(
+            !wt_path.exists(),
+            "phantom worktree at {} — pre-flight failed to short-circuit",
+            wt_path.display()
+        );
+
+        let branches = repo.cw_stdout(&["_path", "--list-branches"]);
+        assert!(
+            !branches.contains("feat-bad-term"),
+            "phantom branch 'feat-bad-term' present in: {}",
+            branches
+        );
+    });
+}
+
+#[test]
 fn new_rejects_term_with_no_term_at_cli() {
     with_clean_env(|| {
         let repo = TestRepo::new();
