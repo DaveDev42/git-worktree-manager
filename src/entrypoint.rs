@@ -92,7 +92,10 @@ pub fn run() {
             Ok(())
         })(),
 
-        Some(Commands::Resume { branch }) => ai_tools::resume_worktree(branch.as_deref()),
+        Some(Commands::Resume { branch, term }) => {
+            let _ = term; // wired through in Task 5
+            ai_tools::resume_worktree(branch.as_deref())
+        }
 
         Some(Commands::Spawn {
             target,

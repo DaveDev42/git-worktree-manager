@@ -141,14 +141,15 @@ fn test_resume_help() {
     cw().args(["resume", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("--term").not())
+        .stdout(predicate::str::contains("--term")) // -T/--term restored in 1.0
         .stdout(predicate::str::contains("--bg").not())
         .stdout(predicate::str::contains("--fg").not());
 }
 
 #[test]
 fn gw_resume_rejects_dropped_launch_flags() {
-    // --bg, --fg, --term were removed in Phase 6.3; clap should reject them
+    // --bg, --fg were removed in Phase 6.3; clap should reject them
+    // --term is restored in 1.0 and is now accepted
     cw().args(["resume", "some-branch", "--bg"])
         .assert()
         .failure()
@@ -160,12 +161,6 @@ fn gw_resume_rejects_dropped_launch_flags() {
         .failure()
         .stderr(
             predicate::str::contains("unexpected argument").or(predicate::str::contains("--fg")),
-        );
-    cw().args(["resume", "some-branch", "--term", "tmux"])
-        .assert()
-        .failure()
-        .stderr(
-            predicate::str::contains("unexpected argument").or(predicate::str::contains("--term")),
         );
 }
 
@@ -475,4 +470,31 @@ fn new_rejects_dash_t_without_value() {
     let err = Cli::try_parse_from(["gw", "new", "feat-x", "-T"])
         .expect_err("clap should reject bare -T");
     assert!(err.to_string().to_lowercase().contains("value"));
+}
+
+#[test]
+fn resume_accepts_dash_t_term() {
+    let cli = Cli::try_parse_from(["gw", "resume", "feat-x", "-T", "w-t"])
+        .expect("parses resume with -T");
+    match cli.command {
+        Some(Commands::Resume { branch, term }) => {
+            assert_eq!(branch.as_deref(), Some("feat-x"));
+            assert_eq!(term.as_deref(), Some("w-t"));
+        }
+        other => panic!("unexpected command variant: {:?}", other),
+    }
+}
+
+#[test]
+fn resume_term_without_branch() {
+    // `gw resume -T fg` (no branch) must still parse.
+    let cli = Cli::try_parse_from(["gw", "resume", "-T", "fg"])
+        .expect("parses resume without branch");
+    match cli.command {
+        Some(Commands::Resume { branch, term }) => {
+            assert!(branch.is_none());
+            assert_eq!(term.as_deref(), Some("fg"));
+        }
+        other => panic!("unexpected command variant: {:?}", other),
+    }
 }

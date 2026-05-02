@@ -74,6 +74,12 @@ pub enum Commands {
     Resume {
         /// Branch name, worktree name, or path to resume (default: current worktree)
         branch: Option<String>,
+
+        /// Terminal launch method for THIS invocation. Overrides config
+        /// and CW_LAUNCH_METHOD. Accepts canonical names or aliases.
+        /// Supports `method:session-name` for tmux/zellij.
+        #[arg(short = 'T', long = "term", value_name = "METHOD")]
+        term: Option<String>,
     },
 
     /// Launch AI tool in an existing worktree (default: current).
