@@ -52,6 +52,7 @@ jobs:
 
   build:
     needs: resolve-release
+    if: ${{ !cancelled() && needs.resolve-release.result == 'success' }}
     strategy:
       matrix:
         include:
@@ -117,6 +118,7 @@ jobs:
 
   upload-assets:
     needs: [resolve-release, build]
+    if: ${{ !cancelled() && needs.resolve-release.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -223,6 +225,7 @@ jobs:
 
   publish-crate:
     needs: resolve-release
+    if: ${{ !cancelled() && needs.resolve-release.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
