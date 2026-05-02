@@ -2,9 +2,12 @@
 //!
 //! Prompts with quotes/$/backticks/newlines break when re-quoted through
 //! AppleScript/wezterm/tmux send-text layers. Instead, `materialize` writes
-//! argv+cwd to a temp file and returns `gw _spawn-ai <path>` as the launcher
-//! command. `execute` reads the spec, unlinks it, chdir's, and execvp's the
-//! real tool — the pane shell only ever parses ASCII.
+//! argv+cwd to a temp file and returns `<self-exe> _spawn-ai <spec-path>`
+//! as the launcher command, where `<self-exe>` is the absolute path of the
+//! currently-running binary (so multi-binary installs call back into the
+//! same binary instead of resolving `gw` via PATH). `execute` reads the
+//! spec, unlinks it, chdir's, and execvp's the real tool — the pane shell
+//! only ever parses ASCII (or quoted ASCII for paths with spaces).
 //!
 //! The emitted line intentionally does NOT use `exec` so that when it is
 //! fed into an already-running interactive shell (e.g. `wezterm cli
@@ -135,14 +138,23 @@ pub fn materialize_in_dir(spec: &SpawnSpec, dir: &Path) -> Result<(String, PathB
     // cargo-built `gw` binary instead of the test runner's own `current_exe`
     // (which would be `target/debug/deps/test_X-…` — a binary that has no
     // `_spawn-ai` subcommand).
-    let self_exe = std::env::var_os("CW_SPAWN_AI_BIN")
-        .map(|s| quote_path_for_shell(Path::new(&s)))
-        .or_else(|| {
-            std::env::current_exe()
-                .ok()
-                .map(|p| quote_path_for_shell(&p))
-        })
-        .unwrap_or_else(|| "gw".to_string());
+    //
+    // No `"gw"` string fallback: silently falling back to the bare name would
+    // re-introduce the exact PATH-resolution ambiguity this fix exists to
+    // remove. If `current_exe()` is unavailable (chroot, missing /proc on
+    // Linux, very rare), we'd rather surface the error.
+    let self_exe = if let Some(s) = std::env::var_os("CW_SPAWN_AI_BIN") {
+        quote_path_for_shell(Path::new(&s))
+    } else {
+        let exe = std::env::current_exe().map_err(|e| {
+            CwError::Other(format!(
+                "spawn-ai: cannot resolve current executable path: {}. \
+                 Set CW_SPAWN_AI_BIN to override.",
+                e
+            ))
+        })?;
+        quote_path_for_shell(&exe)
+    };
     let shell_line = format!("{} _spawn-ai {}", self_exe, quote_path_for_shell(&path));
     Ok((shell_line, path))
 }
