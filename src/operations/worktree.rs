@@ -167,18 +167,11 @@ pub fn create_worktree(
     shared_files::share_files(&repo, &worktree_path);
 
     // post_new fires after the worktree is on disk, so a non-zero exit
-    // can't unwind the create. We still surface the failure (stderr +
-    // non-zero exit code from the CLI) so scripts and CI see it; the
-    // worktree itself stays. The AI-tool launch is skipped on hook
-    // failure because the user signalled "this worktree isn't ready."
-    if let Err(e) = crate::hooks::run_event("post_new", &worktree_path) {
-        eprintln!(
-            "{} post_new hook failed: {}",
-            style("warning:").yellow().bold(),
-            e
-        );
-        return Err(e);
-    }
+    // can't unwind the create. We propagate the error so the CLI exits
+    // non-zero (the standard `Error: ...` printer in `entrypoint::run`
+    // surfaces the cause); the worktree itself stays. The AI-tool launch
+    // is skipped because the user signalled "this worktree isn't ready."
+    crate::hooks::run_event("post_new", &worktree_path)?;
 
     // Launch AI tool in the new worktree.
     if !no_ai {
