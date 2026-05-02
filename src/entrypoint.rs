@@ -65,6 +65,7 @@ pub fn run() {
             path,
             base,
             no_term,
+            term,
             prompt,
             prompt_file,
             prompt_stdin,
@@ -77,6 +78,7 @@ pub fn run() {
                 std::io::stdin().read_to_string(&mut buf)?;
                 Ok(buf)
             })?;
+            let _ = term; // wired through in Task 5
 
             cwshare_setup::prompt_cwshare_setup();
 

@@ -49,6 +49,14 @@ pub enum Commands {
         #[arg(long = "no-term")]
         no_term: bool,
 
+        /// Terminal launch method for THIS invocation. Overrides config
+        /// and CW_LAUNCH_METHOD. Accepts canonical names (e.g.,
+        /// `wezterm-tab`) or aliases (e.g., `w-t`, `w-t-b`). Supports
+        /// `method:session-name` for tmux/zellij. Mutually exclusive
+        /// with `--no-term`.
+        #[arg(short = 'T', long = "term", value_name = "METHOD", conflicts_with = "no_term")]
+        term: Option<String>,
+
         /// Initial prompt to pass to the AI tool (starts interactive session with task)
         #[arg(long)]
         prompt: Option<String>,
