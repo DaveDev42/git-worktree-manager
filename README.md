@@ -47,6 +47,9 @@ After installing, run `gw upgrade` at any time to update to the latest version (
 # Create a worktree (and launch your AI coding assistant in it)
 gw new fix-auth
 
+# Override the launcher for this invocation only (e.g., background WezTerm tab)
+gw new fix-auth -T w-t-b
+
 # Just the worktree, no AI tool
 gw new fix-auth --no-term
 
@@ -140,19 +143,17 @@ gw ls | awk -F'\t' '{print $2, $6}'   # branch + path
 
 ## Terminal Launchers
 
-The launcher used by `gw new` / `gw spawn` / `gw resume` is configured (not a per-invocation flag). Use `--no-term` on `gw new` to skip the AI tool launch entirely.
+The launcher used by `gw new` / `gw spawn` / `gw resume` is resolved from the highest-priority source available, in this order:
 
-Set the default for a project in `.cwconfig.json`:
+| Priority | Source | Example |
+|----------|--------|---------|
+| 1 (highest) | `-T, --term <METHOD>` CLI flag | `gw new fix-auth -T w-t-b` |
+| 2 | `CW_LAUNCH_METHOD` env var | `CW_LAUNCH_METHOD=iterm-tab gw new fix-auth` |
+| 3 | repo-local `.cwconfig.json` `launch.method` | `{ "launch": { "method": "tmux" } }` |
+| 4 | global `~/.config/git-worktree-manager/config.json` `launch.method` | (same JSON shape) |
+| 5 (default) | built-in default | `foreground` |
 
-```json
-{ "launch_method": "tmux" }
-```
-
-…or globally in `~/.config/git-worktree-manager/config.json`. Per-invocation override is via the `CW_LAUNCH_METHOD` env var:
-
-```bash
-CW_LAUNCH_METHOD=iterm-tab gw new fix-auth
-```
+Use `--no-term` on `gw new` to skip the AI tool launch entirely (mutually exclusive with `-T`). The `-T` value accepts any canonical method name or alias (see table below); for tmux/zellij, append `:<session-name>` to name the session (e.g., `-T tmux:mywork`).
 
 | Launcher | Variants |
 |----------|----------|
@@ -213,8 +214,8 @@ Example `.cwconfig.json`:
 ```json
 {
   "default_base": "main",
-  "ai_tool": "claude",
-  "launch_method": "tmux",
+  "ai_tool": { "command": "claude" },
+  "launch": { "method": "tmux" },
   "hooks": {
     "post_new": "npm install",
     "pre_rm": "cargo test --quiet"
