@@ -50,9 +50,6 @@ gw new fix-auth
 # Just the worktree, no AI tool
 gw new fix-auth --no-term
 
-# Create with a specific terminal launcher
-gw new fix-auth --term tmux
-
 # Pass an initial prompt to the AI tool
 gw new fix-auth --prompt "Fix the JWT token expiration bug in auth.rs"
 
@@ -143,14 +140,18 @@ gw ls | awk -F'\t' '{print $2, $6}'   # branch + path
 
 ## Terminal Launchers
 
-Control how AI tools are launched with `--term` on `gw new` (configurable default via `.cwconfig.json`):
+The launcher used by `gw new` / `gw spawn` / `gw resume` is configured (not a per-invocation flag). Use `--no-term` on `gw new` to skip the AI tool launch entirely.
+
+Set the default for a project in `.cwconfig.json`:
+
+```json
+{ "launch_method": "tmux" }
+```
+
+…or globally in `~/.config/git-worktree-manager/config.json`. Per-invocation override is via the `CW_LAUNCH_METHOD` env var:
 
 ```bash
-gw new fix-auth --term tmux         # New tmux session
-gw new fix-auth --term iterm-tab    # New iTerm tab
-gw new fix-auth --term zellij       # New Zellij session
-gw new fix-auth --term wezterm-tab  # New WezTerm tab
-gw new fix-auth --no-term           # Skip AI tool launch entirely
+CW_LAUNCH_METHOD=iterm-tab gw new fix-auth
 ```
 
 | Launcher | Variants |
@@ -161,8 +162,6 @@ gw new fix-auth --no-term           # Skip AI tool launch entirely
 | **tmux** | `tmux`, `tmux-window`, `tmux-pane-h`, `tmux-pane-v` |
 | **Zellij** | `zellij`, `zellij-tab`, `zellij-pane-h`, `zellij-pane-v` |
 | **WezTerm** | `wezterm-window`, `wezterm-tab`, `wezterm-tab-bg`, `wezterm-pane-h`, `wezterm-pane-v` |
-
-Each launcher also has a short alias (e.g., `t` for tmux, `i-t` for iterm-tab). Run `gw new --help` for the full alias list.
 
 ## Claude Code Integration
 
