@@ -54,7 +54,12 @@ pub enum Commands {
         /// `wezterm-tab`) or aliases (e.g., `w-t`, `w-t-b`). Supports
         /// `method:session-name` for tmux/zellij. Mutually exclusive
         /// with `--no-term`.
-        #[arg(short = 'T', long = "term", value_name = "METHOD", conflicts_with = "no_term")]
+        #[arg(
+            short = 'T',
+            long = "term",
+            value_name = "METHOD",
+            conflicts_with = "no_term"
+        )]
         term: Option<String>,
 
         /// Initial prompt to pass to the AI tool (starts interactive session with task)

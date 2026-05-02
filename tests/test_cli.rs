@@ -433,8 +433,7 @@ fn new_rejects_file_and_stdin() {
 
 #[test]
 fn new_accepts_dash_t_term() {
-    let cli = Cli::try_parse_from(["gw", "new", "feat-x", "-T", "w-t"])
-        .expect("parses with -T");
+    let cli = Cli::try_parse_from(["gw", "new", "feat-x", "-T", "w-t"]).expect("parses with -T");
     match cli.command {
         Some(Commands::New { term, .. }) => assert_eq!(term.as_deref(), Some("w-t")),
         other => panic!("unexpected command variant: {:?}", other),
@@ -467,8 +466,8 @@ fn new_rejects_term_with_no_term() {
 
 #[test]
 fn new_rejects_dash_t_without_value() {
-    let err = Cli::try_parse_from(["gw", "new", "feat-x", "-T"])
-        .expect_err("clap should reject bare -T");
+    let err =
+        Cli::try_parse_from(["gw", "new", "feat-x", "-T"]).expect_err("clap should reject bare -T");
     assert!(err.to_string().to_lowercase().contains("value"));
 }
 
@@ -488,8 +487,8 @@ fn resume_accepts_dash_t_term() {
 #[test]
 fn resume_term_without_branch() {
     // `gw resume -T fg` (no branch) must still parse.
-    let cli = Cli::try_parse_from(["gw", "resume", "-T", "fg"])
-        .expect("parses resume without branch");
+    let cli =
+        Cli::try_parse_from(["gw", "resume", "-T", "fg"]).expect("parses resume without branch");
     match cli.command {
         Some(Commands::Resume { branch, term }) => {
             assert!(branch.is_none());
