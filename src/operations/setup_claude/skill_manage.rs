@@ -274,7 +274,7 @@ Create new worktree for feature branch.
 Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be used per invocation.
 
 ### `gw rm [target] [OPTIONS]`
-Delete one or more worktrees. With no positional argument: removes the current worktree. With one or more targets: removes each. Use `-i` for the multi-select UI.
+Delete one or more worktrees. With no target, removes the current worktree; with one or more targets, removes each. Use `-i` for the multi-select UI.
 - `-i, --interactive` — Multi-select UI (mutually exclusive with positional targets)
 - `--dry-run` — Show what would be removed without removing
 - `-k, --keep-branch` — Keep the branch (only remove worktree directory)
