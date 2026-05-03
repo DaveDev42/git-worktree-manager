@@ -117,8 +117,8 @@ fn spawn_in_worktree_with_prompt() {
     let repo = TestRepo::new();
     let wt_path = repo.create_worktree("feat-y");
 
-    // Script creates a sentinel and logs its argv (the prompt is appended by
-    // get_ai_tool_merge_command when CW_AI_TOOL is set).
+    // Script creates a sentinel and logs its argv. spawn_in_worktree appends
+    // the prompt as the trailing positional arg of the interactive command.
     let script_path = wt_path.join("ai-tool.sh");
     let sentinel = wt_path.join(".spawn-ran");
     let argv_log = wt_path.join(".spawn-argv");
@@ -151,12 +151,20 @@ fn spawn_in_worktree_with_prompt() {
         "sentinel file not created — dispatch did not fire"
     );
 
-    // get_ai_tool_merge_command appends the prompt as the last argv element
-    // when CW_AI_TOOL is set; verify the prompt arrived.
+    // The prompt should arrive as the last argv element of an interactive
+    // launch — no `--print` / `--non-interactive` flag injected.
     let logged = std::fs::read_to_string(&argv_log).unwrap_or_default();
     assert!(
         logged.contains("hello"),
         "prompt 'hello' not found in argv log: {:?}",
         logged
     );
+    for forbidden in ["--print", "--tools=default", "--non-interactive"] {
+        assert!(
+            !logged.lines().any(|line| line == forbidden),
+            "interactive launch must not inject {} flag; argv log: {:?}",
+            forbidden,
+            logged
+        );
+    }
 }

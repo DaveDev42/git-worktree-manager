@@ -825,4 +825,27 @@ mod tests {
         assert_eq!(presets["no-op"].len(), 0);
         assert_eq!(presets["claude"], vec!["claude"]);
     }
+
+    /// Regression guard for the bug where `spawn_in_worktree(prompt=Some)`
+    /// mistakenly used the merge preset (which injects `--print
+    /// --tools=default`) and left users staring at a blank pane while claude
+    /// ran headlessly. The interactive presets backing
+    /// `get_ai_tool_delegate_command` must never carry `--print` or any other
+    /// non-interactive automation flag.
+    #[test]
+    fn interactive_presets_have_no_print_flag() {
+        let presets = ai_tool_presets();
+        for (name, args) in &presets {
+            for forbidden in ["--print", "--tools=default", "--non-interactive"] {
+                assert!(
+                    !args.contains(&forbidden),
+                    "interactive preset {:?} must not carry {} (would force \
+                     headless mode for `gw new --prompt`); got {:?}",
+                    name,
+                    forbidden,
+                    args
+                );
+            }
+        }
+    }
 }
