@@ -246,7 +246,7 @@ pub enum Commands {
         interactive: bool,
     },
 
-    /// Generate shell function for gw-cd / cw-cd
+    /// Generate shell function for gw-cd
     #[command(name = "_shell-function", hide = true)]
     ShellFunction {
         /// Shell type: bash, zsh, fish, or powershell

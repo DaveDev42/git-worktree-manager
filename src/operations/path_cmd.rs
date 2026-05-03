@@ -1,6 +1,6 @@
 /// Internal _path command for shell function integration.
 ///
-/// Mirrors the _path command in cli.py — used by cw-cd shell function.
+/// Used by the gw-cd shell function (see src/shell_functions.rs).
 use crate::error::{CwError, Result};
 use crate::git;
 use crate::messages;

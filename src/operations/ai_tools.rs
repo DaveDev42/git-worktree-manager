@@ -123,7 +123,7 @@ pub fn launch_ai_tool(path: &Path, resume: bool, term_override: Option<&str>) ->
 
     if !git::has_command(&ai_tool_name) {
         println!(
-            "{} {} not detected. Install it or update config with 'cw config set ai-tool <tool>'.\n",
+            "{} {} not detected. Install it or update config with 'gw config set ai-tool <tool>'.\n",
             style("!").yellow(),
             ai_tool_name,
         );
@@ -267,7 +267,7 @@ pub fn spawn_in_worktree(
 
     if !git::has_command(&ai_tool_name) {
         println!(
-            "{} {} not detected. Install it or update config with 'cw config set ai-tool <tool>'.\n",
+            "{} {} not detected. Install it or update config with 'gw config set ai-tool <tool>'.\n",
             style("!").yellow(),
             ai_tool_name,
         );

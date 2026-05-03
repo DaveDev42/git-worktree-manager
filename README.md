@@ -12,7 +12,7 @@ Single static binary (~1.9MB), ~3ms startup. Supports macOS (ARM64/x86), Linux (
 
 Successor to [claude-worktree](https://github.com/DaveDev42/claude-worktree) (Python), rewritten in Rust.
 
-> **Backward compatible:** The `cw` command is included as an alias. Existing `cw` workflows, `.cwshare`, and `.cwconfig.json` files work unchanged.
+> **Migration note:** the legacy `cw` binary alias and `cw-cd` shell function were removed in 1.0. Existing user data — `.cwshare`, `.cwconfig.json`, and `~/.config/claude-worktree/` — is still read transparently; only the binary/shell entry points changed. Update aliases or shell rc files that reference `cw` / `cw-cd` to use `gw` / `gw-cd`.
 
 ## Install
 
@@ -20,7 +20,7 @@ Successor to [claude-worktree](https://github.com/DaveDev42/claude-worktree) (Py
 cargo install git-worktree-manager
 ```
 
-This installs both `gw` and `cw` binaries.
+This installs the `gw` binary.
 
 <details>
 <summary>Other installation methods</summary>
