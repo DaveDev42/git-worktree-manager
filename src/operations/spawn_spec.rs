@@ -369,7 +369,7 @@ mod tests {
         // The launcher line begins with the absolute path of the test binary
         // (current_exe). We check the `_spawn-ai` subcommand rather than a
         // fixed `gw` prefix so the line works under any binary name (gw,
-        // gw-new, cw, etc.) — see the comment in materialize_in_dir.
+        // gw-new, etc.) — see the comment in materialize_in_dir.
         let exe = std::env::current_exe().unwrap();
         let exe_token = quote_path_for_shell(&exe);
         assert!(

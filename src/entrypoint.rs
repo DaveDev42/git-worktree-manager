@@ -1,9 +1,8 @@
-//! CLI entrypoint — shared between the `gw` and `cw` binaries.
+//! CLI entrypoint for the `gw` binary.
 //!
-//! Both binary targets (`src/bin/gw.rs`, `src/bin/cw.rs`) delegate to
-//! [`run`]. Keeping the logic here avoids compiling the same source file
-//! twice, which triggered Cargo's "file present in multiple build targets"
-//! warning under the previous layout.
+//! `src/bin/gw.rs` delegates to [`run`]. The library entrypoint stays
+//! separate from the binary so unit tests in this module compile without
+//! pulling in the binary stack-size shim.
 
 use clap::Parser;
 

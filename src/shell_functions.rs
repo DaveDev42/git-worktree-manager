@@ -77,7 +77,6 @@ _gw_cd_completion() {
 # Register completion for bash
 if [ -n "$BASH_VERSION" ]; then
     complete -F _gw_cd_completion gw-cd
-    complete -F _gw_cd_completion cw-cd
     eval "$(gw --generate-completion bash 2>/dev/null || true)"
 
     # Wrap _gw to add dynamic completion for positional-target subcommands
@@ -113,12 +112,11 @@ if [ -n "$BASH_VERSION" ]; then
         _gw "$@"
     }
     complete -F _gw_with_config -o bashdefault -o default gw
-    complete -F _gw_with_config -o bashdefault -o default cw
 fi
 
 # Tab completion for zsh
 if [ -n "$ZSH_VERSION" ]; then
-    # Register clap completion for gw/cw CLI inline
+    # Register clap completion for the gw CLI inline
     eval "$(gw --generate-completion zsh 2>/dev/null)"
 
     # Wrap _gw to add dynamic completion (targets)
@@ -153,7 +151,6 @@ if [ -n "$ZSH_VERSION" ]; then
         _gw "$@"
     }
     compdef _gw_with_config gw
-    compdef _gw_with_config cw
 
     _gw_cd_zsh() {
         local -a targets
@@ -161,15 +158,6 @@ if [ -n "$ZSH_VERSION" ]; then
         compadd -a targets
     }
     compdef _gw_cd_zsh gw-cd
-fi
-
-# Backward compatibility: cw-cd alias
-cw-cd() { gw-cd "$@"; }
-if [ -n "$BASH_VERSION" ]; then
-    complete -F _gw_cd_completion cw-cd
-fi
-if [ -n "$ZSH_VERSION" ]; then
-    compdef _gw_cd_zsh cw-cd
 fi
 "#;
 
@@ -226,20 +214,15 @@ function gw-cd
     end
 end
 
-# Backward compatibility: cw-cd alias
-function cw-cd; gw-cd $argv; end
-complete -c cw-cd -w gw-cd
-
 # Tab completion for gw-cd
 complete -c gw-cd -f -a '(gw _complete-targets 2>/dev/null)'
 
-# Tab completion for gw/cw CLI (clap-generated)
+# Tab completion for the gw CLI (clap-generated)
 gw --generate-completion fish 2>/dev/null | source
 
 # Target completion for subcommands with positional target args
 for cmd in rm resume spawn exec
     complete -c gw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _complete-targets 2>/dev/null)'
-    complete -c cw -f -n "__fish_seen_subcommand_from $cmd" -a '(gw _complete-targets 2>/dev/null)'
 end
 
 "#;
@@ -304,9 +287,6 @@ function gw-cd {
     }
 }
 
-# Backward compatibility: cw-cd alias
-Set-Alias -Name cw-cd -Value gw-cd
-
 # Tab completion for gw-cd
 Register-ArgumentCompleter -CommandName gw-cd -ParameterName Target -ScriptBlock {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
@@ -321,22 +301,8 @@ Register-ArgumentCompleter -CommandName gw-cd -ParameterName Target -ScriptBlock
         }
 }
 
-# Tab completion for cw-cd (backward compat)
-Register-ArgumentCompleter -CommandName cw-cd -ParameterName Target -ScriptBlock {
-    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
-
-    $targets = gw _complete-targets 2>&1 |
-        Where-Object { $_ -is [string] -and $_.Trim() } |
-        Sort-Object -Unique
-
-    $targets | Where-Object { $_ -like "$wordToComplete*" } |
-        ForEach-Object {
-            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
-        }
-}
-
-# Native target completion for `gw` / `cw` subcommands: rm, resume, spawn, exec
-Register-ArgumentCompleter -CommandName gw, cw -Native -ScriptBlock {
+# Native target completion for `gw` subcommands: rm, resume, spawn, exec
+Register-ArgumentCompleter -CommandName gw -Native -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
 
     # Find the subcommand (first non-flag element after the command name)
@@ -368,10 +334,11 @@ mod tests {
         let script = result.unwrap();
         assert!(script.contains("gw-cd()"));
         assert!(script.contains("_gw_cd_completion"));
-        assert!(script.contains("cw-cd"));
         assert!(script.contains("BASH_VERSION"));
         assert!(script.contains("ZSH_VERSION"));
         assert!(script.contains("_gw_cd_zsh"));
+        assert!(!script.contains("cw-cd"));
+        assert!(!script.contains("complete -F _gw_with_config -o bashdefault -o default cw"));
     }
 
     #[test]
@@ -380,7 +347,8 @@ mod tests {
         assert!(result.is_some());
         let script = result.unwrap();
         assert!(script.contains("compdef _gw_cd_zsh gw-cd"));
-        assert!(script.contains("compdef _gw_cd_zsh cw-cd"));
+        assert!(!script.contains("cw-cd"));
+        assert!(!script.contains("compdef _gw_with_config cw"));
     }
 
     #[test]
@@ -390,8 +358,8 @@ mod tests {
         let script = result.unwrap();
         assert!(script.contains("function gw-cd"));
         assert!(script.contains("complete -c gw-cd"));
-        assert!(script.contains("function cw-cd"));
-        assert!(script.contains("complete -c cw-cd -w gw-cd"));
+        assert!(!script.contains("cw-cd"));
+        assert!(!script.contains("complete -c cw "));
     }
 
     #[test]
@@ -401,7 +369,8 @@ mod tests {
         let script = result.unwrap();
         assert!(script.contains("function gw-cd"));
         assert!(script.contains("Register-ArgumentCompleter"));
-        assert!(script.contains("Set-Alias -Name cw-cd -Value gw-cd"));
+        assert!(!script.contains("cw-cd"));
+        assert!(!script.contains("CommandName gw, cw"));
     }
 
     #[test]

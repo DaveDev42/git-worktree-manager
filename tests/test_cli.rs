@@ -239,32 +239,23 @@ fn test_list_alias_ls() {
 }
 
 #[test]
-fn test_cw_alias_binary() {
-    // The cw binary should also work
-    Command::cargo_bin("cw")
-        .unwrap()
-        .arg("--version")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("gw"));
-}
-
-#[test]
-fn test_shell_function_bash_includes_cw_cd_alias() {
+fn test_shell_function_bash_no_cw_cd_alias() {
+    // Legacy cw-cd alias was removed in PR #N — verify the generated bash
+    // function defines gw-cd and does NOT redefine cw-cd.
     cw().args(["_shell-function", "bash"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("cw-cd")) // backward compat alias
-        .stdout(predicate::str::contains("gw-cd")); // primary function
+        .stdout(predicate::str::contains("gw-cd"))
+        .stdout(predicate::str::contains("cw-cd").not());
 }
 
 #[test]
-fn test_shell_function_fish_includes_cw_cd_alias() {
+fn test_shell_function_fish_no_cw_cd_alias() {
     cw().args(["_shell-function", "fish"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("function cw-cd"))
-        .stdout(predicate::str::contains("function gw-cd"));
+        .stdout(predicate::str::contains("function gw-cd"))
+        .stdout(predicate::str::contains("cw-cd").not());
 }
 
 #[test]
