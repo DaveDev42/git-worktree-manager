@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.2...v0.1.3) (2026-05-03)
+
+
+### Bug Fixes
+
+* **spawn-ai:** use absolute self-exe path and escape iTerm AppleScript ([#140](https://github.com/DaveDev42/git-worktree-manager/issues/140)) ([e447c94](https://github.com/DaveDev42/git-worktree-manager/commit/e447c944af7fcd3e10d19c3cff9f049a575a84ac))
+
 ## [0.1.2](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.1...v0.1.2) (2026-05-02)
 
 
