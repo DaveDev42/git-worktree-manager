@@ -55,7 +55,8 @@ fn test_create_worktree_custom_path() {
     let output = repo.cw(&[
         "new",
         "custom-branch",
-        "-T", "skip",
+        "-T",
+        "skip",
         "--path",
         custom.to_str().unwrap(),
     ]);
@@ -95,7 +96,8 @@ fn test_create_worktree_invalid_base() {
     let output = repo.cw(&[
         "new",
         "feature",
-        "-T", "skip",
+        "-T",
+        "skip",
         "--base",
         "nonexistent-branch",
     ]);
@@ -236,7 +238,8 @@ fn test_create_worktree_from_remote_with_custom_path() {
     let output = repo.cw(&[
         "new",
         "remote-custom-path",
-        "-T", "skip",
+        "-T",
+        "skip",
         "--path",
         custom.to_str().unwrap(),
     ]);
@@ -315,7 +318,8 @@ fn test_create_worktree_from_remote_with_invalid_base() {
     let output = repo.cw(&[
         "new",
         "remote-invalid-base",
-        "-T", "skip",
+        "-T",
+        "skip",
         "--base",
         "nonexistent-base",
     ]);

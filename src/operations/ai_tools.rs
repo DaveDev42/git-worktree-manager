@@ -22,9 +22,8 @@ use super::launchers;
 use super::spawn_spec::{self, SpawnSpec};
 
 /// Per-invocation knobs that ride alongside `term_override` and `prompt`
-/// into every AI-tool launcher path. Bundled so a future option (extra env,
-/// extra args, `--reason`-style metadata) doesn't fan out into every
-/// signature.
+/// into every AI-tool launcher path. Bundled so a future option (extra args,
+/// `--reason`-style metadata) doesn't fan out into every signature.
 #[derive(Debug, Default, Clone)]
 pub struct LaunchOptions<'a> {
     /// `-T/--term` override.
@@ -32,8 +31,6 @@ pub struct LaunchOptions<'a> {
     /// Trailing args forwarded verbatim to the AI tool (after the preset's
     /// own args, before the prompt positional).
     pub forward_args: &'a [String],
-    /// `--env KEY=VAL` entries (already validated).
-    pub extra_env: &'a [(String, String)],
     /// True when `--no-env-forward` was passed.
     pub no_env_forward: bool,
 }
@@ -44,7 +41,6 @@ impl<'a> LaunchOptions<'a> {
         Self {
             term_override,
             forward_args: &[],
-            extra_env: &[],
             no_env_forward: false,
         }
     }
@@ -143,8 +139,16 @@ fn dispatch_launch(
 /// Recognized parent-env prefix to auto-forward, keyed by the AI tool's
 /// binary name. Returns `None` for tools we don't have a convention for —
 /// in that case `--no-env-forward` becomes a no-op (nothing to forward).
+///
+/// Accepts a full path (`/usr/local/bin/claude`) or a bare name (`claude`);
+/// the basename is what we match against. `.exe` suffix is stripped so the
+/// same map works on Windows.
 fn auto_forward_prefix(ai_tool_name: &str) -> Option<&'static str> {
-    match ai_tool_name {
+    let stem = std::path::Path::new(ai_tool_name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(ai_tool_name);
+    match stem {
         "claude" => Some("CLAUDE_"),
         "codex" => Some("CODEX_"),
         "gemini" => Some("GEMINI_"),
@@ -154,74 +158,25 @@ fn auto_forward_prefix(ai_tool_name: &str) -> Option<&'static str> {
 
 /// Build the env map injected into the spawned AI tool process.
 ///
-/// Order of merging (later wins):
-///   1. Auto-forwarded `<TOOL>_*` vars from the current (gw) process — the
-///      shell that ran `gw` is the source of truth, so launchers like
-///      wezterm/iterm/tmux/zellij (which spawn their own shells inside the
-///      window-server's environment) still see the user's settings.
-///   2. Caller-supplied `--env KEY=VAL` overrides.
-///
-/// Auto-forward is suppressed when `no_env_forward` is set or when
-/// `auto_forward_prefix` returns `None` for this tool.
-fn build_env_map(
-    ai_tool_name: &str,
-    extra_env: &[(String, String)],
-    no_env_forward: bool,
-) -> BTreeMap<String, String> {
+/// Auto-forwards `<TOOL>_*` vars from the current (gw) process — the shell
+/// that ran `gw` is the source of truth, so launchers like wezterm/iterm/
+/// tmux/zellij (which spawn their own shells inside the window-server's
+/// environment) still see the user's settings. Suppressed when
+/// `no_env_forward` is set or when `auto_forward_prefix` returns `None`
+/// for this tool.
+fn build_env_map(ai_tool_name: &str, no_env_forward: bool) -> BTreeMap<String, String> {
     let mut env = BTreeMap::new();
-
-    if !no_env_forward {
-        if let Some(prefix) = auto_forward_prefix(ai_tool_name) {
-            for (k, v) in std::env::vars() {
-                if k.starts_with(prefix) {
-                    env.insert(k, v);
-                }
+    if no_env_forward {
+        return env;
+    }
+    if let Some(prefix) = auto_forward_prefix(ai_tool_name) {
+        for (k, v) in std::env::vars() {
+            if k.starts_with(prefix) {
+                env.insert(k, v);
             }
         }
     }
-
-    for (k, v) in extra_env {
-        env.insert(k.clone(), v.clone());
-    }
-
     env
-}
-
-/// Parse a `--env KEY=VAL` token. KEY must be non-empty, and follow POSIX
-/// portable env name rules (alphanumeric + underscore, not starting with a
-/// digit). Returns `(KEY, VAL)` on success, or a CwError on a malformed entry.
-///
-/// Empty VAL is allowed (`--env FOO=`) — it intentionally clears any
-/// auto-forwarded same-named var inside the spawned process.
-pub fn parse_env_entry(raw: &str) -> Result<(String, String)> {
-    let (key, val) = raw.split_once('=').ok_or_else(|| {
-        CwError::Other(format!(
-            "--env value '{}' is missing '=' (expected KEY=VAL)",
-            raw
-        ))
-    })?;
-    if key.is_empty() {
-        return Err(CwError::Other(format!(
-            "--env value '{}' has an empty KEY",
-            raw
-        )));
-    }
-    let bad = key.chars().next().is_some_and(|c| c.is_ascii_digit())
-        || !key
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_');
-    if bad {
-        return Err(CwError::Other(format!(
-            "--env KEY '{}' must match [A-Za-z_][A-Za-z0-9_]*",
-            key
-        )));
-    }
-    Ok((key.to_string(), val.to_string()))
-}
-
-/// Validate every `--env` entry up-front and return the parsed pairs.
-pub fn parse_env_entries(raw: &[String]) -> Result<Vec<(String, String)>> {
-    raw.iter().map(|s| parse_env_entry(s)).collect()
 }
 
 /// Launch AI coding assistant in the specified directory.
@@ -269,7 +224,7 @@ pub fn launch_ai_tool(path: &Path, resume: bool, opts: &LaunchOptions<'_>) -> Re
         return Ok(());
     }
 
-    let env = build_env_map(&ai_tool_name, opts.extra_env, opts.no_env_forward);
+    let env = build_env_map(&ai_tool_name, opts.no_env_forward);
 
     // See `spawn_spec` module docstring for why the emitted line is
     // `gw _spawn-ai <path>` (no `exec` prefix) and how the raw argv flows
@@ -438,7 +393,7 @@ pub fn spawn_in_worktree(
         return Ok(());
     }
 
-    let env = build_env_map(&ai_tool_name, opts.extra_env, opts.no_env_forward);
+    let env = build_env_map(&ai_tool_name, opts.no_env_forward);
 
     maybe_inject_guard(&mut ai_cmd_parts, worktree_path)?;
     let spec = SpawnSpec::new(ai_cmd_parts, worktree_path.to_path_buf()).with_env(env);
@@ -592,54 +547,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_env_entry_accepts_normal() {
-        let (k, v) = parse_env_entry("FOO=bar").unwrap();
-        assert_eq!(k, "FOO");
-        assert_eq!(v, "bar");
-    }
-
-    #[test]
-    fn parse_env_entry_accepts_empty_value() {
-        // `--env FOO=` is the documented way to clear an auto-forwarded var.
-        let (k, v) = parse_env_entry("FOO=").unwrap();
-        assert_eq!(k, "FOO");
-        assert_eq!(v, "");
-    }
-
-    #[test]
-    fn parse_env_entry_accepts_value_with_equals() {
-        // `=` is only special as a separator on the *first* occurrence —
-        // everything after the first `=` is value.
-        let (k, v) = parse_env_entry("FOO=a=b=c").unwrap();
-        assert_eq!(k, "FOO");
-        assert_eq!(v, "a=b=c");
-    }
-
-    #[test]
-    fn parse_env_entry_rejects_no_equals() {
-        let err = parse_env_entry("FOO").unwrap_err();
-        assert!(format!("{err}").contains("missing '='"));
-    }
-
-    #[test]
-    fn parse_env_entry_rejects_empty_key() {
-        let err = parse_env_entry("=value").unwrap_err();
-        assert!(format!("{err}").contains("empty KEY"));
-    }
-
-    #[test]
-    fn parse_env_entry_rejects_digit_first_char() {
-        let err = parse_env_entry("1FOO=bar").unwrap_err();
-        assert!(format!("{err}").contains("[A-Za-z_]"));
-    }
-
-    #[test]
-    fn parse_env_entry_rejects_dash_in_key() {
-        let err = parse_env_entry("FOO-BAR=bar").unwrap_err();
-        assert!(format!("{err}").contains("[A-Za-z_]"));
-    }
-
-    #[test]
     fn auto_forward_prefix_known_tools() {
         assert_eq!(auto_forward_prefix("claude"), Some("CLAUDE_"));
         assert_eq!(auto_forward_prefix("codex"), Some("CODEX_"));
@@ -648,26 +555,35 @@ mod tests {
     }
 
     #[test]
-    fn build_env_map_extra_env_overrides_auto_forward() {
-        // Pre-set a CLAUDE_FOO in our process so the auto-forward picks it up,
-        // then verify that --env CLAUDE_FOO=override wins.
-        std::env::set_var("CLAUDE_FOO_TEST_AUTO_OVR", "from-parent");
-        let extra = vec![("CLAUDE_FOO_TEST_AUTO_OVR".to_string(), "override".to_string())];
-        // Note: build_env_map filters by prefix "CLAUDE_", so the test var
-        // must start with CLAUDE_. Both auto-forward and extra produce this
-        // key — the override path inserts second so it should win.
-        let env = build_env_map("claude", &extra, false);
+    fn auto_forward_prefix_strips_path_and_extension() {
+        // Users often configure CW_AI_TOOL with an absolute path. The
+        // prefix lookup must still match by basename, including on Windows
+        // where the binary is `claude.exe`.
         assert_eq!(
-            env.get("CLAUDE_FOO_TEST_AUTO_OVR").map(String::as_str),
-            Some("override")
+            auto_forward_prefix("/usr/local/bin/claude"),
+            Some("CLAUDE_")
         );
-        std::env::remove_var("CLAUDE_FOO_TEST_AUTO_OVR");
+        assert_eq!(auto_forward_prefix("./claude"), Some("CLAUDE_"));
+        assert_eq!(auto_forward_prefix("/opt/codex"), Some("CODEX_"));
+        assert_eq!(auto_forward_prefix("claude.exe"), Some("CLAUDE_"));
+    }
+
+    #[test]
+    fn build_env_map_picks_up_prefix_match() {
+        std::env::set_var("CLAUDE_FOO_TEST_PICKUP", "from-parent");
+        let env = build_env_map("claude", false);
+        assert_eq!(
+            env.get("CLAUDE_FOO_TEST_PICKUP").map(String::as_str),
+            Some("from-parent"),
+            "CLAUDE_* var must auto-forward when no_env_forward=false"
+        );
+        std::env::remove_var("CLAUDE_FOO_TEST_PICKUP");
     }
 
     #[test]
     fn build_env_map_no_env_forward_skips_auto() {
         std::env::set_var("CLAUDE_FOO_TEST_NO_FWD", "from-parent");
-        let env = build_env_map("claude", &[], true);
+        let env = build_env_map("claude", true);
         assert!(
             !env.contains_key("CLAUDE_FOO_TEST_NO_FWD"),
             "auto-forward must be suppressed by no_env_forward"
@@ -678,7 +594,7 @@ mod tests {
     #[test]
     fn build_env_map_unknown_tool_no_auto() {
         std::env::set_var("CLAUDE_FOO_TEST_UNK", "from-parent");
-        let env = build_env_map("unknown-tool", &[], false);
+        let env = build_env_map("unknown-tool", false);
         assert!(env.is_empty());
         std::env::remove_var("CLAUDE_FOO_TEST_UNK");
     }

@@ -112,14 +112,14 @@ By default, gw snapshots `<TOOL>_*` env vars at invocation time (e.g.
 `CLAUDE_*` when the AI tool is claude) and re-injects them into the spawned
 process. This matters for launchers like wezterm/iterm/tmux/zellij that go
 through a daemon — without re-injection, the new tab inherits the daemon's env,
-not the env of the shell that ran `gw`. Pass `--no-env-forward` to opt out, or
-`--env KEY=VAL` (repeatable) to inject explicit entries (these win over auto-
-forwarded ones with the same name).
+not the env of the shell that ran `gw`. Pass `--no-env-forward` to opt out.
 
 ```bash
-ANTHROPIC_API_KEY=sk-... CLAUDE_CONFIG_DIR=~/work-claude gw new feat-x
-gw new feat-x --env CLAUDE_CODE_USE_BEDROCK=1 --env AWS_REGION=us-east-1
+CLAUDE_CONFIG_DIR=~/work-claude gw new feat-x
 ```
+
+For one-off non-`<TOOL>_*` vars, use the shell — `FOO=bar gw new feat-x` works
+for the foreground / detached launchers that inherit the parent env directly.
 
 ## Commands
 

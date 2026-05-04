@@ -12,11 +12,11 @@ use crate::console as cwconsole;
 use crate::constants;
 use crate::cwshare_setup;
 use crate::error::{CwError, Result};
+use crate::operations::ai_tools::LaunchOptions;
 use crate::operations::{
     ai_tools, diagnostics, display, exec, guard, helpers, path_cmd, run, setup_claude, spawn_spec,
     worktree,
 };
-use crate::operations::ai_tools::{parse_env_entries, LaunchOptions};
 use crate::resolve_prompt;
 use crate::shell_functions;
 use crate::tui;
@@ -67,7 +67,6 @@ pub fn run() {
             term,
             prompt,
             prompt_file,
-            env,
             no_env_forward,
             forward_args,
         }) => (|| -> Result<()> {
@@ -82,9 +81,6 @@ pub fn run() {
                         .to_string(),
                 ));
             }
-            // Validate --env entries up-front so a typo (`FOO`) errors
-            // before we create a worktree on disk.
-            let extra_env = parse_env_entries(&env)?;
             // Resolve the prompt first so a missing file or unreadable stdin
             // fails before any interactive side effects (worktree creation,
             // AI-tool launch) leave the tree in a half-configured state.
@@ -109,7 +105,6 @@ pub fn run() {
             let opts = LaunchOptions {
                 term_override: term.as_deref(),
                 forward_args: &forward_args,
-                extra_env: &extra_env,
                 no_env_forward,
             };
             worktree::create_worktree(
@@ -125,26 +120,22 @@ pub fn run() {
         Some(Commands::Resume {
             branch,
             term,
-            env,
             no_env_forward,
             forward_args,
-        }) => (|| -> Result<()> {
-            let extra_env = parse_env_entries(&env)?;
+        }) => {
             let opts = LaunchOptions {
                 term_override: term.as_deref(),
                 forward_args: &forward_args,
-                extra_env: &extra_env,
                 no_env_forward,
             };
             ai_tools::resume_worktree(branch.as_deref(), &opts)
-        })(),
+        }
 
         Some(Commands::Spawn {
             target,
             term,
             prompt,
             prompt_file,
-            env,
             no_env_forward,
             forward_args,
         }) => (|| -> Result<()> {
@@ -156,7 +147,6 @@ pub fn run() {
                         .to_string(),
                 ));
             }
-            let extra_env = parse_env_entries(&env)?;
             let resolved_prompt = resolve_prompt(
                 prompt,
                 prompt_file.as_deref(),
@@ -178,7 +168,6 @@ pub fn run() {
             let opts = LaunchOptions {
                 term_override: term.as_deref(),
                 forward_args: &forward_args,
-                extra_env: &extra_env,
                 no_env_forward,
             };
             ai_tools::spawn_in_worktree(&target_path, resolved_prompt.as_deref(), &opts)

@@ -83,7 +83,8 @@ fn test_workflow_new_with_prompt_file() {
     let ok = repo.cw_ok(&[
         "new",
         "prompt-file-test",
-        "-T", "skip",
+        "-T",
+        "skip",
         "--prompt-file",
         prompt_file.path().to_str().unwrap(),
     ]);
@@ -138,7 +139,8 @@ fn test_workflow_new_prompt_file_missing_fails_cleanly() {
     let ok = repo.cw_ok(&[
         "new",
         "no-worktree-created",
-        "-T", "skip",
+        "-T",
+        "skip",
         "--prompt-file",
         "/nonexistent/does/not/exist.txt",
     ]);

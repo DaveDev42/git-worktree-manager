@@ -270,7 +270,6 @@ branch name (or after `--`) are forwarded verbatim to the AI tool
 - `-T, --term <METHOD>` — Terminal launch method. Accepts canonical name (e.g., `tmux`, `wezterm-tab`) or alias (e.g., `t`, `w-t`). Supports `method:session-name` for tmux/zellij (e.g., `tmux:mywork`). Use `-T skip` (or aliases `none`/`noop`) to skip the AI tool launch. See Terminal Launch Methods section below.
 - `--prompt <PROMPT>` — Initial prompt as a CLI string. Use `-` to read the prompt from stdin (e.g. `cmd | gw new br --prompt -`). Avoid `--prompt -` together with `-T <terminal>` — the spawned terminal may inherit a closed stdin.
 - `--prompt-file <PATH>` — Read initial prompt from a file (recommended for multi-line / quoted content)
-- `--env KEY=VAL` — Inject an env var into the spawned AI tool process (repeatable). Overrides any same-named auto-forwarded `<TOOL>_*` env.
 - `--no-env-forward` — Disable auto-forwarding of `<TOOL>_*` env vars (e.g. `CLAUDE_*`) from the parent shell into the spawned process.
 
 Only one of `--prompt`, `--prompt-file` may be used per invocation.
@@ -298,7 +297,6 @@ Resume AI work in a worktree. Auto-detects existing Claude sessions and uses
 re-injected even when forward args are present.
 Target is resolved in order: exact worktree name → exact branch name → exact path.
 - `-T, --term <METHOD>` — Terminal launch method (same format as `gw new`)
-- `--env KEY=VAL` — Inject an env var into the spawned AI tool process (repeatable).
 - `--no-env-forward` — Disable auto-forwarding of `<TOOL>_*` env vars.
 - Trailing args (after the target, or after `--`) are forwarded verbatim to the AI tool.
 

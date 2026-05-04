@@ -67,12 +67,6 @@ pub enum Commands {
         #[arg(long = "prompt-file", value_hint = ValueHint::FilePath)]
         prompt_file: Option<PathBuf>,
 
-        /// Inject an environment variable into the spawned AI tool process.
-        /// Format: `KEY=VAL`. Repeatable. Overrides any same-named auto-
-        /// forwarded env (see `--no-env-forward`).
-        #[arg(long = "env", value_name = "KEY=VAL")]
-        env: Vec<String>,
-
         /// Disable auto-forwarding of `<TOOL>_*` environment variables
         /// (e.g. `CLAUDE_*` when ai-tool is claude). Without this flag, gw
         /// snapshots the parent shell's matching env at invocation time
@@ -108,11 +102,6 @@ pub enum Commands {
         /// `none`, or `skip` to skip the AI tool launch.
         #[arg(short = 'T', long = "term", value_name = "METHOD")]
         term: Option<String>,
-
-        /// Inject an environment variable into the spawned AI tool process.
-        /// Format: `KEY=VAL`. Repeatable.
-        #[arg(long = "env", value_name = "KEY=VAL")]
-        env: Vec<String>,
 
         /// Disable auto-forwarding of `<TOOL>_*` environment variables.
         #[arg(long = "no-env-forward")]
@@ -156,11 +145,6 @@ pub enum Commands {
         /// Read the initial prompt from a file.
         #[arg(long = "prompt-file", value_hint = ValueHint::FilePath)]
         prompt_file: Option<PathBuf>,
-
-        /// Inject an environment variable into the spawned AI tool process.
-        /// Format: `KEY=VAL`. Repeatable.
-        #[arg(long = "env", value_name = "KEY=VAL")]
-        env: Vec<String>,
 
         /// Disable auto-forwarding of `<TOOL>_*` environment variables.
         #[arg(long = "no-env-forward")]
