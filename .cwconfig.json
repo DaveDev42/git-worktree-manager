@@ -1,6 +1,5 @@
 {
   "hooks": {
-    "post_new": "cargo fetch --locked || true",
-    "pre_rm": "cargo clean || true"
+    "post_new": "cargo fetch --locked || true"
   }
 }
