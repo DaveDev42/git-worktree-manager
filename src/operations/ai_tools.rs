@@ -5,13 +5,17 @@ use std::path::Path;
 
 use console::style;
 
-use crate::config::{self, get_ai_tool_command, get_ai_tool_resume_command, is_claude_tool};
+use crate::config::{
+    self, get_ai_tool_command, get_ai_tool_resume_command, is_claude_tool, is_claude_tool_for_cwd,
+    load_effective_config,
+};
 use crate::constants::{LaunchMethod, MAX_SESSION_NAME_LENGTH};
 use crate::error::Result;
 use crate::git;
 use crate::messages;
 use crate::session;
 
+use super::claude_settings;
 use super::helpers::{resolve_target_strict, resolve_worktree_target};
 use super::launchers;
 use super::spawn_spec::{self, SpawnSpec};
@@ -130,20 +134,7 @@ pub fn launch_ai_tool(path: &Path, resume: bool, term_override: Option<&str>) ->
         return Ok(());
     }
 
-    // See `spawn_spec` module docstring for why the emitted line is
-    // `gw _spawn-ai <path>` (no `exec` prefix) and how the raw argv flows
-    // through a 0600 temp file rather than the shell line.
-    let spec = SpawnSpec::new(ai_cmd_parts, path.to_path_buf());
-    // The spec file is cleaned up by `spawn_spec::execute` after read; the 24h
-    // `sweep_stale` at startup is the safety net for crashes between those points.
-    let (cmd, _) = spawn_spec::materialize(&spec)?;
-
-    // Dispatch to launcher. Foreground blocks on the AI process, so an RAII
-    // lockfile spans the full session. Other launchers detach to a terminal
-    // emulator / multiplexer and return immediately, so a lock acquired here
-    // would be released before the AI session really starts — for those we
-    // rely on process-cwd scanning in `busy::detect_busy` instead.
-    dispatch_launch(path, method, session_name, &cmd, ai_tool_name.as_str())
+    finalize_and_dispatch(path, method, session_name, ai_cmd_parts, &ai_tool_name)
 }
 
 /// Resume AI work in a worktree with context restoration.
@@ -276,16 +267,66 @@ pub fn spawn_in_worktree(
         return Ok(());
     }
 
-    let spec = SpawnSpec::new(ai_cmd_parts, worktree_path.to_path_buf());
-    let (cmd, _) = spawn_spec::materialize(&spec)?;
-
-    dispatch_launch(
+    finalize_and_dispatch(
         worktree_path,
         method,
         session_name,
-        &cmd,
+        ai_cmd_parts,
         ai_tool_name.as_str(),
     )
+}
+
+/// Inject the gw guard PreToolUse(Bash) hook via `--settings` when the
+/// configured AI tool is Claude and `ai_tool.guard` is enabled.
+///
+/// Inserts `--settings <inline-json>` immediately after argv\[0\], leaving
+/// any subsequent positional args (delegate prompts, `--continue`, etc.)
+/// in their original order.
+fn maybe_inject_guard(argv: &mut Vec<String>, cwd: &Path) -> Result<()> {
+    if argv.is_empty() {
+        return Ok(());
+    }
+    if !is_claude_tool_for_cwd(cwd).unwrap_or(false) {
+        return Ok(());
+    }
+    let cfg = load_effective_config(cwd)?;
+    inject_guard_into_argv(argv, cfg.ai_tool.guard)
+}
+
+/// Pure-data version of `maybe_inject_guard`: decides injection from the
+/// already-resolved `guard` flag, leaving config and tool-detection to the
+/// caller. Kept separate so unit tests can exercise the argv mutation
+/// without driving the config loader.
+fn inject_guard_into_argv(argv: &mut Vec<String>, guard_enabled: bool) -> Result<()> {
+    if !guard_enabled || argv.is_empty() {
+        return Ok(());
+    }
+    let json = claude_settings::guard_settings_json()?;
+    argv.insert(1, "--settings".to_string());
+    argv.insert(2, json);
+    Ok(())
+}
+
+/// Build a SpawnSpec from `argv`, materialize it, and dispatch to the
+/// configured launcher.
+///
+/// Both `launch_ai_tool` and `spawn_in_worktree` converge here so guard
+/// injection and spec creation live in one place. Foreground launchers
+/// own their own RAII lockfile inside `dispatch_launch`; non-foreground
+/// launchers detach and rely on process-cwd scanning (`busy::detect_busy`).
+fn finalize_and_dispatch(
+    path: &Path,
+    method: LaunchMethod,
+    session_name: Option<String>,
+    mut argv: Vec<String>,
+    ai_tool_name: &str,
+) -> Result<()> {
+    maybe_inject_guard(&mut argv, path)?;
+    // The spec file is cleaned up by `spawn_spec::execute` after read; the 24h
+    // `sweep_stale` at startup is the safety net for crashes between those points.
+    let spec = SpawnSpec::new(argv, path.to_path_buf());
+    let (cmd, _) = spawn_spec::materialize(&spec)?;
+    dispatch_launch(path, method, session_name, &cmd, ai_tool_name)
 }
 
 /// Generate a session name from path with length limit.
@@ -302,5 +343,96 @@ fn generate_session_name(path: &Path) -> String {
         name[..MAX_SESSION_NAME_LENGTH].to_string()
     } else {
         name
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::operations::test_env::{env_lock, EnvGuard};
+
+    /// Resolve --settings JSON to the index immediately following argv[0].
+    /// Returns (settings_json, remainder_argv_excluding_inserted_flag_pair).
+    fn extract_settings(argv: &[String]) -> Option<String> {
+        let pos = argv.iter().position(|s| s == "--settings")?;
+        argv.get(pos + 1).cloned()
+    }
+
+    fn with_self_exe<F: FnOnce()>(f: F) {
+        let _lock = env_lock();
+        let _guard = EnvGuard::capture(&["CW_SPAWN_AI_BIN"]);
+        std::env::set_var("CW_SPAWN_AI_BIN", "/usr/local/bin/gw");
+        f();
+    }
+
+    #[test]
+    fn injects_settings_after_argv0_when_enabled() {
+        with_self_exe(|| {
+            let mut argv = vec!["claude".to_string()];
+            inject_guard_into_argv(&mut argv, true).unwrap();
+            assert_eq!(argv[0], "claude");
+            assert_eq!(argv[1], "--settings");
+            assert_eq!(argv.len(), 3);
+            let v: serde_json::Value =
+                serde_json::from_str(&argv[2]).expect("settings json parses");
+            assert_eq!(v["hooks"]["PreToolUse"][0]["matcher"], "Bash");
+        });
+    }
+
+    #[test]
+    fn noop_when_guard_disabled() {
+        with_self_exe(|| {
+            let mut argv = vec!["claude".to_string(), "--continue".to_string()];
+            inject_guard_into_argv(&mut argv, false).unwrap();
+            assert_eq!(argv, vec!["claude", "--continue"]);
+        });
+    }
+
+    #[test]
+    fn noop_when_argv_empty() {
+        with_self_exe(|| {
+            let mut argv: Vec<String> = vec![];
+            inject_guard_into_argv(&mut argv, true).unwrap();
+            assert!(argv.is_empty());
+        });
+    }
+
+    #[test]
+    fn preserves_trailing_continue_flag() {
+        with_self_exe(|| {
+            let mut argv = vec!["claude".to_string(), "--continue".to_string()];
+            inject_guard_into_argv(&mut argv, true).unwrap();
+            assert_eq!(argv[0], "claude");
+            assert_eq!(argv[1], "--settings");
+            assert!(extract_settings(&argv).is_some());
+            assert_eq!(argv[3], "--continue");
+        });
+    }
+
+    #[test]
+    fn preserves_delegate_prompt_at_tail() {
+        with_self_exe(|| {
+            let mut argv = vec!["claude".to_string(), "do this task".to_string()];
+            inject_guard_into_argv(&mut argv, true).unwrap();
+            assert_eq!(argv[0], "claude");
+            assert_eq!(argv[1], "--settings");
+            assert!(extract_settings(&argv).is_some());
+            assert_eq!(argv[3], "do this task");
+        });
+    }
+
+    #[test]
+    fn handles_yolo_skip_permissions_argv() {
+        with_self_exe(|| {
+            let mut argv = vec![
+                "claude".to_string(),
+                "--dangerously-skip-permissions".to_string(),
+            ];
+            inject_guard_into_argv(&mut argv, true).unwrap();
+            // --settings goes right after argv[0], skip-permissions stays at the end
+            assert_eq!(argv[0], "claude");
+            assert_eq!(argv[1], "--settings");
+            assert_eq!(argv[3], "--dangerously-skip-permissions");
+        });
     }
 }

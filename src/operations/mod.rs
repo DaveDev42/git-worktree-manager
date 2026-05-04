@@ -4,6 +4,7 @@ pub mod busy;
 pub mod busy_messages;
 pub mod claude_process;
 pub mod claude_session;
+pub mod claude_settings;
 pub mod complete;
 pub mod diagnostics;
 pub mod display;

@@ -1,5 +1,7 @@
 //! `gw guard --tool-input -` reads a Claude Code hook payload on stdin and
-//! decides whether to allow or block the inbound tool call.
+//! decides whether to allow or block the inbound tool call. Policy: any
+//! Bash tool call from an unhealthy cwd (missing or not a directory) is
+//! blocked with exit 2 and a strong abort message; healthy cwd passes.
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -24,44 +26,47 @@ fn run_guard_with(payload: &str) -> std::process::Output {
 }
 
 #[test]
-fn safe_command_passes() {
-    let payload = r#"{"tool_name":"Bash","tool_input":{"command":"ls -la"}}"#;
-    let out = run_guard_with(payload);
+fn safe_command_in_healthy_cwd_passes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = serde_json::json!({
+        "tool_name": "Bash",
+        "tool_input": { "command": "ls -la", "cwd": tmp.path().to_string_lossy() }
+    })
+    .to_string();
+    let out = run_guard_with(&payload);
     assert!(
         out.status.success(),
-        "safe cmd must allow; stderr={}",
+        "safe cmd in healthy cwd must allow; stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
 }
 
 #[test]
-fn risky_publish_blocked_when_cwd_unhealthy() {
-    // /nonexistent/dir/xyz does not exist → unhealthy cwd → block.
+fn any_bash_in_unhealthy_cwd_blocked() {
+    // /nonexistent/dir/xyz does not exist → unhealthy cwd → block, even for ls.
     let payload =
-        r#"{"tool_name":"Bash","tool_input":{"command":"git push","cwd":"/nonexistent/dir/xyz"}}"#;
+        r#"{"tool_name":"Bash","tool_input":{"command":"ls -la","cwd":"/nonexistent/dir/xyz"}}"#;
     let out = run_guard_with(payload);
     assert!(
         !out.status.success(),
-        "risky cmd in unhealthy cwd should block; stdout={} stderr={}",
+        "any bash in unhealthy cwd should block; stdout={} stderr={}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
-        err.contains("git push") || err.contains("blocking"),
-        "stderr should explain the block: {err}"
+        err.contains("STOP") && err.contains("/nonexistent/dir/xyz"),
+        "stderr should issue strong abort with cwd path: {err}"
     );
 }
 
 #[test]
-fn risky_publish_allowed_when_cwd_healthy() {
+fn risky_command_in_healthy_cwd_passes() {
+    // git push is risky but if cwd is healthy we trust it.
     let tmp = tempfile::tempdir().unwrap();
     let payload = serde_json::json!({
         "tool_name": "Bash",
-        "tool_input": {
-            "command": "git push",
-            "cwd": tmp.path().to_string_lossy(),
-        }
+        "tool_input": { "command": "git push", "cwd": tmp.path().to_string_lossy() }
     })
     .to_string();
     let out = run_guard_with(&payload);
@@ -73,17 +78,34 @@ fn risky_publish_allowed_when_cwd_healthy() {
 }
 
 #[test]
-fn non_bash_tool_passes() {
-    let payload = r#"{"tool_name":"Read","tool_input":{"file_path":"/tmp/x"}}"#;
+fn non_bash_tool_passes_regardless_of_cwd() {
+    let payload =
+        r#"{"tool_name":"Read","tool_input":{"file_path":"/tmp/x","cwd":"/nonexistent/dir/xyz"}}"#;
     let out = run_guard_with(payload);
     assert!(out.status.success());
 }
 
 #[test]
-fn missing_command_field_passes() {
-    // Bash tool with no `command` field — degenerate input, allow rather
-    // than block (the actual call will fail elsewhere anyway).
-    let payload = r#"{"tool_name":"Bash","tool_input":{}}"#;
+fn missing_cwd_falls_back_to_process_cwd() {
+    // No cwd in payload: guard uses current_dir(). Test runner cwd is the
+    // repo, which is healthy, so this should pass.
+    let payload = r#"{"tool_name":"Bash","tool_input":{"command":"ls"}}"#;
     let out = run_guard_with(payload);
+    assert!(
+        out.status.success(),
+        "missing cwd with healthy process cwd should pass; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn missing_command_field_with_healthy_cwd_passes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = serde_json::json!({
+        "tool_name": "Bash",
+        "tool_input": { "cwd": tmp.path().to_string_lossy() }
+    })
+    .to_string();
+    let out = run_guard_with(&payload);
     assert!(out.status.success());
 }
