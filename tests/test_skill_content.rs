@@ -1,10 +1,8 @@
 //! Content-presence assertions for the bundled Claude Code plugin skills.
 //!
-//! These tests do not coerce prose; they only lock in the section / rule
-//! headers that the spec at
-//! docs/superpowers/specs/2026-04-30-plugin-state-verification-design.md
-//! mandates. If a header is renamed, update both the skill body and the
-//! corresponding assertion together.
+//! These tests do not coerce prose; they only lock in section / rule headers
+//! that the skill bodies are expected to contain. If a header is renamed,
+//! update both the skill body and the corresponding assertion together.
 
 use git_worktree_manager::operations::setup_claude::{
     delegate_skill_content_for_test, manage_skill_content_for_test,
