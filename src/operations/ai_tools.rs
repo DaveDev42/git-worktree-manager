@@ -304,12 +304,16 @@ pub fn resume_worktree(worktree: Option<&str>, opts: &LaunchOptions<'_>) -> Resu
         println!("{}\n", style("Starting fresh session...").dim());
     }
 
-    // Save metadata and launch
-    let ai_cmd = if has_session {
-        get_ai_tool_resume_command()?
-    } else {
-        get_ai_tool_command()?
-    };
+    // `gw resume` is an explicit user intent: re-inject the tool's resume
+    // flag (`--continue` for claude, `--resume` for codex/gemini) regardless
+    // of whether a local session file is detected. Native session detection
+    // is best-effort (depends on tool-specific on-disk artefacts that aren't
+    // always present even when the tool itself can resume — e.g. claude's
+    // `.claude/projects/` cache lives under HOME, and a fresh CLAUDE_CONFIG_DIR
+    // hides it). The tool itself knows whether it has anything to resume; if
+    // it doesn't, `--continue` is harmless. Always passing the flag matches
+    // the README's "always re-injects" promise.
+    let ai_cmd = get_ai_tool_resume_command()?;
 
     if !ai_cmd.is_empty() {
         let ai_tool_name = &ai_cmd[0];
@@ -333,7 +337,7 @@ pub fn resume_worktree(worktree: Option<&str>, opts: &LaunchOptions<'_>) -> Resu
             );
         }
 
-        launch_ai_tool(&worktree_path, has_session, opts)?;
+        launch_ai_tool(&worktree_path, true, opts)?;
     }
 
     Ok(())
