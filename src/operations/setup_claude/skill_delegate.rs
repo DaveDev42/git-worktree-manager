@@ -87,7 +87,7 @@ elsewhere — but you must:
 
 ### Step 2: Confirm and execute
 
-All three prompt ingestion modes (`--prompt`, `--prompt-file`, `--prompt -`) are equally safe from shell-escaping issues. Use `--prompt-file` for convenience when managing multi-line prompts in an editor or passing skill-generated files.
+All prompt ingestion modes (`--prompt`, `--prompt-file`, `--prompt -`) are equally safe from shell-escaping issues. Use `--prompt-file` for convenience when managing multi-line prompts in an editor or passing skill-generated files.
 
 **Recommended (use this by default):**
 ```bash

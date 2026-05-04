@@ -195,6 +195,8 @@ fn spawn_in_worktree_with_prompt() {
 struct PersistedSpec {
     #[serde(default)]
     env: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    argv: Vec<String>,
 }
 
 fn write_claude_sentinel(dir: &std::path::Path) -> std::path::PathBuf {
@@ -206,9 +208,9 @@ fn write_claude_sentinel(dir: &std::path::Path) -> std::path::PathBuf {
     script
 }
 
-/// Read the persisted spawn spec for a worktree and return its env map.
+/// Read the persisted spawn spec for a worktree.
 /// Mirrors `gw _spawn-ai`'s recovery path: `<git-dir>/gw-spawn-last.json`.
-fn last_spec_env(wt_path: &std::path::Path) -> std::collections::BTreeMap<String, String> {
+fn last_spec(wt_path: &std::path::Path) -> PersistedSpec {
     let git_dir = std::process::Command::new("git")
         .args(["rev-parse", "--git-dir"])
         .current_dir(wt_path)
@@ -222,9 +224,11 @@ fn last_spec_env(wt_path: &std::path::Path) -> std::collections::BTreeMap<String
     spec_path.push("gw-spawn-last.json");
     let text = std::fs::read_to_string(&spec_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", spec_path.display()));
-    let spec: PersistedSpec = serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("parse {}: {e}", spec_path.display()));
-    spec.env
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", spec_path.display()))
+}
+
+fn last_spec_env(wt_path: &std::path::Path) -> std::collections::BTreeMap<String, String> {
+    last_spec(wt_path).env
 }
 
 #[test]
@@ -346,5 +350,103 @@ fn unknown_ai_tool_yields_empty_spec_env() {
     assert!(
         env.is_empty(),
         "unknown AI tool ('mytool') must not auto-forward anything. spec env: {env:?}"
+    );
+}
+
+#[test]
+fn forward_args_land_in_spawn_spec_argv() {
+    // The user's trailing args after `--` must be forwarded verbatim to the
+    // AI tool. The spawn spec's argv is the canonical record — the IPC
+    // launchers pull argv from this map, not from anything reconstructed
+    // later. So if the args land here in the right slot (after the AI
+    // command, before any prompt), they make it to the child.
+    let repo = TestRepo::new();
+    let wt_path = repo.create_worktree("fwd-argv");
+    let scratch = tempfile::tempdir().expect("scratch");
+    let script = write_claude_sentinel(scratch.path());
+
+    let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = EnvGuard {
+        saved: vec![
+            ("HOME", std::env::var_os("HOME")),
+            ("CW_LAUNCH_METHOD", std::env::var_os("CW_LAUNCH_METHOD")),
+            ("CW_AI_TOOL", std::env::var_os("CW_AI_TOOL")),
+        ],
+    };
+    let fake_home = tempfile::tempdir().expect("fake HOME");
+    std::env::set_var("HOME", fake_home.path());
+    std::env::set_var("CW_LAUNCH_METHOD", "foreground");
+    std::env::set_var("CW_AI_TOOL", &script);
+
+    let forward = vec![
+        "--model".to_string(),
+        "opus".to_string(),
+        "--append-system-prompt".to_string(),
+        "be terse".to_string(),
+    ];
+    let opts = LaunchOptions {
+        term_override: None,
+        forward_args: &forward,
+        no_env_forward: false,
+    };
+    let result = spawn_in_worktree(&wt_path, None, &opts);
+    assert!(result.is_ok(), "spawn returned Err: {:?}", result);
+
+    let argv = last_spec(&wt_path).argv;
+    for needle in &forward {
+        assert!(
+            argv.iter().any(|a| a == needle),
+            "forward arg {needle:?} missing from spec argv: {argv:?}"
+        );
+    }
+    // The forward args must follow the AI command (first slot), and the
+    // sequence of forward args must appear contiguously in the same order
+    // the user passed them.
+    let first = argv
+        .iter()
+        .position(|a| a == "--model")
+        .expect("`--model` not found");
+    assert_eq!(
+        argv[first..first + forward.len()],
+        forward[..],
+        "forward args not contiguous in user-supplied order; argv: {argv:?}"
+    );
+}
+
+#[test]
+fn prompt_plus_forward_args_is_rejected() {
+    // `--prompt` and trailing forward args both end up setting the AI
+    // tool's prompt; combining them would silently produce two prompts.
+    // The dispatcher must reject this before any side effects fire.
+    let repo = TestRepo::new();
+    let wt_path = repo.create_worktree("conflict");
+    let scratch = tempfile::tempdir().expect("scratch");
+    let script = write_claude_sentinel(scratch.path());
+
+    let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = EnvGuard {
+        saved: vec![
+            ("HOME", std::env::var_os("HOME")),
+            ("CW_LAUNCH_METHOD", std::env::var_os("CW_LAUNCH_METHOD")),
+            ("CW_AI_TOOL", std::env::var_os("CW_AI_TOOL")),
+        ],
+    };
+    let fake_home = tempfile::tempdir().expect("fake HOME");
+    std::env::set_var("HOME", fake_home.path());
+    std::env::set_var("CW_LAUNCH_METHOD", "foreground");
+    std::env::set_var("CW_AI_TOOL", &script);
+
+    let forward = vec!["--model".to_string(), "opus".to_string()];
+    let opts = LaunchOptions {
+        term_override: None,
+        forward_args: &forward,
+        no_env_forward: false,
+    };
+    let result = spawn_in_worktree(&wt_path, Some("hi"), &opts);
+    let err = result.expect_err("prompt + forward_args must be rejected");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("--prompt") && msg.contains("AI tool args"),
+        "error message should mention --prompt and forward args; got: {msg}"
     );
 }
