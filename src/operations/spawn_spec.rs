@@ -164,7 +164,7 @@ pub fn materialize_in_dir(spec: &SpawnSpec, dir: &Path) -> Result<(String, PathB
 /// Windows `%TEMP%` expansions include spaces; in that case we wrap in double
 /// quotes. Our own filename never contains `"`, `$`, or backslash-escaped
 /// metacharacters, so double quotes are sufficient under both bash and cmd.
-fn quote_path_for_shell(path: &Path) -> String {
+pub(crate) fn quote_path_for_shell(path: &Path) -> String {
     let s = path.to_string_lossy();
     // Backslash is NOT bare-safe: bash/zsh/tmux/wezterm interpret `\X` as an
     // escape, which would corrupt Windows paths like C:\Users\...\Temp\...

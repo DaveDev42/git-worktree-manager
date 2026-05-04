@@ -214,7 +214,7 @@ Example `.cwconfig.json`:
 ```json
 {
   "default_base": "main",
-  "ai_tool": { "command": "claude" },
+  "ai_tool": { "command": "claude", "guard": true },
   "launch": { "method": "tmux" },
   "hooks": {
     "post_new": "npm install",
@@ -222,6 +222,8 @@ Example `.cwconfig.json`:
   }
 }
 ```
+
+`ai_tool.guard` (default `true`) injects a PreToolUse(Bash) hook into Claude sessions that gw launches, so any Bash tool call from a stale worktree (cwd no longer exists) is blocked with an instruction to stop and ask the user. The injection only affects sessions started by `gw new` / `gw spawn` / `gw resume`; user/project `~/.claude/settings.json` hooks are preserved and run alongside. Set `false` to disable.
 
 ## Hooks
 

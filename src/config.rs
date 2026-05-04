@@ -29,6 +29,15 @@ pub struct Config {
 pub struct AiToolConfig {
     pub command: String,
     pub args: Vec<String>,
+    /// Inject the `gw guard` PreToolUse(Bash) hook into Claude sessions
+    /// launched by gw. Default true. Has no effect when the configured
+    /// AI tool isn't Claude.
+    #[serde(default = "default_guard")]
+    pub guard: bool,
+}
+
+fn default_guard() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +77,7 @@ impl Default for Config {
             ai_tool: AiToolConfig {
                 command: "claude".to_string(),
                 args: Vec::new(),
+                guard: true,
             },
             launch: LaunchConfig {
                 method: None,
