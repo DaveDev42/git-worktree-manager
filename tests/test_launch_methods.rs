@@ -6,8 +6,8 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use git_worktree_manager::config::{
-    ai_tool_merge_presets, ai_tool_presets, ai_tool_resume_presets, claude_preset_names,
-    get_default_launch_method, is_claude_tool, parse_term_option, resolve_launch_alias,
+    ai_tool_presets, ai_tool_resume_presets, claude_preset_names, get_default_launch_method,
+    is_claude_tool, parse_term_option, resolve_launch_alias,
 };
 use git_worktree_manager::constants::{
     launch_method_aliases, LaunchMethod, MAX_SESSION_NAME_LENGTH,
@@ -746,29 +746,6 @@ fn test_is_claude_tool_with_env_codex() {
 // =========================================================================
 // TestPresets
 // =========================================================================
-
-#[test]
-fn test_merge_presets_exist() {
-    let presets = ai_tool_merge_presets();
-    assert!(presets.contains_key("claude"));
-    assert!(presets.contains_key("claude-yolo"));
-    assert!(presets.contains_key("claude-remote"));
-    assert!(presets.contains_key("claude-yolo-remote"));
-    assert!(presets.contains_key("codex"));
-    assert!(presets.contains_key("codex-yolo"));
-}
-
-#[test]
-fn test_merge_presets_have_flags() {
-    let presets = ai_tool_merge_presets();
-    for (name, preset) in &presets {
-        assert!(
-            !preset.flags.is_empty(),
-            "Merge preset '{}' should have flags",
-            name
-        );
-    }
-}
 
 #[test]
 fn test_all_resume_presets_have_continue_or_resume() {

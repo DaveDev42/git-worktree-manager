@@ -255,9 +255,7 @@ pub fn spawn_in_worktree(
 
     // Use the interactive delegate command (prompt appended as last positional
     // arg) when a prompt is provided so the AI tool starts an interactive
-    // session with the prompt as its first user message. The non-interactive
-    // `--print` form (`get_ai_tool_merge_command`) is reserved for
-    // `gw merge --ai` automation, not user-driven `gw new` / `gw spawn`.
+    // session with the prompt as its first user message.
     let ai_cmd_parts = match prompt {
         Some(p) => config::get_ai_tool_delegate_command(p)?,
         None => get_ai_tool_command()?,
