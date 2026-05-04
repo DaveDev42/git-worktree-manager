@@ -155,6 +155,46 @@ fn gw_resume_forwards_unknown_flags_to_ai_tool() {
     }
 }
 
+/// Regression guard: clap's `trailing_var_arg=true` + `Option<positional>`
+/// combo lets `--` get absorbed by the optional positional. This test pins
+/// down the **observed** parser behaviour so the dispatcher's `lift_dash_target`
+/// fixup stays load-bearing — if a future clap upgrade ever fixes this on
+/// clap's side, the assertion below will flip and we'll know we can drop
+/// the fixup.
+#[test]
+fn gw_spawn_dash_dash_misparses_first_token_as_target() {
+    let cli = Cli::try_parse_from(["gw", "spawn", "--", "--model", "opus"]).expect("parses");
+    let Some(Commands::Spawn {
+        target,
+        forward_args,
+        ..
+    }) = cli.command
+    else {
+        panic!("expected Spawn variant");
+    };
+    assert_eq!(
+        target.as_deref(),
+        Some("--model"),
+        "documenting clap's misparse: `--` is absorbed by the optional positional"
+    );
+    assert_eq!(forward_args, vec!["opus".to_string()]);
+}
+
+#[test]
+fn gw_resume_dash_dash_misparses_first_token_as_branch() {
+    let cli = Cli::try_parse_from(["gw", "resume", "--", "--continue"]).expect("parses");
+    let Some(Commands::Resume {
+        branch,
+        forward_args,
+        ..
+    }) = cli.command
+    else {
+        panic!("expected Resume variant");
+    };
+    assert_eq!(branch.as_deref(), Some("--continue"));
+    assert!(forward_args.is_empty());
+}
+
 #[test]
 fn test_rm_accepts_multiple_targets() {
     use clap::Parser;
