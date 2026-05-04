@@ -98,7 +98,7 @@ Same git config metadata keys and session storage paths.
   - 코드베이스 탐색 (3+ grep/find/read 묶음): `Explore` agent + `model=haiku`
   - 단순 lookup / 짧은 요약: `general-purpose` + `model=haiku`
   - 코드 구현·디버깅·리팩터·테스트 작성: `general-purpose` + `model=sonnet`
-  - 코드 review: `superpowers:code-reviewer` (정의에 model 잡혀있음 — 호출 site 명시 불필요)
+  - 코드 review: `general-purpose` + `model=sonnet`
   - PR 마무리: `pr-shipper` (정의에 model 잡혀있음)
   - 어려운 설계 추론: `Plan` 또는 `general-purpose` + `model=opus`
 
