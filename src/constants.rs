@@ -17,6 +17,9 @@ static MULTI_HYPHEN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"-+").unw
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum LaunchMethod {
+    /// Sentinel: do not launch an AI tool at all. Selected via
+    /// `-T noop|none|skip`. Replaces the old `--no-term` flag.
+    Skip,
     Foreground,
     Detach,
     // iTerm (macOS)
@@ -46,6 +49,7 @@ impl LaunchMethod {
     /// Convert to the canonical kebab-case string.
     pub fn as_str(&self) -> &'static str {
         match self {
+            Self::Skip => "skip",
             Self::Foreground => "foreground",
             Self::Detach => "detach",
             Self::ItermWindow => "iterm-window",
@@ -71,6 +75,11 @@ impl LaunchMethod {
     /// Parse from a kebab-case string.
     pub fn from_str_opt(s: &str) -> Option<Self> {
         match s {
+            // `skip`/`none`/`noop` all map to `Skip`. Three spellings because
+            // none is unambiguously best — `noop` is technically accurate
+            // (the launcher is a no-op), `none` is conventional, `skip` is
+            // imperative. We accept all three to avoid bikeshedding.
+            "skip" | "none" | "noop" => Some(Self::Skip),
             "foreground" => Some(Self::Foreground),
             "detach" => Some(Self::Detach),
             "iterm-window" => Some(Self::ItermWindow),
@@ -122,6 +131,7 @@ impl LaunchMethod {
     /// Human-readable display name.
     pub fn display_name(&self) -> &'static str {
         match self {
+            Self::Skip => "Skip (don't launch AI tool)",
             Self::Foreground => "Foreground",
             Self::Detach => "Detach (background)",
             Self::ItermWindow => "iTerm2 — New Window",

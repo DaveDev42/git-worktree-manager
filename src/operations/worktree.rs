@@ -12,6 +12,7 @@ use crate::error::{CwError, Result};
 use crate::git;
 use crate::shared_files;
 
+use super::ai_tools::LaunchOptions;
 use crate::messages;
 
 /// Create a new worktree with a feature branch.
@@ -19,9 +20,8 @@ pub fn create_worktree(
     branch_name: &str,
     base_branch: Option<&str>,
     path: Option<&str>,
-    no_ai: bool,
     initial_prompt: Option<&str>,
-    term_override: Option<&str>,
+    launch_opts: &LaunchOptions<'_>,
 ) -> Result<PathBuf> {
     let repo = git::get_repo_root(None)?;
 
@@ -174,10 +174,12 @@ pub fn create_worktree(
     // is skipped because the user signalled "this worktree isn't ready."
     crate::hooks::run_event("post_new", &worktree_path)?;
 
-    // Launch AI tool in the new worktree.
-    if !no_ai {
-        let _ = super::ai_tools::spawn_in_worktree(&worktree_path, initial_prompt, term_override);
-    }
+    // Launch AI tool in the new worktree. `-T skip|none|noop` (the
+    // replacement for the old `--no-term`) is handled inside
+    // spawn_in_worktree itself, so we always call through. Errors from the
+    // launcher are swallowed here: the worktree is on disk and usable
+    // either way, and the user can re-launch via `gw spawn`.
+    let _ = super::ai_tools::spawn_in_worktree(&worktree_path, initial_prompt, launch_opts);
 
     Ok(worktree_path)
 }

@@ -26,10 +26,14 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Create new worktree for feature branch
+    /// Create new worktree for feature branch.
+    ///
+    /// Trailing positional args are forwarded verbatim to the underlying AI
+    /// tool (claude/codex/gemini). Use `--` to disambiguate when forwarded
+    /// args start with a hyphen, e.g. `gw new feat-x -- --model opus`.
     #[command(group(
         clap::ArgGroup::new("prompt_source")
-            .args(["prompt", "prompt_file", "prompt_stdin"])
+            .args(["prompt", "prompt_file"])
             .multiple(false)
             .required(false)
     ))]
@@ -38,31 +42,24 @@ pub enum Commands {
         name: String,
 
         /// Custom worktree path (default: ../<repo>-<branch>)
-        #[arg(short, long, value_hint = ValueHint::DirPath)]
+        #[arg(long, value_hint = ValueHint::DirPath)]
         path: Option<String>,
 
         /// Base branch to create from (default: from config)
-        #[arg(short = 'b', long = "base")]
+        #[arg(long = "base")]
         base: Option<String>,
-
-        /// Skip AI tool launch
-        #[arg(long = "no-term")]
-        no_term: bool,
 
         /// Terminal launch method for THIS invocation. Overrides config
         /// and CW_LAUNCH_METHOD. Accepts canonical names (e.g.,
         /// `wezterm-tab`) or aliases (e.g., `w-t`, `w-t-b`). Supports
-        /// `method:session-name` for tmux/zellij. Mutually exclusive
-        /// with `--no-term`.
-        #[arg(
-            short = 'T',
-            long = "term",
-            value_name = "METHOD",
-            conflicts_with = "no_term"
-        )]
+        /// `method:session-name` for tmux/zellij. Use `noop`, `none`, or
+        /// `skip` to skip the AI tool launch entirely.
+        #[arg(short = 'T', long = "term", value_name = "METHOD")]
         term: Option<String>,
 
-        /// Initial prompt to pass to the AI tool (starts interactive session with task)
+        /// Initial prompt to pass to the AI tool. Use `-` to read the
+        /// prompt from standard input (e.g., `--prompt -` with a heredoc
+        /// or pipe).
         #[arg(long)]
         prompt: Option<String>,
 
@@ -70,27 +67,73 @@ pub enum Commands {
         #[arg(long = "prompt-file", value_hint = ValueHint::FilePath)]
         prompt_file: Option<PathBuf>,
 
-        /// Read the initial prompt from standard input
-        #[arg(long = "prompt-stdin")]
-        prompt_stdin: bool,
+        /// Inject an environment variable into the spawned AI tool process.
+        /// Format: `KEY=VAL`. Repeatable. Overrides any same-named auto-
+        /// forwarded env (see `--no-env-forward`).
+        #[arg(long = "env", value_name = "KEY=VAL")]
+        env: Vec<String>,
+
+        /// Disable auto-forwarding of `<TOOL>_*` environment variables
+        /// (e.g. `CLAUDE_*` when ai-tool is claude). Without this flag, gw
+        /// snapshots the parent shell's matching env at invocation time
+        /// and re-injects it inside the spawned terminal so launchers like
+        /// wezterm/iterm/tmux/zellij behave like a normal child process.
+        #[arg(long = "no-env-forward")]
+        no_env_forward: bool,
+
+        /// Extra arguments forwarded verbatim to the AI tool (claude/codex/
+        /// gemini). Mutually exclusive with `--prompt`/`--prompt-file`
+        /// because both ultimately set the AI tool's prompt — use one or
+        /// the other.
+        #[arg(
+            trailing_var_arg = true,
+            allow_hyphen_values = true,
+            value_name = "AI_TOOL_ARGS"
+        )]
+        forward_args: Vec<String>,
     },
 
-    /// Resume AI work in a worktree
+    /// Resume AI work in a worktree.
+    ///
+    /// Trailing positional args are forwarded verbatim to the AI tool. The
+    /// tool's own resume flag (`--continue`/`--resume`) is always injected
+    /// alongside, so `gw resume foo -- --model opus` resumes with opus.
     Resume {
         /// Branch name, worktree name, or path to resume (default: current worktree)
         branch: Option<String>,
 
         /// Terminal launch method for THIS invocation. Overrides config
         /// and CW_LAUNCH_METHOD. Accepts canonical names or aliases.
-        /// Supports `method:session-name` for tmux/zellij.
+        /// Supports `method:session-name` for tmux/zellij. Use `noop`,
+        /// `none`, or `skip` to skip the AI tool launch.
         #[arg(short = 'T', long = "term", value_name = "METHOD")]
         term: Option<String>,
+
+        /// Inject an environment variable into the spawned AI tool process.
+        /// Format: `KEY=VAL`. Repeatable.
+        #[arg(long = "env", value_name = "KEY=VAL")]
+        env: Vec<String>,
+
+        /// Disable auto-forwarding of `<TOOL>_*` environment variables.
+        #[arg(long = "no-env-forward")]
+        no_env_forward: bool,
+
+        /// Extra arguments forwarded verbatim to the AI tool (claude/codex/
+        /// gemini). The tool's resume flag is still injected automatically.
+        #[arg(
+            trailing_var_arg = true,
+            allow_hyphen_values = true,
+            value_name = "AI_TOOL_ARGS"
+        )]
+        forward_args: Vec<String>,
     },
 
     /// Launch AI tool in an existing worktree (default: current).
+    ///
+    /// Trailing positional args are forwarded verbatim to the AI tool.
     #[command(group(
         clap::ArgGroup::new("prompt_source")
-            .args(["prompt", "prompt_file", "prompt_stdin"])
+            .args(["prompt", "prompt_file"])
             .multiple(false)
             .required(false)
     ))]
@@ -101,11 +144,12 @@ pub enum Commands {
 
         /// Terminal launch method for THIS invocation. Overrides config
         /// and CW_LAUNCH_METHOD. Accepts canonical names or aliases.
-        /// Supports `method:session-name` for tmux/zellij.
+        /// Supports `method:session-name` for tmux/zellij. Use `noop`,
+        /// `none`, or `skip` to skip the AI tool launch.
         #[arg(short = 'T', long = "term", value_name = "METHOD")]
         term: Option<String>,
 
-        /// Initial prompt to pass to the AI tool.
+        /// Initial prompt to pass to the AI tool. Use `-` to read from stdin.
         #[arg(long)]
         prompt: Option<String>,
 
@@ -113,9 +157,22 @@ pub enum Commands {
         #[arg(long = "prompt-file", value_hint = ValueHint::FilePath)]
         prompt_file: Option<PathBuf>,
 
-        /// Read the initial prompt from standard input.
-        #[arg(long = "prompt-stdin")]
-        prompt_stdin: bool,
+        /// Inject an environment variable into the spawned AI tool process.
+        /// Format: `KEY=VAL`. Repeatable.
+        #[arg(long = "env", value_name = "KEY=VAL")]
+        env: Vec<String>,
+
+        /// Disable auto-forwarding of `<TOOL>_*` environment variables.
+        #[arg(long = "no-env-forward")]
+        no_env_forward: bool,
+
+        /// Extra arguments forwarded verbatim to the AI tool.
+        #[arg(
+            trailing_var_arg = true,
+            allow_hyphen_values = true,
+            value_name = "AI_TOOL_ARGS"
+        )]
+        forward_args: Vec<String>,
     },
 
     /// Remove one or more worktrees.

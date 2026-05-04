@@ -6,7 +6,7 @@
 
 `gw` is a lean git worktree manager. Inspired by [mr (myrepos)](https://myrepos.branchable.com/), it uses cwd-based scope discovery — no global registry, no cross-repo flags — so commands do exactly what you expect relative to where you run them. Target resolution is strict and consistent: worktree name → branch name → path.
 
-AI coding-assistant integration is built in: `gw new` creates a worktree and launches your AI tool of choice in it (use `--no-term` to skip). Future AI-assisted operations (e.g. `--ai` on merge / rebase) layer on top of the same worktree primitives.
+AI coding-assistant integration is built in: `gw new` creates a worktree and launches your AI tool of choice in it (use `-T skip` to skip the launch). Trailing positional args after the branch name are forwarded verbatim to the AI tool — `gw new feat-x -- --model opus` runs `claude --model opus` inside the new worktree. Future AI-assisted operations (e.g. `--ai` on merge / rebase) layer on top of the same worktree primitives.
 
 Single static binary (~1.9MB), ~3ms startup. Supports macOS (ARM64/x86), Linux (ARM64/x86), and Windows (x86_64).
 
@@ -50,11 +50,17 @@ gw new fix-auth
 # Override the launcher for this invocation only (e.g., background WezTerm tab)
 gw new fix-auth -T w-t-b
 
-# Just the worktree, no AI tool
-gw new fix-auth --no-term
+# Just the worktree, no AI tool (`-T noop` and `-T none` are aliases for `skip`)
+gw new fix-auth -T skip
 
 # Pass an initial prompt to the AI tool
 gw new fix-auth --prompt "Fix the JWT token expiration bug in auth.rs"
+
+# Read the prompt from stdin (Unix idiom — replaces the old --prompt-stdin flag)
+some-cmd | gw new fix-auth --prompt -
+
+# Forward extra args to the AI tool (everything after the branch name, or after `--`)
+gw new fix-auth -- --model opus --resume
 
 # Or read the prompt from a file (recommended for multi-line / quoted content)
 gw new fix-auth --prompt-file /tmp/task.md
@@ -80,11 +86,46 @@ gw run -- cargo test
 gw exec fix-auth -- git status
 ```
 
+## Forwarding args to the AI tool
+
+`gw new`, `gw resume`, and `gw spawn` accept all of gw's own options *before* the
+positional argument; everything after is forwarded verbatim to the underlying AI
+tool (claude / codex / gemini). Use `--` to disambiguate when forwarded args
+start with a hyphen:
+
+```bash
+gw new feat-x --base main -- --model opus --append-system-prompt "be terse"
+gw resume feat-x -- --model haiku
+gw spawn  feat-x --prompt "summarize the diff" -- --print  # ERROR: --prompt + forward args
+```
+
+`--prompt` / `--prompt-file` and forward args are mutually exclusive — both end
+up setting the AI tool's prompt, so combining them would silently produce two
+prompts. Pick one.
+
+`gw resume` always re-injects the AI tool's resume flag (`--continue` for
+claude, `--resume` for codex/gemini) even when forward args are present.
+
+### Environment variables
+
+By default, gw snapshots `<TOOL>_*` env vars at invocation time (e.g.
+`CLAUDE_*` when the AI tool is claude) and re-injects them into the spawned
+process. This matters for launchers like wezterm/iterm/tmux/zellij that go
+through a daemon — without re-injection, the new tab inherits the daemon's env,
+not the env of the shell that ran `gw`. Pass `--no-env-forward` to opt out, or
+`--env KEY=VAL` (repeatable) to inject explicit entries (these win over auto-
+forwarded ones with the same name).
+
+```bash
+ANTHROPIC_API_KEY=sk-... CLAUDE_CONFIG_DIR=~/work-claude gw new feat-x
+gw new feat-x --env CLAUDE_CODE_USE_BEDROCK=1 --env AWS_REGION=us-east-1
+```
+
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `gw new <name>` | Create worktree (and launch AI tool, unless `--no-term`) |
+| `gw new <name>` | Create worktree (and launch AI tool, unless `-T skip`) |
 | `gw resume [target]` | Resume AI session in a worktree |
 | `gw spawn [target]` | Launch AI tool in an existing worktree (default: current) |
 | `gw rm [targets...]` | Remove one or more worktrees (`-i` interactive, `--dry-run`, `--force`) |
@@ -153,7 +194,7 @@ The launcher used by `gw new` / `gw spawn` / `gw resume` is resolved from the hi
 | 4 | global `~/.config/git-worktree-manager/config.json` `launch.method` | (same JSON shape) |
 | 5 (default) | built-in default | `foreground` |
 
-Use `--no-term` on `gw new` to skip the AI tool launch entirely (mutually exclusive with `-T`). The `-T` value accepts any canonical method name or alias (see table below); for tmux/zellij, append `:<session-name>` to name the session (e.g., `-T tmux:mywork`).
+Use `-T skip` (or its aliases `-T none` / `-T noop`) to skip the AI tool launch entirely. The `-T` value accepts any canonical method name or alias (see table below); for tmux/zellij, append `:<session-name>` to name the session (e.g., `-T tmux:mywork`).
 
 | Launcher | Variants |
 |----------|----------|

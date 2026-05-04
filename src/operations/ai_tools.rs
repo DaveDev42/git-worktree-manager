@@ -1,6 +1,7 @@
 /// AI tool integration operations.
 ///
 /// Handles launching AI coding assistants in various terminal environments.
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use console::style;
@@ -10,7 +11,7 @@ use crate::config::{
     load_effective_config,
 };
 use crate::constants::{LaunchMethod, MAX_SESSION_NAME_LENGTH};
-use crate::error::Result;
+use crate::error::{CwError, Result};
 use crate::git;
 use crate::messages;
 use crate::session;
@@ -19,6 +20,35 @@ use super::claude_settings;
 use super::helpers::{resolve_target_strict, resolve_worktree_target};
 use super::launchers;
 use super::spawn_spec::{self, SpawnSpec};
+
+/// Per-invocation knobs that ride alongside `term_override` and `prompt`
+/// into every AI-tool launcher path. Bundled so a future option (extra env,
+/// extra args, `--reason`-style metadata) doesn't fan out into every
+/// signature.
+#[derive(Debug, Default, Clone)]
+pub struct LaunchOptions<'a> {
+    /// `-T/--term` override.
+    pub term_override: Option<&'a str>,
+    /// Trailing args forwarded verbatim to the AI tool (after the preset's
+    /// own args, before the prompt positional).
+    pub forward_args: &'a [String],
+    /// `--env KEY=VAL` entries (already validated).
+    pub extra_env: &'a [(String, String)],
+    /// True when `--no-env-forward` was passed.
+    pub no_env_forward: bool,
+}
+
+impl<'a> LaunchOptions<'a> {
+    /// Convenience constructor for callers that only have `-T`.
+    pub fn from_term(term_override: Option<&'a str>) -> Self {
+        Self {
+            term_override,
+            forward_args: &[],
+            extra_env: &[],
+            no_env_forward: false,
+        }
+    }
+}
 
 /// Dispatch a pre-materialized command to the configured launcher.
 ///
@@ -33,6 +63,11 @@ fn dispatch_launch(
     ai_tool_name: &str,
 ) -> Result<()> {
     match method {
+        LaunchMethod::Skip => {
+            // Should be intercepted by callers before dispatch (so they can
+            // skip ai-tool resolution and the executable check entirely).
+            // Treat as a defensive no-op if reached.
+        }
         LaunchMethod::Foreground => {
             println!(
                 "{}\n",
@@ -105,12 +140,108 @@ fn dispatch_launch(
     Ok(())
 }
 
-/// Launch AI coding assistant in the specified directory.
-pub fn launch_ai_tool(path: &Path, resume: bool, term_override: Option<&str>) -> Result<()> {
-    let (method, session_name) = config::resolve_term_option(term_override, path)?;
+/// Recognized parent-env prefix to auto-forward, keyed by the AI tool's
+/// binary name. Returns `None` for tools we don't have a convention for —
+/// in that case `--no-env-forward` becomes a no-op (nothing to forward).
+fn auto_forward_prefix(ai_tool_name: &str) -> Option<&'static str> {
+    match ai_tool_name {
+        "claude" => Some("CLAUDE_"),
+        "codex" => Some("CODEX_"),
+        "gemini" => Some("GEMINI_"),
+        _ => None,
+    }
+}
 
-    // Determine command
-    let ai_cmd_parts = if resume {
+/// Build the env map injected into the spawned AI tool process.
+///
+/// Order of merging (later wins):
+///   1. Auto-forwarded `<TOOL>_*` vars from the current (gw) process — the
+///      shell that ran `gw` is the source of truth, so launchers like
+///      wezterm/iterm/tmux/zellij (which spawn their own shells inside the
+///      window-server's environment) still see the user's settings.
+///   2. Caller-supplied `--env KEY=VAL` overrides.
+///
+/// Auto-forward is suppressed when `no_env_forward` is set or when
+/// `auto_forward_prefix` returns `None` for this tool.
+fn build_env_map(
+    ai_tool_name: &str,
+    extra_env: &[(String, String)],
+    no_env_forward: bool,
+) -> BTreeMap<String, String> {
+    let mut env = BTreeMap::new();
+
+    if !no_env_forward {
+        if let Some(prefix) = auto_forward_prefix(ai_tool_name) {
+            for (k, v) in std::env::vars() {
+                if k.starts_with(prefix) {
+                    env.insert(k, v);
+                }
+            }
+        }
+    }
+
+    for (k, v) in extra_env {
+        env.insert(k.clone(), v.clone());
+    }
+
+    env
+}
+
+/// Parse a `--env KEY=VAL` token. KEY must be non-empty, and follow POSIX
+/// portable env name rules (alphanumeric + underscore, not starting with a
+/// digit). Returns `(KEY, VAL)` on success, or a CwError on a malformed entry.
+///
+/// Empty VAL is allowed (`--env FOO=`) — it intentionally clears any
+/// auto-forwarded same-named var inside the spawned process.
+pub fn parse_env_entry(raw: &str) -> Result<(String, String)> {
+    let (key, val) = raw.split_once('=').ok_or_else(|| {
+        CwError::Other(format!(
+            "--env value '{}' is missing '=' (expected KEY=VAL)",
+            raw
+        ))
+    })?;
+    if key.is_empty() {
+        return Err(CwError::Other(format!(
+            "--env value '{}' has an empty KEY",
+            raw
+        )));
+    }
+    let bad = key.chars().next().is_some_and(|c| c.is_ascii_digit())
+        || !key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if bad {
+        return Err(CwError::Other(format!(
+            "--env KEY '{}' must match [A-Za-z_][A-Za-z0-9_]*",
+            key
+        )));
+    }
+    Ok((key.to_string(), val.to_string()))
+}
+
+/// Validate every `--env` entry up-front and return the parsed pairs.
+pub fn parse_env_entries(raw: &[String]) -> Result<Vec<(String, String)>> {
+    raw.iter().map(|s| parse_env_entry(s)).collect()
+}
+
+/// Launch AI coding assistant in the specified directory.
+pub fn launch_ai_tool(path: &Path, resume: bool, opts: &LaunchOptions<'_>) -> Result<()> {
+    let (method, session_name) = config::resolve_term_option(opts.term_override, path)?;
+
+    // `-T skip|none|noop` (or config method == "skip"): the user explicitly
+    // asked us not to launch anything. Bail before resolving ai-tool config
+    // or PATH-checking the binary so a Skip launch never errors on missing
+    // tooling.
+    if matches!(method, LaunchMethod::Skip) {
+        return Ok(());
+    }
+
+    // Determine command. Resume always injects the tool's `--continue` /
+    // `--resume` even when the user supplied `forward_args` — the user's
+    // intent ("resume this") is the framing of the whole subcommand, and
+    // having it silently dropped because they also passed `--model opus`
+    // would be a footgun.
+    let mut ai_cmd_parts = if resume {
         get_ai_tool_resume_command()?
     } else if is_claude_tool().unwrap_or(false) && session::claude_native_session_exists(path) {
         eprintln!("Found existing Claude session, using --continue");
@@ -123,6 +254,10 @@ pub fn launch_ai_tool(path: &Path, resume: bool, term_override: Option<&str>) ->
         return Ok(());
     }
 
+    // Forward args slot in *between* the preset's args and the (absent here)
+    // prompt — same position as a hand-typed `claude --model opus`.
+    ai_cmd_parts.extend(opts.forward_args.iter().cloned());
+
     let ai_tool_name = ai_cmd_parts[0].clone();
 
     if !git::has_command(&ai_tool_name) {
@@ -134,14 +269,30 @@ pub fn launch_ai_tool(path: &Path, resume: bool, term_override: Option<&str>) ->
         return Ok(());
     }
 
-    finalize_and_dispatch(path, method, session_name, ai_cmd_parts, &ai_tool_name)
+    let env = build_env_map(&ai_tool_name, opts.extra_env, opts.no_env_forward);
+
+    // See `spawn_spec` module docstring for why the emitted line is
+    // `gw _spawn-ai <path>` (no `exec` prefix) and how the raw argv flows
+    // through a 0600 temp file rather than the shell line.
+    maybe_inject_guard(&mut ai_cmd_parts, path)?;
+    let spec = SpawnSpec::new(ai_cmd_parts, path.to_path_buf()).with_env(env);
+    // The spec file is cleaned up by `spawn_spec::execute` after read; the 24h
+    // `sweep_stale` at startup is the safety net for crashes between those points.
+    let (cmd, _) = spawn_spec::materialize(&spec)?;
+
+    // Dispatch to launcher. Foreground blocks on the AI process, so an RAII
+    // lockfile spans the full session. Other launchers detach to a terminal
+    // emulator / multiplexer and return immediately, so a lock acquired here
+    // would be released before the AI session really starts — for those we
+    // rely on process-cwd scanning in `busy::detect_busy` instead.
+    dispatch_launch(path, method, session_name, &cmd, ai_tool_name.as_str())
 }
 
 /// Resume AI work in a worktree with context restoration.
 ///
 /// Target resolution uses strict ordered rules: exact worktree name → exact branch
 /// name → exact path. When no target is given, the current working directory is used.
-pub fn resume_worktree(worktree: Option<&str>, term_override: Option<&str>) -> Result<()> {
+pub fn resume_worktree(worktree: Option<&str>, opts: &LaunchOptions<'_>) -> Result<()> {
     let (worktree_path, branch_name) = if let Some(target) = worktree {
         let main_repo = git::get_main_repo_root(None)?;
         let strict = resolve_target_strict(&main_repo, target)?;
@@ -227,7 +378,7 @@ pub fn resume_worktree(worktree: Option<&str>, term_override: Option<&str>) -> R
             );
         }
 
-        launch_ai_tool(&worktree_path, has_session, term_override)?;
+        launch_ai_tool(&worktree_path, has_session, opts)?;
     }
 
     Ok(())
@@ -240,20 +391,40 @@ pub fn resume_worktree(worktree: Option<&str>, term_override: Option<&str>) -> R
 pub fn spawn_in_worktree(
     worktree_path: &Path,
     prompt: Option<&str>,
-    term_override: Option<&str>,
+    opts: &LaunchOptions<'_>,
 ) -> Result<()> {
-    let (method, session_name) = config::resolve_term_option(term_override, worktree_path)?;
+    let (method, session_name) = config::resolve_term_option(opts.term_override, worktree_path)?;
 
-    // Use the interactive delegate command (prompt appended as last positional
-    // arg) when a prompt is provided so the AI tool starts an interactive
-    // session with the prompt as its first user message.
-    let ai_cmd_parts = match prompt {
-        Some(p) => config::get_ai_tool_delegate_command(p)?,
-        None => get_ai_tool_command()?,
-    };
+    // `-T skip|none|noop`: caller wants the worktree set up without launching
+    // anything. Skip ai-tool resolution + PATH check entirely.
+    if matches!(method, LaunchMethod::Skip) {
+        return Ok(());
+    }
 
+    // `--prompt` and trailing forward args are mutually exclusive: both
+    // ultimately set the AI tool's prompt. Allowing both lets the user
+    // accidentally end up with two prompts (the explicit one plus one
+    // hidden in `forward_args`) — much better to surface this at the CLI
+    // boundary than to guess an ordering.
+    if prompt.is_some() && !opts.forward_args.is_empty() {
+        return Err(CwError::Other(
+            "--prompt / --prompt-file cannot be combined with trailing AI tool args; \
+             pick one or the other"
+                .to_string(),
+        ));
+    }
+
+    // Build the AI tool command:
+    //   <preset args...> <forward_args...> [<prompt>]
+    // The prompt is appended last so the AI tool sees it as the leading
+    // user message (claude/codex/gemini all accept a trailing positional).
+    let mut ai_cmd_parts = get_ai_tool_command()?;
     if ai_cmd_parts.is_empty() {
         return Ok(());
+    }
+    ai_cmd_parts.extend(opts.forward_args.iter().cloned());
+    if let Some(p) = prompt {
+        ai_cmd_parts.push(p.to_string());
     }
 
     let ai_tool_name = ai_cmd_parts[0].clone();
@@ -267,11 +438,17 @@ pub fn spawn_in_worktree(
         return Ok(());
     }
 
-    finalize_and_dispatch(
+    let env = build_env_map(&ai_tool_name, opts.extra_env, opts.no_env_forward);
+
+    maybe_inject_guard(&mut ai_cmd_parts, worktree_path)?;
+    let spec = SpawnSpec::new(ai_cmd_parts, worktree_path.to_path_buf()).with_env(env);
+    let (cmd, _) = spawn_spec::materialize(&spec)?;
+
+    dispatch_launch(
         worktree_path,
         method,
         session_name,
-        ai_cmd_parts,
+        &cmd,
         ai_tool_name.as_str(),
     )
 }
@@ -305,28 +482,6 @@ fn inject_guard_into_argv(argv: &mut Vec<String>, guard_enabled: bool) -> Result
     argv.insert(1, "--settings".to_string());
     argv.insert(2, json);
     Ok(())
-}
-
-/// Build a SpawnSpec from `argv`, materialize it, and dispatch to the
-/// configured launcher.
-///
-/// Both `launch_ai_tool` and `spawn_in_worktree` converge here so guard
-/// injection and spec creation live in one place. Foreground launchers
-/// own their own RAII lockfile inside `dispatch_launch`; non-foreground
-/// launchers detach and rely on process-cwd scanning (`busy::detect_busy`).
-fn finalize_and_dispatch(
-    path: &Path,
-    method: LaunchMethod,
-    session_name: Option<String>,
-    mut argv: Vec<String>,
-    ai_tool_name: &str,
-) -> Result<()> {
-    maybe_inject_guard(&mut argv, path)?;
-    // The spec file is cleaned up by `spawn_spec::execute` after read; the 24h
-    // `sweep_stale` at startup is the safety net for crashes between those points.
-    let spec = SpawnSpec::new(argv, path.to_path_buf());
-    let (cmd, _) = spawn_spec::materialize(&spec)?;
-    dispatch_launch(path, method, session_name, &cmd, ai_tool_name)
 }
 
 /// Generate a session name from path with length limit.
@@ -434,5 +589,97 @@ mod tests {
             assert_eq!(argv[1], "--settings");
             assert_eq!(argv[3], "--dangerously-skip-permissions");
         });
+    }
+
+    #[test]
+    fn parse_env_entry_accepts_normal() {
+        let (k, v) = parse_env_entry("FOO=bar").unwrap();
+        assert_eq!(k, "FOO");
+        assert_eq!(v, "bar");
+    }
+
+    #[test]
+    fn parse_env_entry_accepts_empty_value() {
+        // `--env FOO=` is the documented way to clear an auto-forwarded var.
+        let (k, v) = parse_env_entry("FOO=").unwrap();
+        assert_eq!(k, "FOO");
+        assert_eq!(v, "");
+    }
+
+    #[test]
+    fn parse_env_entry_accepts_value_with_equals() {
+        // `=` is only special as a separator on the *first* occurrence —
+        // everything after the first `=` is value.
+        let (k, v) = parse_env_entry("FOO=a=b=c").unwrap();
+        assert_eq!(k, "FOO");
+        assert_eq!(v, "a=b=c");
+    }
+
+    #[test]
+    fn parse_env_entry_rejects_no_equals() {
+        let err = parse_env_entry("FOO").unwrap_err();
+        assert!(format!("{err}").contains("missing '='"));
+    }
+
+    #[test]
+    fn parse_env_entry_rejects_empty_key() {
+        let err = parse_env_entry("=value").unwrap_err();
+        assert!(format!("{err}").contains("empty KEY"));
+    }
+
+    #[test]
+    fn parse_env_entry_rejects_digit_first_char() {
+        let err = parse_env_entry("1FOO=bar").unwrap_err();
+        assert!(format!("{err}").contains("[A-Za-z_]"));
+    }
+
+    #[test]
+    fn parse_env_entry_rejects_dash_in_key() {
+        let err = parse_env_entry("FOO-BAR=bar").unwrap_err();
+        assert!(format!("{err}").contains("[A-Za-z_]"));
+    }
+
+    #[test]
+    fn auto_forward_prefix_known_tools() {
+        assert_eq!(auto_forward_prefix("claude"), Some("CLAUDE_"));
+        assert_eq!(auto_forward_prefix("codex"), Some("CODEX_"));
+        assert_eq!(auto_forward_prefix("gemini"), Some("GEMINI_"));
+        assert_eq!(auto_forward_prefix("unknown-tool"), None);
+    }
+
+    #[test]
+    fn build_env_map_extra_env_overrides_auto_forward() {
+        // Pre-set a CLAUDE_FOO in our process so the auto-forward picks it up,
+        // then verify that --env CLAUDE_FOO=override wins.
+        std::env::set_var("CLAUDE_FOO_TEST_AUTO_OVR", "from-parent");
+        let extra = vec![("CLAUDE_FOO_TEST_AUTO_OVR".to_string(), "override".to_string())];
+        // Note: build_env_map filters by prefix "CLAUDE_", so the test var
+        // must start with CLAUDE_. Both auto-forward and extra produce this
+        // key — the override path inserts second so it should win.
+        let env = build_env_map("claude", &extra, false);
+        assert_eq!(
+            env.get("CLAUDE_FOO_TEST_AUTO_OVR").map(String::as_str),
+            Some("override")
+        );
+        std::env::remove_var("CLAUDE_FOO_TEST_AUTO_OVR");
+    }
+
+    #[test]
+    fn build_env_map_no_env_forward_skips_auto() {
+        std::env::set_var("CLAUDE_FOO_TEST_NO_FWD", "from-parent");
+        let env = build_env_map("claude", &[], true);
+        assert!(
+            !env.contains_key("CLAUDE_FOO_TEST_NO_FWD"),
+            "auto-forward must be suppressed by no_env_forward"
+        );
+        std::env::remove_var("CLAUDE_FOO_TEST_NO_FWD");
+    }
+
+    #[test]
+    fn build_env_map_unknown_tool_no_auto() {
+        std::env::set_var("CLAUDE_FOO_TEST_UNK", "from-parent");
+        let env = build_env_map("unknown-tool", &[], false);
+        assert!(env.is_empty());
+        std::env::remove_var("CLAUDE_FOO_TEST_UNK");
     }
 }

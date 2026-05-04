@@ -12,7 +12,7 @@ use common::TestRepo;
 
 use std::sync::Mutex;
 
-use git_worktree_manager::operations::ai_tools::spawn_in_worktree;
+use git_worktree_manager::operations::ai_tools::{LaunchOptions, spawn_in_worktree};
 
 /// Mutex to serialize env-var mutations so parallel test threads don't stomp
 /// on each other's CW_AI_TOOL / CW_LAUNCH_METHOD values.
@@ -98,7 +98,7 @@ fn spawn_in_worktree_launches_in_existing_worktree() {
     }
 
     with_sentinel_ai(&script_path.to_string_lossy(), || {
-        let result = spawn_in_worktree(&wt_path, None, None);
+        let result = spawn_in_worktree(&wt_path, None, &LaunchOptions::from_term(None));
         assert!(
             result.is_ok(),
             "spawn_in_worktree returned Err: {:?}",
@@ -138,7 +138,7 @@ fn spawn_in_worktree_with_prompt() {
     }
 
     with_sentinel_ai(&script_path.to_string_lossy(), || {
-        let result = spawn_in_worktree(&wt_path, Some("hello"), None);
+        let result = spawn_in_worktree(&wt_path, Some("hello"), &LaunchOptions::from_term(None));
         assert!(
             result.is_ok(),
             "spawn_in_worktree with prompt returned Err: {:?}",

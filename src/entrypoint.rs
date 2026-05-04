@@ -16,11 +16,12 @@ use crate::operations::{
     ai_tools, diagnostics, display, exec, guard, helpers, path_cmd, run, setup_claude, spawn_spec,
     worktree,
 };
+use crate::operations::ai_tools::{parse_env_entries, LaunchOptions};
 use crate::resolve_prompt;
 use crate::shell_functions;
 use crate::tui;
 use crate::update;
-use std::io::Read;
+use std::io::{IsTerminal, Read};
 
 pub fn run() {
     tui::install_panic_hook();
@@ -63,57 +64,109 @@ pub fn run() {
             name,
             path,
             base,
-            no_term,
             term,
             prompt,
             prompt_file,
-            prompt_stdin,
+            env,
+            no_env_forward,
+            forward_args,
         }) => (|| -> Result<()> {
+            // Reject --prompt + trailing forward args at dispatch time —
+            // both ultimately set the AI tool's prompt, so allowing both
+            // would silently produce two prompts. Surface this before
+            // anything touches disk.
+            if (prompt.is_some() || prompt_file.is_some()) && !forward_args.is_empty() {
+                return Err(CwError::Other(
+                    "--prompt / --prompt-file cannot be combined with trailing AI tool args; \
+                     pick one or the other"
+                        .to_string(),
+                ));
+            }
+            // Validate --env entries up-front so a typo (`FOO`) errors
+            // before we create a worktree on disk.
+            let extra_env = parse_env_entries(&env)?;
             // Resolve the prompt first so a missing file or unreadable stdin
             // fails before any interactive side effects (worktree creation,
             // AI-tool launch) leave the tree in a half-configured state.
-            let resolved = resolve_prompt(prompt, prompt_file.as_deref(), prompt_stdin, || {
-                let mut buf = String::new();
-                std::io::stdin().read_to_string(&mut buf)?;
-                Ok(buf)
-            })?;
+            let resolved = resolve_prompt(
+                prompt,
+                prompt_file.as_deref(),
+                || std::io::stdin().is_terminal(),
+                || {
+                    let mut buf = String::new();
+                    std::io::stdin().read_to_string(&mut buf)?;
+                    Ok(buf)
+                },
+            )?;
             // Pre-flight `-T <method>` so a typo (`-T does-not-exist`) errors
             // before we create a worktree on disk. The launch path inside
             // create_worktree swallows spawn errors with `let _ = …`, which
             // would otherwise leave a phantom worktree on a bad alias.
-            if !no_term {
-                let _ = config::parse_term_option(term.as_deref())?;
-            }
+            // Skip / none / noop is a valid value here, so this still parses.
+            let _ = config::parse_term_option(term.as_deref())?;
             cwshare_setup::prompt_cwshare_setup();
 
+            let opts = LaunchOptions {
+                term_override: term.as_deref(),
+                forward_args: &forward_args,
+                extra_env: &extra_env,
+                no_env_forward,
+            };
             worktree::create_worktree(
                 &name,
                 base.as_deref(),
                 path.as_deref(),
-                no_term,
                 resolved.as_deref(),
-                term.as_deref(),
+                &opts,
             )?;
             Ok(())
         })(),
 
-        Some(Commands::Resume { branch, term }) => {
-            ai_tools::resume_worktree(branch.as_deref(), term.as_deref())
-        }
+        Some(Commands::Resume {
+            branch,
+            term,
+            env,
+            no_env_forward,
+            forward_args,
+        }) => (|| -> Result<()> {
+            let extra_env = parse_env_entries(&env)?;
+            let opts = LaunchOptions {
+                term_override: term.as_deref(),
+                forward_args: &forward_args,
+                extra_env: &extra_env,
+                no_env_forward,
+            };
+            ai_tools::resume_worktree(branch.as_deref(), &opts)
+        })(),
 
         Some(Commands::Spawn {
             target,
             term,
             prompt,
             prompt_file,
-            prompt_stdin,
+            env,
+            no_env_forward,
+            forward_args,
         }) => (|| -> Result<()> {
-            let resolved_prompt =
-                resolve_prompt(prompt, prompt_file.as_deref(), prompt_stdin, || {
+            // Same prompt/forward conflict as `gw new`.
+            if (prompt.is_some() || prompt_file.is_some()) && !forward_args.is_empty() {
+                return Err(CwError::Other(
+                    "--prompt / --prompt-file cannot be combined with trailing AI tool args; \
+                     pick one or the other"
+                        .to_string(),
+                ));
+            }
+            let extra_env = parse_env_entries(&env)?;
+            let resolved_prompt = resolve_prompt(
+                prompt,
+                prompt_file.as_deref(),
+                || std::io::stdin().is_terminal(),
+                || {
                     let mut buf = String::new();
                     std::io::stdin().read_to_string(&mut buf)?;
                     Ok(buf)
-                })?;
+                },
+            )?;
             let cwd = std::env::current_dir()?;
             let target_path = match target {
                 Some(t) => {
@@ -122,7 +175,13 @@ pub fn run() {
                 }
                 None => crate::git::get_repo_root(Some(&cwd))?,
             };
-            ai_tools::spawn_in_worktree(&target_path, resolved_prompt.as_deref(), term.as_deref())
+            let opts = LaunchOptions {
+                term_override: term.as_deref(),
+                forward_args: &forward_args,
+                extra_env: &extra_env,
+                no_env_forward,
+            };
+            ai_tools::spawn_in_worktree(&target_path, resolved_prompt.as_deref(), &opts)
         })(),
 
         Some(Commands::Rm {

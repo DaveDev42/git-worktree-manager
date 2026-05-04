@@ -13,7 +13,7 @@ use common::TestRepo;
 use std::path::Path;
 use std::sync::Mutex;
 
-use git_worktree_manager::operations::ai_tools::spawn_in_worktree;
+use git_worktree_manager::operations::ai_tools::{spawn_in_worktree, LaunchOptions};
 
 static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
@@ -95,7 +95,7 @@ fn spawn_injects_settings_with_pretooluse_bash_hook() {
     write_fake_claude(bin_dir.path(), &argv_log);
 
     with_fake_claude(bin_dir.path(), || {
-        spawn_in_worktree(&wt_path, None, None).expect("spawn");
+        spawn_in_worktree(&wt_path, None, &LaunchOptions::default()).expect("spawn");
     });
 
     let dumped = std::fs::read_to_string(&argv_log).expect("argv log");
@@ -139,7 +139,7 @@ fn spawn_omits_settings_when_guard_disabled_in_repo_config() {
     write_fake_claude(bin_dir.path(), &argv_log);
 
     with_fake_claude(bin_dir.path(), || {
-        spawn_in_worktree(&wt_path, None, None).expect("spawn");
+        spawn_in_worktree(&wt_path, None, &LaunchOptions::default()).expect("spawn");
     });
 
     let dumped = std::fs::read_to_string(&argv_log).expect("argv log");

@@ -15,9 +15,9 @@ fn worktree_row(branch: &str) -> String {
 #[test]
 fn test_rm_multiple_positional_all_succeed() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "a", "--no-term"]));
-    assert!(repo.cw_ok(&["new", "b", "--no-term"]));
-    assert!(repo.cw_ok(&["new", "c", "--no-term"]));
+    assert!(repo.cw_ok(&["new", "a", "-T", "skip"]));
+    assert!(repo.cw_ok(&["new", "b", "-T", "skip"]));
+    assert!(repo.cw_ok(&["new", "c", "-T", "skip"]));
 
     let out = repo.cw(&["rm", "a", "b", "c"]);
     assert!(
@@ -44,7 +44,7 @@ fn test_rm_multiple_positional_all_succeed() {
 #[test]
 fn test_rm_multiple_mixed_valid_and_missing() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "real", "--no-term"]));
+    assert!(repo.cw_ok(&["new", "real", "-T", "skip"]));
 
     let out = repo.cw(&["rm", "real", "does-not-exist"]);
     // exit code 2: at least one target was not deleted
@@ -97,8 +97,8 @@ fn test_rm_dry_run_does_not_delete() {
 #[test]
 fn test_rm_keep_branch_applies_to_all_targets() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "k1", "--no-term"]));
-    assert!(repo.cw_ok(&["new", "k2", "--no-term"]));
+    assert!(repo.cw_ok(&["new", "k1", "-T", "skip"]));
+    assert!(repo.cw_ok(&["new", "k2", "-T", "skip"]));
 
     let out = repo.cw(&["rm", "k1", "k2", "--keep-branch"]);
     assert!(

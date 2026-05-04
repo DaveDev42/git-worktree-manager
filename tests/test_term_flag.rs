@@ -158,23 +158,24 @@ fn new_rejects_invalid_term_before_creating_worktree() {
 }
 
 #[test]
-fn new_rejects_term_with_no_term_at_cli() {
+fn new_skip_aliases_dont_launch_ai_tool() {
+    // `--no-term` was replaced by `-T skip|none|noop`. Each alias must
+    // create the worktree without invoking the AI tool. The harness sets
+    // CW_AI_TOOL to a sentinel path that does NOT exist; if dispatch were
+    // to try launching it the run would fail.
     with_clean_env(|| {
-        let repo = TestRepo::new();
-        let out = repo.cw(&["new", "feat-conflict", "-T", "fg", "--no-term"]);
-        assert!(
-            !out.status.success(),
-            "expected non-zero exit for -T + --no-term. stdout={:?} stderr={:?}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(
-            stderr.contains("--no-term")
-                || stderr.contains("--term")
-                || stderr.contains("conflict"),
-            "expected conflict message in stderr, got: {}",
-            stderr
-        );
+        std::env::set_var("CW_AI_TOOL", "/definitely/not/here/never-exec");
+        for (i, alias) in ["skip", "none", "noop"].iter().enumerate() {
+            let repo = TestRepo::new();
+            let branch = format!("feat-skip-{i}");
+            let out = repo.cw(&["new", &branch, "-T", alias]);
+            assert!(
+                out.status.success(),
+                "`-T {alias}` should succeed without launching AI tool. \
+                 stdout={:?} stderr={:?}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr),
+            );
+        }
     });
 }

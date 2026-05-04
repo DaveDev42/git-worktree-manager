@@ -154,7 +154,7 @@ impl TestRepo {
 
     /// Create a worktree and return its path. Panics on failure.
     pub fn create_worktree(&self, branch: &str) -> PathBuf {
-        let output = self.cw(&["new", branch, "--no-term"]);
+        let output = self.cw(&["new", branch, "-T", "skip"]);
         assert!(
             output.status.success(),
             "Failed to create worktree '{}': {}{}",

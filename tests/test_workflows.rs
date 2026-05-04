@@ -9,7 +9,7 @@ fn test_full_workflow_new_list_delete() {
     let repo = TestRepo::new();
 
     // Create
-    assert!(repo.cw_ok(&["new", "e2e-test", "--no-term"]));
+    assert!(repo.cw_ok(&["new", "e2e-test", "-T", "skip"]));
 
     // List shows it
     let list = repo.cw_stdout(&["list"]);
@@ -26,9 +26,9 @@ fn test_full_workflow_new_list_delete() {
 #[test]
 fn test_workflow_multiple_worktrees() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "feat-a", "--no-term"]));
-    assert!(repo.cw_ok(&["new", "feat-b", "--no-term"]));
-    assert!(repo.cw_ok(&["new", "feat-c", "--no-term"]));
+    assert!(repo.cw_ok(&["new", "feat-a", "-T", "skip"]));
+    assert!(repo.cw_ok(&["new", "feat-b", "-T", "skip"]));
+    assert!(repo.cw_ok(&["new", "feat-c", "-T", "skip"]));
 
     let list = repo.cw_stdout(&["list"]);
     assert!(list.contains("feat-a"));
@@ -46,7 +46,7 @@ fn test_workflow_multiple_worktrees() {
 #[test]
 fn test_workflow_delete_keep_branch() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "keep-branch-test", "--no-term"]));
+    assert!(repo.cw_ok(&["new", "keep-branch-test", "-T", "skip"]));
     assert!(repo.cw_ok(&["rm", "keep-branch-test", "--keep-branch"]));
 
     // Worktree removed but branch should still exist
@@ -57,7 +57,7 @@ fn test_workflow_delete_keep_branch() {
 #[test]
 fn test_workflow_doctor_after_operations() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "doc-test", "--no-term"]));
+    assert!(repo.cw_ok(&["new", "doc-test", "-T", "skip"]));
     let doctor = repo.cw_stdout(&["doctor"]);
     assert!(doctor.contains("Health Check"));
     assert!(doctor.contains("Git version"));
@@ -66,7 +66,7 @@ fn test_workflow_doctor_after_operations() {
 #[test]
 fn test_workflow_path_list_branches() {
     let repo = TestRepo::new();
-    assert!(repo.cw_ok(&["new", "path-test", "--no-term"]));
+    assert!(repo.cw_ok(&["new", "path-test", "-T", "skip"]));
 
     let output = repo.cw_stdout(&["_path", "--list-branches"]);
     assert!(output.contains("main") || output.contains("path-test"));
@@ -83,7 +83,7 @@ fn test_workflow_new_with_prompt_file() {
     let ok = repo.cw_ok(&[
         "new",
         "prompt-file-test",
-        "--no-term",
+        "-T", "skip",
         "--prompt-file",
         prompt_file.path().to_str().unwrap(),
     ]);
@@ -94,14 +94,16 @@ fn test_workflow_new_with_prompt_file() {
 }
 
 #[test]
-fn test_workflow_new_with_prompt_stdin() {
+fn test_workflow_new_with_prompt_dash() {
+    // `--prompt-stdin` was replaced by `--prompt -` in 1.0. Same behaviour:
+    // gw reads stdin until EOF and uses it as the AI tool's initial prompt.
     use std::io::Write;
     use std::process::{Command, Stdio};
 
     let repo = TestRepo::new();
 
     let mut child = Command::new(TestRepo::cw_bin())
-        .args(["new", "prompt-stdin-test", "--no-term", "--prompt-stdin"])
+        .args(["new", "prompt-dash-test", "-T", "skip", "--prompt", "-"])
         .current_dir(repo.path())
         .env("CW_LAUNCH_METHOD", "foreground")
         .stdin(Stdio::piped())
@@ -116,19 +118,17 @@ fn test_workflow_new_with_prompt_stdin() {
         .unwrap()
         .write_all(b"piped task description\n")
         .unwrap();
-    // Close the write end so the child sees EOF; also avoids any potential
-    // deadlock if wait_with_output() ever reads a full pipe buffer.
     drop(child.stdin.take());
     let output = child.wait_with_output().expect("wait");
     assert!(
         output.status.success(),
-        "gw new --prompt-stdin failed: {}{}",
+        "gw new --prompt - failed: {}{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
 
     let list = repo.cw_stdout(&["list"]);
-    assert!(list.contains("prompt-stdin-test"));
+    assert!(list.contains("prompt-dash-test"));
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn test_workflow_new_prompt_file_missing_fails_cleanly() {
     let ok = repo.cw_ok(&[
         "new",
         "no-worktree-created",
-        "--no-term",
+        "-T", "skip",
         "--prompt-file",
         "/nonexistent/does/not/exist.txt",
     ]);
