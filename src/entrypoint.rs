@@ -123,6 +123,11 @@ pub fn run() {
             no_env_forward,
             forward_args,
         }) => {
+            // clap's trailing_var_arg + Option<positional> combo lets `--`
+            // get absorbed by the optional positional: `gw resume -- --model
+            // opus` parses as branch=Some("--model"), forward_args=["opus"].
+            // Detect a hyphen-led "branch" and lift it into forward_args.
+            let (branch, forward_args) = lift_dash_target(branch, forward_args);
             let opts = LaunchOptions {
                 term_override: term.as_deref(),
                 forward_args: &forward_args,
@@ -139,6 +144,8 @@ pub fn run() {
             no_env_forward,
             forward_args,
         }) => (|| -> Result<()> {
+            // See Resume arm: clap absorbs `--` into the optional positional.
+            let (target, forward_args) = lift_dash_target(target, forward_args);
             // Same prompt/forward conflict as `gw new`.
             if (prompt.is_some() || prompt_file.is_some()) && !forward_args.is_empty() {
                 return Err(CwError::Other(
@@ -518,5 +525,68 @@ fn refresh_shell_cache(shell_name: &str) {
                 cache_path.display()
             );
         }
+    }
+}
+
+/// `gw spawn -- --model opus` and `gw resume -- --model opus` parse, under
+/// clap's `trailing_var_arg=true` + `Option<String>` positional combo, as
+/// `target=Some("--model")`, `forward_args=["opus"]` — clap silently absorbs
+/// the `--` into the optional positional. A real worktree name can never
+/// start with `-` (git rejects it), so a hyphen-led "target" is unambiguously
+/// a misparsed forward arg. Lift it (and any captured forward args) back into
+/// forward_args, with `target` cleared so the dispatcher falls through to
+/// "current worktree".
+fn lift_dash_target(
+    target: Option<String>,
+    forward_args: Vec<String>,
+) -> (Option<String>, Vec<String>) {
+    match target {
+        Some(t) if t.starts_with('-') => {
+            let mut lifted = Vec::with_capacity(forward_args.len() + 1);
+            lifted.push(t);
+            lifted.extend(forward_args);
+            (None, lifted)
+        }
+        other => (other, forward_args),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lift_dash_target;
+
+    #[test]
+    fn lift_dash_target_lifts_hyphen_target() {
+        let (target, fwd) = lift_dash_target(
+            Some("--model".to_string()),
+            vec!["opus".to_string(), "--resume".to_string()],
+        );
+        assert_eq!(target, None);
+        assert_eq!(fwd, vec!["--model", "opus", "--resume"]);
+    }
+
+    #[test]
+    fn lift_dash_target_passes_through_normal_target() {
+        let (target, fwd) = lift_dash_target(
+            Some("feat-x".to_string()),
+            vec!["--model".to_string(), "opus".to_string()],
+        );
+        assert_eq!(target.as_deref(), Some("feat-x"));
+        assert_eq!(fwd, vec!["--model", "opus"]);
+    }
+
+    #[test]
+    fn lift_dash_target_handles_none_target() {
+        let (target, fwd) = lift_dash_target(None, vec![]);
+        assert_eq!(target, None);
+        assert!(fwd.is_empty());
+    }
+
+    #[test]
+    fn lift_dash_target_lifts_with_no_forward_args() {
+        // `gw spawn -- --model` (no value) — pathological but still well-defined.
+        let (target, fwd) = lift_dash_target(Some("--model".to_string()), vec![]);
+        assert_eq!(target, None);
+        assert_eq!(fwd, vec!["--model"]);
     }
 }
