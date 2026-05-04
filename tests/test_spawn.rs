@@ -371,12 +371,28 @@ fn forward_args_land_in_spawn_spec_argv() {
             ("HOME", std::env::var_os("HOME")),
             ("CW_LAUNCH_METHOD", std::env::var_os("CW_LAUNCH_METHOD")),
             ("CW_AI_TOOL", std::env::var_os("CW_AI_TOOL")),
+            ("CW_SPAWN_AI_BIN", std::env::var_os("CW_SPAWN_AI_BIN")),
+            ("PATH", std::env::var_os("PATH")),
         ],
     };
     let fake_home = tempfile::tempdir().expect("fake HOME");
     std::env::set_var("HOME", fake_home.path());
     std::env::set_var("CW_LAUNCH_METHOD", "foreground");
     std::env::set_var("CW_AI_TOOL", &script);
+    // Point the spawn line at the cargo-built `gw` binary so the
+    // foreground launcher's `bash -lc "<bin> _spawn-ai …"` resolves
+    // cleanly instead of writing a confusing error to stderr.
+    let gw_bin = std::path::PathBuf::from(env!("CARGO_BIN_EXE_gw"));
+    std::env::set_var("CW_SPAWN_AI_BIN", &gw_bin);
+    if let Some(bin_dir) = gw_bin.parent() {
+        let mut paths: Vec<std::path::PathBuf> = vec![bin_dir.to_path_buf()];
+        if let Some(existing) = std::env::var_os("PATH") {
+            paths.extend(std::env::split_paths(&existing));
+        }
+        if let Ok(joined) = std::env::join_paths(paths) {
+            std::env::set_var("PATH", joined);
+        }
+    }
 
     let forward = vec![
         "--model".to_string(),
