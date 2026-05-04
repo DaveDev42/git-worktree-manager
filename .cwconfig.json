@@ -1,0 +1,5 @@
+{
+  "hooks": {
+    "post_new": "cargo fetch --locked || true"
+  }
+}
