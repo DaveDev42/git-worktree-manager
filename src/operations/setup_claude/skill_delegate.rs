@@ -87,7 +87,7 @@ elsewhere — but you must:
 
 ### Step 2: Confirm and execute
 
-All three prompt ingestion modes (`--prompt`, `--prompt-file`, `--prompt-stdin`) are equally safe from shell-escaping issues. Use `--prompt-file` for convenience when managing multi-line prompts in an editor or passing skill-generated files.
+All prompt ingestion modes (`--prompt`, `--prompt-file`, `--prompt -`) are equally safe from shell-escaping issues. Use `--prompt-file` for convenience when managing multi-line prompts in an editor or passing skill-generated files.
 
 **Recommended (use this by default):**
 ```bash
@@ -107,14 +107,16 @@ gw new <branch-name> -T <terminal-method> --prompt "<short task>"
 
 **Piping from another command:**
 ```bash
-generate-spec | gw new <branch-name> --prompt-stdin
+generate-spec | gw new <branch-name> --prompt -
 ```
 
-Note: `--prompt-stdin` consumes the process's stdin. Avoid combining it with
+Note: `--prompt -` consumes the process's stdin (the `-` is the conventional
+Unix sentinel for "read from stdin"). Avoid combining it with
 `-T <terminal-method>` — the spawned terminal may inherit a closed stdin and
 behave unpredictably. Use `--prompt-file` if you need to specify a terminal launcher alongside the prompt.
 
-Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be given per invocation.
+Only one of `--prompt`, `--prompt-file` may be given per invocation
+(`--prompt -` is just a special value of `--prompt`).
 
 ### Branch name rules
 - Lowercase, hyphen-separated, max ~50 chars
@@ -133,7 +135,7 @@ Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be given per invoc
 
 | Command | Description |
 |---------|-------------|
-| `gw new <branch> [--prompt-file <path> \| --prompt "..." \| --prompt-stdin]` | Create worktree + optionally launch AI with task |
+| `gw new <branch> [--prompt-file <path> \| --prompt "..." \| --prompt -]` | Create worktree + optionally launch AI with task |
 | `gw rm <branch>` | Delete worktree and branch |
 | `gw list` | List all worktrees with status |
 | `gw resume [branch]` | Resume AI session in worktree |
@@ -147,7 +149,7 @@ Three ways to supply the initial prompt (mutually exclusive):
 |------|-------------|
 | `--prompt-file <path>` ⭐ | Convenient for multi-line prompts, editor-managed content, or skill-generated files. |
 | `--prompt "<text>"` | Short single-line prompts only. |
-| `--prompt-stdin` | Piping from another command (`cmd \| gw new ... --prompt-stdin`). |
+| `--prompt -` | Piping from another command (`cmd \| gw new ... --prompt -`). |
 
 Example (recommended):
 ```bash

@@ -82,40 +82,31 @@ fn test_new_help() {
         .success()
         .stdout(predicate::str::contains("--path"))
         .stdout(predicate::str::contains("--base"))
-        .stdout(predicate::str::contains("--no-term"))
         .stdout(predicate::str::contains("--term"))
         .stdout(predicate::str::contains("--bg").not())
         .stdout(predicate::str::contains("--fg").not())
         .stdout(predicate::str::contains("--prompt "))
-        .stdout(predicate::str::contains("--prompt-file"))
-        .stdout(predicate::str::contains("--prompt-stdin"));
+        .stdout(predicate::str::contains("--prompt-file"));
 }
 
 #[test]
-fn gw_new_rejects_dropped_launch_flags() {
-    // --bg, --fg were removed in Phase 6.3; clap should reject them
-    cw().args(["new", "x", "--bg", "--no-term"])
-        .assert()
-        .failure()
-        .stderr(
-            predicate::str::contains("unexpected argument").or(predicate::str::contains("--bg")),
+fn gw_new_forwards_unknown_flags_to_ai_tool() {
+    // Trailing args are forwarded verbatim to the AI tool. Unknown flags
+    // like `--bg`, `--fg`, `--no-term`, `--prompt-stdin` are NOT rejected
+    // by clap — they sit in `forward_args` and would be handed to claude/
+    // codex/gemini. Verify clap accepts them in that slot.
+    for flag in ["--bg", "--fg", "--no-term", "--prompt-stdin"] {
+        let cli = Cli::try_parse_from(["gw", "new", "feat-x", flag])
+            .unwrap_or_else(|e| panic!("clap should forward {flag} into AI tool args: {e}"));
+        let Some(Commands::New { forward_args, .. }) = cli.command else {
+            panic!("expected New variant for flag {flag}");
+        };
+        assert_eq!(
+            forward_args,
+            vec![flag.to_string()],
+            "{flag} should land in forward_args"
         );
-    cw().args(["new", "x", "--fg", "--no-term"])
-        .assert()
-        .failure()
-        .stderr(
-            predicate::str::contains("unexpected argument").or(predicate::str::contains("--fg")),
-        );
-    // --term is restored in 1.0; --term + --no-term is a conflict (not unexpected argument)
-    cw().args(["new", "x", "--term", "tmux", "--no-term"])
-        .assert()
-        .failure()
-        .stderr(
-            predicate::str::contains("cannot be used with")
-                .or(predicate::str::contains("conflict"))
-                .or(predicate::str::contains("--term"))
-                .or(predicate::str::contains("--no-term")),
-        );
+    }
 }
 
 #[test]
@@ -147,21 +138,21 @@ fn test_resume_help() {
 }
 
 #[test]
-fn gw_resume_rejects_dropped_launch_flags() {
-    // --bg, --fg were removed in Phase 6.3; clap should reject them
-    // --term is restored in 1.0 and is now accepted
-    cw().args(["resume", "some-branch", "--bg"])
-        .assert()
-        .failure()
-        .stderr(
-            predicate::str::contains("unexpected argument").or(predicate::str::contains("--bg")),
+fn gw_resume_forwards_unknown_flags_to_ai_tool() {
+    // Same forwarding behaviour as `gw new` — unknown flags ride along in
+    // forward_args rather than being rejected by clap.
+    for flag in ["--bg", "--fg"] {
+        let cli = Cli::try_parse_from(["gw", "resume", "some-branch", flag])
+            .unwrap_or_else(|e| panic!("clap should forward {flag} into AI tool args: {e}"));
+        let Some(Commands::Resume { forward_args, .. }) = cli.command else {
+            panic!("expected Resume variant for flag {flag}");
+        };
+        assert_eq!(
+            forward_args,
+            vec![flag.to_string()],
+            "{flag} should land in resume forward_args"
         );
-    cw().args(["resume", "some-branch", "--fg"])
-        .assert()
-        .failure()
-        .stderr(
-            predicate::str::contains("unexpected argument").or(predicate::str::contains("--fg")),
-        );
+    }
 }
 
 #[test]
@@ -269,11 +260,11 @@ fn test_upgrade_runs() {
 // --- New CLI option tests ---
 
 #[test]
-fn test_new_base_short_flag() {
+fn test_new_base_long_flag() {
+    // `-b` was dropped (conflicted with claude-side flags). `--base` only.
     cw().args(["new", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("-b"))
         .stdout(predicate::str::contains("--base"));
 }
 
@@ -335,7 +326,6 @@ fn new_accepts_prompt_flag() {
     let Some(Commands::New {
         prompt,
         prompt_file,
-        prompt_stdin,
         ..
     }) = cli.command
     else {
@@ -343,7 +333,6 @@ fn new_accepts_prompt_flag() {
     };
     assert_eq!(prompt.as_deref(), Some("hello"));
     assert!(prompt_file.is_none());
-    assert!(!prompt_stdin);
 }
 
 #[test]
@@ -353,7 +342,6 @@ fn new_accepts_prompt_file_flag() {
     let Some(Commands::New {
         prompt,
         prompt_file,
-        prompt_stdin,
         ..
     }) = cli.command
     else {
@@ -364,16 +352,18 @@ fn new_accepts_prompt_file_flag() {
         prompt_file.as_deref().and_then(|p| p.to_str()),
         Some("/tmp/p.txt")
     );
-    assert!(!prompt_stdin);
 }
 
 #[test]
-fn new_accepts_prompt_stdin_flag() {
-    let cli = Cli::try_parse_from(["gw", "new", "feat-x", "--prompt-stdin"]).expect("parses");
-    let Some(Commands::New { prompt_stdin, .. }) = cli.command else {
+fn new_accepts_prompt_dash_for_stdin() {
+    // `--prompt -` replaces the old `--prompt-stdin` flag. clap parses it
+    // as a literal "-" — the runtime dispatch reads stdin.
+    let cli =
+        Cli::try_parse_from(["gw", "new", "feat-x", "--prompt", "-"]).expect("parses --prompt -");
+    let Some(Commands::New { prompt, .. }) = cli.command else {
         panic!("expected New variant");
     };
-    assert!(prompt_stdin);
+    assert_eq!(prompt.as_deref(), Some("-"));
 }
 
 #[test]
@@ -386,33 +376,6 @@ fn new_rejects_conflicting_prompt_sources() {
         "hi",
         "--prompt-file",
         "/tmp/p.txt",
-    ])
-    .unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("cannot be used with") || msg.contains("conflict"),
-        "expected conflict error, got: {msg}"
-    );
-}
-
-#[test]
-fn new_rejects_prompt_and_stdin() {
-    let err = Cli::try_parse_from(["gw", "new", "feat-x", "--prompt", "hi", "--prompt-stdin"])
-        .unwrap_err();
-    assert!(
-        err.to_string().contains("cannot be used with") || err.to_string().contains("conflict")
-    );
-}
-
-#[test]
-fn new_rejects_file_and_stdin() {
-    let err = Cli::try_parse_from([
-        "gw",
-        "new",
-        "feat-x",
-        "--prompt-file",
-        "/tmp/p.txt",
-        "--prompt-stdin",
     ])
     .unwrap_err();
     let msg = err.to_string();
@@ -444,15 +407,17 @@ fn new_accepts_long_term() {
 }
 
 #[test]
-fn new_rejects_term_with_no_term() {
-    let err = Cli::try_parse_from(["gw", "new", "feat-x", "-T", "fg", "--no-term"])
-        .expect_err("clap should reject -T with --no-term");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("--no-term") || msg.contains("--term") || msg.contains("conflict"),
-        "expected conflict message, got: {}",
-        msg
-    );
+fn new_term_skip_aliases_parse() {
+    // `--no-term` is gone — `-T skip|none|noop` replaces it. All three
+    // names must round-trip through clap.
+    for alias in ["skip", "none", "noop"] {
+        let cli = Cli::try_parse_from(["gw", "new", "feat-x", "-T", alias])
+            .unwrap_or_else(|e| panic!("clap should accept -T {alias}: {e}"));
+        match cli.command {
+            Some(Commands::New { term, .. }) => assert_eq!(term.as_deref(), Some(alias)),
+            other => panic!("unexpected command variant: {:?}", other),
+        }
+    }
 }
 
 #[test]
@@ -467,9 +432,15 @@ fn resume_accepts_dash_t_term() {
     let cli = Cli::try_parse_from(["gw", "resume", "feat-x", "-T", "w-t"])
         .expect("parses resume with -T");
     match cli.command {
-        Some(Commands::Resume { branch, term }) => {
+        Some(Commands::Resume {
+            branch,
+            term,
+            forward_args,
+            ..
+        }) => {
             assert_eq!(branch.as_deref(), Some("feat-x"));
             assert_eq!(term.as_deref(), Some("w-t"));
+            assert!(forward_args.is_empty());
         }
         other => panic!("unexpected command variant: {:?}", other),
     }
@@ -481,9 +452,15 @@ fn resume_term_without_branch() {
     let cli =
         Cli::try_parse_from(["gw", "resume", "-T", "fg"]).expect("parses resume without branch");
     match cli.command {
-        Some(Commands::Resume { branch, term }) => {
+        Some(Commands::Resume {
+            branch,
+            term,
+            forward_args,
+            ..
+        }) => {
             assert!(branch.is_none());
             assert_eq!(term.as_deref(), Some("fg"));
+            assert!(forward_args.is_empty());
         }
         other => panic!("unexpected command variant: {:?}", other),
     }

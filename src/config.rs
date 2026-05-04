@@ -413,25 +413,6 @@ pub fn get_ai_tool_resume_command_for_cwd(cwd: &Path) -> Result<Vec<String>> {
     Ok(cmd)
 }
 
-/// Get the AI tool command with an initial prompt for interactive delegation.
-///
-/// Appends the prompt as a positional argument so the AI tool starts in interactive mode
-/// with the given task. For Claude Code: `claude "<prompt>"` starts interactive with initial prompt.
-pub fn get_ai_tool_delegate_command(prompt: &str) -> Result<Vec<String>> {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    get_ai_tool_delegate_command_for_cwd(&cwd, prompt)
-}
-
-/// Like [`get_ai_tool_delegate_command`] but resolves config from `cwd` so a repo-local `.cwconfig.json` can override the global `ai_tool` block.
-pub fn get_ai_tool_delegate_command_for_cwd(cwd: &Path, prompt: &str) -> Result<Vec<String>> {
-    let mut cmd = get_ai_tool_command_for_cwd(cwd)?;
-    if cmd.is_empty() {
-        return Ok(cmd);
-    }
-    cmd.push(prompt.to_string());
-    Ok(cmd)
-}
-
 /// Check if the currently configured AI tool is Claude-based.
 pub fn is_claude_tool() -> Result<bool> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -705,9 +686,8 @@ mod tests {
     /// Regression guard for the bug where `spawn_in_worktree(prompt=Some)`
     /// mistakenly used the merge preset (which injects `--print
     /// --tools=default`) and left users staring at a blank pane while claude
-    /// ran headlessly. The interactive presets backing
-    /// `get_ai_tool_delegate_command` must never carry `--print` or any other
-    /// non-interactive automation flag.
+    /// ran headlessly. The interactive presets must never carry `--print` or
+    /// any other non-interactive automation flag.
     #[test]
     fn interactive_presets_have_no_print_flag() {
         let presets = ai_tool_presets();

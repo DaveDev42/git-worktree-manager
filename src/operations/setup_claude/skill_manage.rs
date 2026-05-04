@@ -261,17 +261,20 @@ Complete reference for all gw (git-worktree-manager) commands.
 
 ## Core Worktree Management
 
-### `gw new <branch> [OPTIONS]`
-Create new worktree for feature branch.
-- `-p, --path <PATH>` — Custom worktree path (default: `../<repo>-<branch>`)
-- `-b, --base <BASE>` — Base branch to create from (default: from config or auto-detect)
-- `--no-term` — Skip AI tool launch
-- `-T, --term <METHOD>` — Terminal launch method. Accepts canonical name (e.g., `tmux`, `wezterm-tab`) or alias (e.g., `t`, `w-t`). Supports `method:session-name` for tmux/zellij (e.g., `tmux:mywork`). See Terminal Launch Methods section below.
-- `--prompt <PROMPT>` — Initial prompt as a CLI string (single-line, best for short prompts)
+### `gw new <branch> [OPTIONS] [-- AI_TOOL_ARGS...]`
+Create new worktree for feature branch. Trailing positional args after the
+branch name (or after `--`) are forwarded verbatim to the AI tool
+(claude/codex/gemini).
+- `--path <PATH>` — Custom worktree path (default: `../<repo>-<branch>`)
+- `--base <BASE>` — Base branch to create from (default: from config or auto-detect)
+- `-T, --term <METHOD>` — Terminal launch method. Accepts canonical name (e.g., `tmux`, `wezterm-tab`) or alias (e.g., `t`, `w-t`). Supports `method:session-name` for tmux/zellij (e.g., `tmux:mywork`). Use `-T skip` (or aliases `none`/`noop`) to skip the AI tool launch. See Terminal Launch Methods section below.
+- `--prompt <PROMPT>` — Initial prompt as a CLI string. Use `-` to read the prompt from stdin (e.g. `cmd | gw new br --prompt -`). Avoid `--prompt -` together with `-T <terminal>` — the spawned terminal may inherit a closed stdin.
 - `--prompt-file <PATH>` — Read initial prompt from a file (recommended for multi-line / quoted content)
-- `--prompt-stdin` — Read initial prompt from standard input (for piping). Avoid combining with `-T <terminal>` — the spawned terminal may inherit a closed stdin.
+- `--no-env-forward` — Disable auto-forwarding of `<TOOL>_*` env vars (e.g. `CLAUDE_*`) from the parent shell into the spawned process.
 
-Only one of `--prompt`, `--prompt-file`, `--prompt-stdin` may be used per invocation.
+Only one of `--prompt`, `--prompt-file` may be used per invocation.
+`--prompt`/`--prompt-file` are mutually exclusive with trailing AI tool args
+(both end up setting the AI tool's prompt — pick one).
 
 ### `gw rm [target] [OPTIONS]`
 Delete one or more worktrees. With no target, removes the current worktree; with one or more targets, removes each. Use `-i` for the multi-select UI.
@@ -288,10 +291,14 @@ List all worktrees in a rich, human-readable view with status indicators (active
 ### `gw ls`
 Print all worktrees as TSV (one row per worktree, tab-separated columns: `worktree_id`, `branch`, `status`, `age`, `repo_root`, `path`). For scripts and pipelines.
 
-### `gw resume [TARGET] [OPTIONS]`
-Resume AI work in a worktree. Auto-detects existing Claude sessions and uses `--continue`.
+### `gw resume [TARGET] [OPTIONS] [-- AI_TOOL_ARGS...]`
+Resume AI work in a worktree. Auto-detects existing Claude sessions and uses
+`--continue` (claude) / `--resume` (codex/gemini); the resume flag is always
+re-injected even when forward args are present.
 Target is resolved in order: exact worktree name → exact branch name → exact path.
 - `-T, --term <METHOD>` — Terminal launch method (same format as `gw new`)
+- `--no-env-forward` — Disable auto-forwarding of `<TOOL>_*` env vars.
+- Trailing args (after the target, or after `--`) are forwarded verbatim to the AI tool.
 
 ## Maintenance
 

@@ -18,6 +18,7 @@
 //! are unaffected either way: their pane still closes when the AI tool
 //! exits because the `bash -lc` invocation has nothing else to do.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -35,6 +36,12 @@ pub struct SpawnSpec {
     pub argv: Vec<String>,
     pub cwd: PathBuf,
     pub self_unlink: bool,
+    /// Extra environment variables to inject before `execvp`. Stored in a
+    /// `BTreeMap` for deterministic JSON ordering (round-trip stable).
+    /// Field is `#[serde(default)]` so older specs (no `env` key) still
+    /// parse without bumping `SPEC_VERSION`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
 }
 
 impl SpawnSpec {
@@ -44,7 +51,14 @@ impl SpawnSpec {
             argv,
             cwd,
             self_unlink: true,
+            env: BTreeMap::new(),
         }
+    }
+
+    /// Builder-style: replace the env map.
+    pub fn with_env(mut self, env: BTreeMap<String, String>) -> Self {
+        self.env = env;
+        self
     }
 }
 
@@ -231,7 +245,15 @@ pub fn execute(spec_path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        let err = std::process::Command::new(program).args(args).exec();
+        let mut command = std::process::Command::new(program);
+        command.args(args);
+        for (k, v) in &spec.env {
+            // env() shadows any same-named parent env in the spawned process
+            // — exactly what we want: explicit `--env KEY=VAL` and the
+            // launch-time snapshot win over the launcher pane's inherited env.
+            command.env(k, v);
+        }
+        let err = command.exec();
         // exec only returns on failure.
         eprintln!("spawn-ai: exec {} failed: {}", program, err);
         std::process::exit(127);
@@ -241,7 +263,12 @@ pub fn execute(spec_path: &Path) -> Result<()> {
     {
         // Exit directly with the child's code to mirror Unix execvp semantics
         // as closely as we can on Windows (no true process replacement).
-        let status = match std::process::Command::new(program).args(args).status() {
+        let mut command = std::process::Command::new(program);
+        command.args(args);
+        for (k, v) in &spec.env {
+            command.env(k, v);
+        }
+        let status = match command.status() {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("spawn-ai: spawn {} failed: {}", program, e);

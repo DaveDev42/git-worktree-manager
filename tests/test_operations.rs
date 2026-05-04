@@ -24,7 +24,7 @@ fn worktree_path(repo: &TestRepo, branch: &str) -> std::path::PathBuf {
 #[test]
 fn test_create_worktree_basic() {
     let repo = TestRepo::new();
-    let output = repo.cw(&["new", "fix-auth", "--no-term"]);
+    let output = repo.cw(&["new", "fix-auth", "-T", "skip"]);
     assert!(
         output.status.success(),
         "cw new failed: {}",
@@ -55,7 +55,8 @@ fn test_create_worktree_custom_path() {
     let output = repo.cw(&[
         "new",
         "custom-branch",
-        "--no-term",
+        "-T",
+        "skip",
         "--path",
         custom.to_str().unwrap(),
     ]);
@@ -77,7 +78,7 @@ fn test_create_worktree_with_base_branch() {
     let repo = TestRepo::new();
     repo.create_branch("develop");
 
-    let output = repo.cw(&["new", "feature", "--no-term", "--base", "develop"]);
+    let output = repo.cw(&["new", "feature", "-T", "skip", "--base", "develop"]);
     assert!(output.status.success());
 
     let wt = worktree_path(&repo, "feature");
@@ -95,7 +96,8 @@ fn test_create_worktree_invalid_base() {
     let output = repo.cw(&[
         "new",
         "feature",
-        "--no-term",
+        "-T",
+        "skip",
         "--base",
         "nonexistent-branch",
     ]);
@@ -131,7 +133,7 @@ fn test_create_worktree_invalid_branch_name() {
         "feat test",
     ];
     for name in &invalid_names {
-        let output = repo.cw(&["new", name, "--no-term"]);
+        let output = repo.cw(&["new", name, "-T", "skip"]);
         assert!(
             !output.status.success(),
             "Expected failure for branch name '{}', but got success",
@@ -147,11 +149,11 @@ fn test_create_worktree_invalid_branch_name() {
 #[test]
 fn test_create_worktree_existing_worktree() {
     let repo = TestRepo::new();
-    let output1 = repo.cw(&["new", "duplicate-test", "--no-term"]);
+    let output1 = repo.cw(&["new", "duplicate-test", "-T", "skip"]);
     assert!(output1.status.success());
 
     // Second creation with same name should fail
-    let output2 = repo.cw(&["new", "duplicate-test", "--no-term"]);
+    let output2 = repo.cw(&["new", "duplicate-test", "-T", "skip"]);
     assert!(!output2.status.success());
     let combined = format!(
         "{}{}",
@@ -177,7 +179,7 @@ fn test_create_worktree_existing_branch() {
     repo.create_branch("existing-branch");
 
     // Create worktree from existing branch
-    let output = repo.cw(&["new", "existing-branch", "--no-term"]);
+    let output = repo.cw(&["new", "existing-branch", "-T", "skip"]);
     assert!(
         output.status.success(),
         "cw new for existing branch failed: {}{}",
@@ -207,7 +209,7 @@ fn test_create_worktree_from_remote_only_branch() {
     assert!(!branches.contains("remote-feature"));
 
     // Create worktree from remote branch
-    let output = repo.cw(&["new", "remote-feature", "--no-term"]);
+    let output = repo.cw(&["new", "remote-feature", "-T", "skip"]);
     assert!(
         output.status.success(),
         "cw new from remote branch failed: {}{}",
@@ -236,7 +238,8 @@ fn test_create_worktree_from_remote_with_custom_path() {
     let output = repo.cw(&[
         "new",
         "remote-custom-path",
-        "--no-term",
+        "-T",
+        "skip",
         "--path",
         custom.to_str().unwrap(),
     ]);
@@ -267,7 +270,7 @@ fn test_create_worktree_remote_has_different_content() {
 
     assert!(!repo.path().join("remote-file.txt").exists());
 
-    let output = repo.cw(&["new", "content-branch", "--no-term"]);
+    let output = repo.cw(&["new", "content-branch", "-T", "skip"]);
     assert!(output.status.success());
 
     let wt = worktree_path(&repo, "content-branch");
@@ -292,7 +295,7 @@ fn test_create_worktree_from_remote_with_explicit_base() {
     repo.git(&["push", "origin", "remote-with-base"]);
     repo.git(&["branch", "-D", "remote-with-base"]);
 
-    let output = repo.cw(&["new", "remote-with-base", "--no-term", "--base", "develop"]);
+    let output = repo.cw(&["new", "remote-with-base", "-T", "skip", "--base", "develop"]);
     assert!(output.status.success());
 
     let wt = worktree_path(&repo, "remote-with-base");
@@ -315,7 +318,8 @@ fn test_create_worktree_from_remote_with_invalid_base() {
     let output = repo.cw(&[
         "new",
         "remote-invalid-base",
-        "--no-term",
+        "-T",
+        "skip",
         "--base",
         "nonexistent-base",
     ]);
@@ -336,7 +340,7 @@ fn test_create_worktree_local_branch_takes_precedence_over_remote() {
     repo.git(&["fetch", "origin"]);
 
     // Branch exists both locally and remotely — should use local
-    let output = repo.cw(&["new", "both-local-remote", "--no-term"]);
+    let output = repo.cw(&["new", "both-local-remote", "-T", "skip"]);
     assert!(output.status.success());
     let wt = worktree_path(&repo, "both-local-remote");
     assert!(wt.exists());
@@ -442,7 +446,7 @@ fn test_rm_worktree_created_from_remote() {
     repo.git(&["push", "origin", "delete-remote-test"]);
     repo.git(&["branch", "-D", "delete-remote-test"]);
 
-    let output = repo.cw(&["new", "delete-remote-test", "--no-term"]);
+    let output = repo.cw(&["new", "delete-remote-test", "-T", "skip"]);
     assert!(output.status.success());
 
     let wt = worktree_path(&repo, "delete-remote-test");
@@ -694,7 +698,7 @@ fn test_create_worktree_from_remote_stores_metadata() {
     repo.git(&["push", "origin", "meta-test"]);
     repo.git(&["branch", "-D", "meta-test"]);
 
-    let output = repo.cw(&["new", "meta-test", "--no-term"]);
+    let output = repo.cw(&["new", "meta-test", "-T", "skip"]);
     assert!(output.status.success());
 
     // Verify metadata is stored

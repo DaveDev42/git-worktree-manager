@@ -29,7 +29,7 @@ fn post_new_nonzero_exit_fails_gw_new() {
     )
     .unwrap();
 
-    let out = repo.cw(&["new", "feat-postnew-fail", "--no-term"]);
+    let out = repo.cw(&["new", "feat-postnew-fail", "-T", "skip"]);
     assert!(
         !out.status.success(),
         "gw new should fail when post_new exits non-zero. stdout={:?} stderr={:?}",
