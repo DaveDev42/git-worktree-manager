@@ -169,6 +169,9 @@ fn auto_forward_prefix(ai_tool_name: &str) -> Option<&'static str> {
 ///
 /// `CLAUDE_CODE_EXECPATH` points at the parent's bundled binary path; it
 /// has no meaning for an independently-launched child claude.
+///
+/// Scope: only keys currently known to alter the *child's* runtime behavior.
+/// Display-only or informational `CLAUDE_*` vars don't need to be listed.
 const CLAUDE_PARENT_CONTEXT_VARS: &[&str] = &["CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_EXECPATH"];
 
 /// Build the env map injected into the spawned AI tool process.
