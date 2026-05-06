@@ -62,9 +62,6 @@ jobs:
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
             use_cross: true
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            use_cross: false
           - target: aarch64-apple-darwin
             os: macos-latest
             use_cross: false
@@ -148,79 +145,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.resolve-release.outputs.tag_name }}
 
-      - name: Update Homebrew formula
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          TAG: ${{ needs.resolve-release.outputs.tag_name }}
-        run: |
-          if [ -z "${GH_TOKEN}" ]; then
-            echo "::warning::HOMEBREW_TAP_TOKEN not set, skipping formula update"
-            exit 0
-          fi
-
-          VERSION="${TAG#v}"
-          export VERSION
-          export SHA_DARWIN_ARM64=$(grep -m1 'aarch64-apple-darwin' SHA256SUMS.txt | awk '{print $1}')
-          export SHA_DARWIN_X86_64=$(grep -m1 'x86_64-apple-darwin' SHA256SUMS.txt | awk '{print $1}')
-          export SHA_LINUX_ARM64=$(grep -m1 'aarch64-unknown-linux-musl' SHA256SUMS.txt | awk '{print $1}')
-          export SHA_LINUX_X86_64=$(grep -m1 'x86_64-unknown-linux-musl' SHA256SUMS.txt | awk '{print $1}')
-
-          for var in SHA_DARWIN_ARM64 SHA_DARWIN_X86_64 SHA_LINUX_ARM64 SHA_LINUX_X86_64; do
-            if [ -z "${!var}" ]; then
-              echo "::error::Failed to extract checksum for ${var}"
-              exit 1
-            fi
-          done
-
-          # Single-quoted heredoc preserves Ruby #{version}/#{bin},
-          # envsubst replaces only the listed shell variables
-          cat <<'FORMULA' | envsubst '$VERSION $SHA_DARWIN_ARM64 $SHA_DARWIN_X86_64 $SHA_LINUX_ARM64 $SHA_LINUX_X86_64' > /tmp/git-worktree-manager.rb
-          class GitWorktreeManager < Formula
-            desc "CLI tool integrating git worktree with AI coding assistants"
-            homepage "https://github.com/DaveDev42/git-worktree-manager"
-            version "$VERSION"
-            license "BSD-3-Clause"
-
-            on_macos do
-              if Hardware::CPU.arm?
-                url "https://github.com/DaveDev42/git-worktree-manager/releases/download/v#{version}/gw-aarch64-apple-darwin.tar.gz"
-                sha256 "$SHA_DARWIN_ARM64"
-              else
-                url "https://github.com/DaveDev42/git-worktree-manager/releases/download/v#{version}/gw-x86_64-apple-darwin.tar.gz"
-                sha256 "$SHA_DARWIN_X86_64"
-              end
-            end
-
-            on_linux do
-              if Hardware::CPU.arm?
-                url "https://github.com/DaveDev42/git-worktree-manager/releases/download/v#{version}/gw-aarch64-unknown-linux-musl.tar.gz"
-                sha256 "$SHA_LINUX_ARM64"
-              else
-                url "https://github.com/DaveDev42/git-worktree-manager/releases/download/v#{version}/gw-x86_64-unknown-linux-musl.tar.gz"
-                sha256 "$SHA_LINUX_X86_64"
-              end
-            end
-
-            def install
-              bin.install "gw"
-            end
-
-            test do
-              assert_match "gw #{version}", shell_output("#{bin}/gw --version")
-            end
-          end
-          FORMULA
-
-          git clone --branch main --single-branch https://github.com/DaveDev42/homebrew-tap.git /tmp/homebrew-tap
-          cd /tmp/homebrew-tap
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/DaveDev42/homebrew-tap.git"
-          mkdir -p Formula
-          cp /tmp/git-worktree-manager.rb Formula/git-worktree-manager.rb
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/git-worktree-manager.rb
-          git commit -m "chore: update git-worktree-manager to ${VERSION}"
-          git push || echo "::warning::Homebrew tap push failed (non-fatal)"
+      - name: Bump Formula/git-worktree-manager.rb in DaveDev42/homebrew-tap
+        uses: DaveDev42/homebrew-tap-release@v1
+        with:
+          formula-name: git-worktree-manager
+          version: ${{ needs.resolve-release.outputs.tag_name }}
+          download-url: https://github.com/DaveDev42/git-worktree-manager/releases/download/${{ needs.resolve-release.outputs.tag_name }}/gw-aarch64-apple-darwin.tar.gz
+          tap-token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
   publish-crate:
     needs: resolve-release
