@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.4](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.3...v0.1.4) (2026-05-06)
+
+
+### Features
+
+* forward args to AI tool, drop --no-term/--prompt-stdin, add env auto-snapshot ([#148](https://github.com/DaveDev42/git-worktree-manager/issues/148)) ([6726284](https://github.com/DaveDev42/git-worktree-manager/commit/67262844b3a73dae01e7cf97e09eda1236382d23))
+* **guard:** inject PreToolUse(Bash) hook into gw-spawned Claude sessions ([#147](https://github.com/DaveDev42/git-worktree-manager/issues/147)) ([b12f4f8](https://github.com/DaveDev42/git-worktree-manager/commit/b12f4f829b7af069bbe7868165b6fbc0c8ee772f))
+
+
+### Bug Fixes
+
+* lift hyphen-led target into forward_args for spawn/resume ([#149](https://github.com/DaveDev42/git-worktree-manager/issues/149)) ([fa6b9e6](https://github.com/DaveDev42/git-worktree-manager/commit/fa6b9e68fa5ac9a04fc660b1885af84f0aa70275))
+* **resume:** always inject resume flag, drop session-detection gate ([#150](https://github.com/DaveDev42/git-worktree-manager/issues/150)) ([5fef11b](https://github.com/DaveDev42/git-worktree-manager/commit/5fef11b14483ebb3349d1eb24557c38c17718df3))
+* **spawn:** use interactive prompt for gw new/spawn --prompt ([#143](https://github.com/DaveDev42/git-worktree-manager/issues/143)) ([e9dcab9](https://github.com/DaveDev42/git-worktree-manager/commit/e9dcab996c4a7549710a13efeb5d8d511920d5e2))
+
 ## [0.1.3](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.2...v0.1.3) (2026-05-03)
 
 
