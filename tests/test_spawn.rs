@@ -12,7 +12,9 @@ use common::TestRepo;
 
 use std::sync::Mutex;
 
-use git_worktree_manager::operations::ai_tools::{spawn_in_worktree, LaunchOptions};
+use git_worktree_manager::operations::ai_tools::{
+    resume_worktree, spawn_in_worktree, LaunchOptions,
+};
 
 /// Mutex to serialize env-var mutations so parallel test threads don't stomp
 /// on each other's CW_AI_TOOL / CW_LAUNCH_METHOD values.
@@ -465,4 +467,128 @@ fn prompt_plus_forward_args_is_rejected() {
         msg.contains("--prompt") && msg.contains("AI tool args"),
         "error message should mention --prompt and forward args; got: {msg}"
     );
+}
+
+#[test]
+fn resume_injects_continue_flag_even_without_local_session() {
+    // README contract: `gw resume` always re-injects the AI tool's resume
+    // flag (`--continue` for claude). The previous behaviour gated this on
+    // `claude_native_session_exists`, which silently dropped the flag when
+    // the local session-cache check failed (different HOME, fresh worktree,
+    // unset CLAUDE_CONFIG_DIR, …) — even though the user explicitly ran
+    // `gw resume`. The HOME tempdir below guarantees no native session is
+    // detected, so this test exercises the formerly-broken path.
+    let repo = TestRepo::new();
+    let wt_path = repo.create_worktree("resume-no-session");
+    let scratch = tempfile::tempdir().expect("scratch");
+    let script = write_claude_sentinel(scratch.path());
+
+    let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = EnvGuard {
+        saved: vec![
+            ("HOME", std::env::var_os("HOME")),
+            ("CW_LAUNCH_METHOD", std::env::var_os("CW_LAUNCH_METHOD")),
+            ("CW_AI_TOOL", std::env::var_os("CW_AI_TOOL")),
+            ("CW_SPAWN_AI_BIN", std::env::var_os("CW_SPAWN_AI_BIN")),
+            ("PATH", std::env::var_os("PATH")),
+        ],
+    };
+    // Empty HOME guarantees `claude_native_session_exists` returns false —
+    // the regression path we're locking down.
+    let fake_home = tempfile::tempdir().expect("fake HOME");
+    std::env::set_var("HOME", fake_home.path());
+    std::env::set_var("CW_LAUNCH_METHOD", "foreground");
+    std::env::set_var("CW_AI_TOOL", &script);
+    let gw_bin = std::path::PathBuf::from(env!("CARGO_BIN_EXE_gw"));
+    std::env::set_var("CW_SPAWN_AI_BIN", &gw_bin);
+    if let Some(bin_dir) = gw_bin.parent() {
+        let mut paths: Vec<std::path::PathBuf> = vec![bin_dir.to_path_buf()];
+        if let Some(existing) = std::env::var_os("PATH") {
+            paths.extend(std::env::split_paths(&existing));
+        }
+        if let Ok(joined) = std::env::join_paths(paths) {
+            std::env::set_var("PATH", joined);
+        }
+    }
+    // Resolution of the no-target branch reads cwd, so chdir into the worktree.
+    let prev_cwd = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(&wt_path).expect("chdir into worktree");
+
+    let result = resume_worktree(None, &LaunchOptions::default());
+    let _ = std::env::set_current_dir(&prev_cwd);
+    assert!(result.is_ok(), "resume returned Err: {:?}", result);
+
+    // Either form is acceptable: the resume preset for `claude` injects
+    // `--continue`, but when CW_AI_TOOL points at an arbitrary binary
+    // (as it does here) the universal fallback in
+    // `get_ai_tool_resume_command_for_cwd` appends `--resume` instead.
+    // The user-facing contract is "some resume flag is always injected,"
+    // not specifically `--continue`.
+    let argv = last_spec(&wt_path).argv;
+    assert!(
+        argv.iter().any(|a| a == "--continue" || a == "--resume"),
+        "`gw resume` against a worktree with no native session must still \
+         inject a resume flag (README's 'always re-injects' contract). argv: {argv:?}"
+    );
+}
+
+#[test]
+fn resume_with_forward_args_keeps_continue_flag() {
+    // Belt-and-suspenders: even when the user passes forward_args, the
+    // resume flag must survive. forward_args should slot AFTER the preset
+    // (which already contains --continue), not replace it.
+    let repo = TestRepo::new();
+    let wt_path = repo.create_worktree("resume-fwd");
+    let scratch = tempfile::tempdir().expect("scratch");
+    let script = write_claude_sentinel(scratch.path());
+
+    let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = EnvGuard {
+        saved: vec![
+            ("HOME", std::env::var_os("HOME")),
+            ("CW_LAUNCH_METHOD", std::env::var_os("CW_LAUNCH_METHOD")),
+            ("CW_AI_TOOL", std::env::var_os("CW_AI_TOOL")),
+            ("CW_SPAWN_AI_BIN", std::env::var_os("CW_SPAWN_AI_BIN")),
+            ("PATH", std::env::var_os("PATH")),
+        ],
+    };
+    let fake_home = tempfile::tempdir().expect("fake HOME");
+    std::env::set_var("HOME", fake_home.path());
+    std::env::set_var("CW_LAUNCH_METHOD", "foreground");
+    std::env::set_var("CW_AI_TOOL", &script);
+    let gw_bin = std::path::PathBuf::from(env!("CARGO_BIN_EXE_gw"));
+    std::env::set_var("CW_SPAWN_AI_BIN", &gw_bin);
+    if let Some(bin_dir) = gw_bin.parent() {
+        let mut paths: Vec<std::path::PathBuf> = vec![bin_dir.to_path_buf()];
+        if let Some(existing) = std::env::var_os("PATH") {
+            paths.extend(std::env::split_paths(&existing));
+        }
+        if let Ok(joined) = std::env::join_paths(paths) {
+            std::env::set_var("PATH", joined);
+        }
+    }
+    let prev_cwd = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(&wt_path).expect("chdir into worktree");
+
+    let forward = vec!["--model".to_string(), "haiku".to_string()];
+    let opts = LaunchOptions {
+        term_override: None,
+        forward_args: &forward,
+        no_env_forward: false,
+    };
+    let result = resume_worktree(None, &opts);
+    let _ = std::env::set_current_dir(&prev_cwd);
+    assert!(result.is_ok(), "resume returned Err: {:?}", result);
+
+    let argv = last_spec(&wt_path).argv;
+    assert!(
+        argv.iter().any(|a| a == "--continue" || a == "--resume"),
+        "resume flag must survive forward_args. argv: {argv:?}"
+    );
+    for needle in &forward {
+        assert!(
+            argv.iter().any(|a| a == needle),
+            "forward arg {needle:?} missing. argv: {argv:?}"
+        );
+    }
 }
