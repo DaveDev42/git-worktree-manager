@@ -3,11 +3,12 @@ description: Cut a patch release of git-worktree-manager (release-please + brew 
 ---
 
 Drive a patch release end-to-end. The release pipeline is automated by
-release-please + `.github/workflows/release.yml` (multi-platform build,
-GitHub Release publish, Homebrew tap update, crates.io publish). Your job
-is to gate, merge, watch, and **verify the tap actually got the new
-version** — `release.yml` swallows tap-update warnings, so a "green"
-workflow can still leave the tap one version behind.
+release-please + `.github/workflows/release-please.yml` (multi-platform
+build, GitHub Release publish, Homebrew tap update, crates.io publish).
+Your job is to gate, merge, watch, and **independently verify the tap
+actually got the new version** — even when the workflow reports green,
+the only durable signal that downstream users will see the new release
+is a real `brew upgrade` resolving to the new version.
 
 ## Inputs
 
@@ -115,12 +116,12 @@ MERGE_SHA=$(git rev-parse origin/main)
 The squash subject is the PR title (`chore(main): release X.Y.Z`),
 which is the conventional commit release-please needs to fire next.
 
-### Step 4 — Watch the `release.yml` run
+### Step 4 — Watch the `release-please.yml` run
 
 Find the run triggered by the merge and watch it:
 
 ```sh
-RUN_ID=$(gh run list --workflow=release.yml --branch=main --limit=1 \
+RUN_ID=$(gh run list --workflow=release-please.yml --branch=main --limit=1 \
   --json databaseId,headSha \
   --jq ".[] | select(.headSha==\"$MERGE_SHA\") | .databaseId")
 
@@ -138,17 +139,11 @@ gh run watch "$RUN_ID" --exit-status
 
   Show the output to the user, name the failed step, abort.
 
-- **On success**, additionally check for swallowed tap warnings:
-
-  ```sh
-  gh run view "$RUN_ID" --log | \
-    grep -E "::warning::(HOMEBREW_TAP_TOKEN not set|Homebrew tap push failed)"
-  ```
-
-  If either warning matches, abort with the matched line. The release
-  succeeded but the tap is out of sync — `release.yml` lines 131-134 and
-  199 fall back to non-fatal warnings, which is the exact failure mode
-  this command exists to catch.
+- On success the run is trusted (the tap step now uses
+  `DaveDev42/homebrew-tap-release@v1`, which fails the job rather than
+  emitting a warning if the tap push doesn't land). Step 5 still
+  cross-checks the tap repo to catch any drift between the workflow's
+  view of success and what the tap repo actually contains.
 
 ### Step 5 — Tap repo sanity check
 
@@ -157,9 +152,13 @@ gh api repos/DaveDev42/homebrew-tap/commits/main \
   --jq '.commit.message'
 ```
 
-Expected: `chore: update git-worktree-manager to <VERSION>` (matching
-the `<VERSION>` from Step 1). If absent, mismatched, or stale, abort
-with the actual message.
+Expected: a message containing the literal `git-worktree-manager <VERSION>`
+(matching the `<VERSION>` from Step 1). The current commit-message format
+emitted by `homebrew-tap-release@v1` is `git-worktree-manager <VERSION>`,
+but match by version-substring rather than by exact prefix so this step
+keeps working if the action upgrades its message format. If the version
+string is absent, abort with the actual message — the workflow reported
+success but the tap is out of sync.
 
 Capture the tap commit SHA for the summary:
 
