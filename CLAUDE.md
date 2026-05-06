@@ -10,13 +10,14 @@
 git-worktree-manager/
 ├── Cargo.toml                     # Package: git-worktree-manager, bin: gw
 ├── src/
-│   ├── bin/
-│   │   ├── gw.rs                  # `gw` CLI entry (8 MiB stack, calls entrypoint::run)
-│   │   └── cw.rs                  # `cw` legacy alias entry (same dispatch as gw)
+│   ├── bin/gw.rs                  # `gw` CLI entry (8 MiB stack, calls entrypoint::run)
 │   ├── lib.rs                     # Module declarations
 │   ├── entrypoint.rs              # Single dispatch entry (run function)
 │   ├── cli.rs                     # clap derive CLI definitions
-│   ├── config.rs                  # serde-based typed config
+│   ├── cli/completions.rs         # Shell completion generation
+│   ├── config.rs                  # serde-based typed config (global)
+│   ├── repo_config.rs             # Per-repo `.cwconfig.json`
+│   ├── scope.rs                   # Global vs repo config scope resolution
 │   ├── constants.rs               # LaunchMethod enum, presets, sanitization
 │   ├── console.rs                 # Styled output helpers (console crate)
 │   ├── cwshare_setup.rs           # .cwshare bootstrap
@@ -25,28 +26,37 @@ git-worktree-manager/
 │   ├── hooks.rs                   # Hook execution + CRUD
 │   ├── messages.rs                # Output message templates
 │   ├── prompt_source.rs           # AI prompt assembly (resolve_prompt)
-│   ├── registry.rs                # Global repository registry
 │   ├── session.rs                 # AI session metadata
 │   ├── shared_files.rs            # .cwshare file copying
 │   ├── shell_functions.rs         # Shell function generation (bash/zsh/fish)
-│   ├── tui/                       # Ratatui-based TUI (delete selector, etc.)
+│   ├── tui/                       # Ratatui-based pickers (arrow/multi-select, list view)
 │   ├── update.rs                  # Auto-update via GitHub Releases
 │   └── operations/
 │       ├── ai_tools.rs            # AI tool launcher dispatch
-│       ├── backup.rs              # git bundle backup/restore
-│       ├── clean.rs               # Batch worktree cleanup
-│       ├── config_ops.rs          # change-base, export, import
+│       ├── busy.rs                # Worktree busy-state detection
+│       ├── busy_messages.rs       # Busy-state user messaging
+│       ├── claude_process.rs      # Claude CLI process detection
+│       ├── claude_session.rs      # Claude session file inspection
+│       ├── claude_settings.rs     # Claude settings.json read/write
+│       ├── complete.rs            # `gw complete` dynamic completion source
 │       ├── diagnostics.rs         # doctor health check
 │       ├── display.rs             # list, status, tree, stats, diff
-│       ├── git_ops.rs             # PR creation, merge workflow
+│       ├── exec.rs                # `gw exec` arbitrary command runner
+│       ├── guard.rs               # PreToolUse(Bash) hook injection
 │       ├── helpers.rs             # resolve_worktree_target, metadata
+│       ├── lockfile.rs            # Cross-process worktree locks
 │       ├── path_cmd.rs            # _path internal command for gw-cd
-│       ├── shell.rs               # Interactive shell in worktree
-│       ├── stash.rs               # Worktree-aware stash save/list/apply
+│       ├── pr_cache.rs            # GitHub PR metadata cache
+│       ├── rm_batch.rs            # Batch worktree removal
+│       ├── run.rs                 # `gw run` shell-in-worktree
+│       ├── setup_claude/          # `gw setup-claude` skill installer
+│       ├── spawn_spec.rs          # SpawnSpec + persistent gw-spawn-last.json
+│       ├── test_env.rs            # Test-only env helpers
 │       ├── worktree.rs            # create, delete, sync
-│       └── launchers/             # 6 terminal launchers (18 variants)
-├── tests/                         # 66 integration + unit tests
-├── .github/workflows/             # CI (test.yml) + CD (release.yml)
+│       └── launchers/             # 6 terminal launchers (foreground/detached/iterm/wezterm/tmux/zellij)
+├── tests/                         # Integration + unit tests (~460, 11 ignored)
+├── .github/workflows/             # test.yml (CI) + release-please.yml (release-please + build + GH release + tap update + crates.io publish)
+├── .claude/commands/release.md    # `/release` slash command for patch releases
 ├── README.md
 ├── CLAUDE.md                      # This file
 └── LICENSE                        # BSD-3-Clause
@@ -55,13 +65,15 @@ git-worktree-manager/
 ## Development
 
 ```bash
-cargo build                        # Build
-cargo run -- --help                # Run
-cargo test                         # Test (460 tests (11 ignored))
-cargo clippy                      # Lint
-cargo fmt --check                  # Format check
-cargo build --release              # Release: target/release/gw (~1.9MB)
+cargo build                                            # Build
+cargo run -- --help                                    # Run
+cargo test                                             # Test (~460, 11 ignored)
+cargo clippy --all-targets --all-features -- -D warnings  # Lint (zero-warning)
+cargo fmt --check                                      # Format check
+cargo build --release                                  # Release: target/release/gw (~1.9MB)
 ```
+
+CI runs default `cargo clippy`; the `--all-targets --all-features` form catches `#[cfg(test)]` and feature-gated drift that the release process cares about. Run it locally before tagging a release.
 
 ## Claude Code Integration
 
@@ -69,7 +81,7 @@ Run `gw setup-claude` to install the Claude Code skill for this project.
 Once installed, use the `/gw` slash command or natural language to delegate coding tasks to isolated worktrees.
 Each delegated task runs in its own branch with a separate Claude Code instance.
 
-릴리스 작업: 패치 릴리스("release new patch version" 등)는 글로벌 `/ship` skill로 진행. ad-hoc git/cargo 명령으로 매번 재구성 X.
+릴리스 작업: 패치 릴리스("release new patch version" 등)는 `/release` 슬래시 명령으로 진행 (`.claude/commands/release.md`). ad-hoc git/cargo 명령으로 매번 재구성 X.
 
 ## Config Compatibility
 
@@ -78,14 +90,16 @@ Same git config metadata keys and session storage paths.
 
 ## Git & Release
 
+- `main` is branch-protected: `ci-gate` required, linear history, no force pushes.
 - PR merge method: **squash merge** (`--squash`). Merge commits and rebase merges are disabled at the repo level.
 - The squash commit uses **PR title as commit subject** and **PR body as commit body** (GitHub repo setting).
-- Release process: [release-please](https://github.com/googleapis/release-please) automates versioning via conventional commits
-- Commit messages: conventional commits (`feat:`, `fix:`, `perf:`, `chore:`, etc.)
+- Release process: [release-please](https://github.com/googleapis/release-please) automates versioning via conventional commits.
+- The `release-please.yml` workflow handles the full release pipeline in one file: release-please PR → multi-platform build → GitHub Release publish → Homebrew tap update (DaveDev42/homebrew-tap) → crates.io publish.
+- Commit messages: conventional commits (`feat:`, `fix:`, `perf:`, `chore:`, etc.).
 - **PR title은 valid conventional commit으로 작성** (`type: subject`). squash merge라 PR title만 release-please가 읽음.
-- **`feat!` / `fix!` / `BREAKING CHANGE:` 절대 금지** — major bump 자동 트리거. breaking change는 PR body에 설명.
+- **`feat!` / `fix!` / `BREAKING CHANGE:` 절대 금지** — major bump 자동 트리거 (0.x → 1.0.0). breaking change는 PR body에 설명.
 
-릴리스 절차 — 사람이 직접 돌릴 일은 거의 없음. release-please가 PR을 만들고, `/release` 명령이 gate/merge/watch/verify까지 자동화한다 (`.claude/commands/release.md` 참조). Manual major/minor bump가 필요하면 `Release-As: x.y.z` footer 커밋을 `main`에 push (release-please가 자동 인식).
+릴리스 절차 — 사람이 직접 돌릴 일은 거의 없음. release-please가 PR을 만들고, `/release` 명령이 gate/merge/watch/verify(tap 동기화 포함)까지 자동화한다 (`.claude/commands/release.md` 참조). Manual major/minor bump가 필요하면 `Release-As: x.y.z` footer 커밋을 `main`에 push (release-please가 자동 인식).
 
 ## Code Conventions
 
