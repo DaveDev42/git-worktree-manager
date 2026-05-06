@@ -156,6 +156,24 @@ fn auto_forward_prefix(ai_tool_name: &str) -> Option<&'static str> {
     }
 }
 
+/// Vars matching `auto_forward_prefix` that we must NOT forward to the
+/// spawned AI tool, because they describe the *parent* invocation context
+/// rather than user-configurable settings.
+///
+/// `CLAUDE_CODE_ENTRYPOINT` is the load-bearing one: when `gw` is invoked
+/// from inside another Claude Code session (e.g. via its Bash tool), the
+/// parent sets `CLAUDE_CODE_ENTRYPOINT=sdk-cli` on subprocess env to mark
+/// them as SDK-context. Forwarding that into the new terminal makes the
+/// freshly-launched `claude` start in SDK/print mode — answers the
+/// trailing-positional prompt once and exits, instead of opening the TUI.
+///
+/// `CLAUDE_CODE_EXECPATH` points at the parent's bundled binary path; it
+/// has no meaning for an independently-launched child claude.
+///
+/// Scope: only keys currently known to alter the *child's* runtime behavior.
+/// Display-only or informational `CLAUDE_*` vars don't need to be listed.
+const CLAUDE_PARENT_CONTEXT_VARS: &[&str] = &["CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_EXECPATH"];
+
 /// Build the env map injected into the spawned AI tool process.
 ///
 /// Auto-forwards `<TOOL>_*` vars from the current (gw) process — the shell
@@ -163,7 +181,8 @@ fn auto_forward_prefix(ai_tool_name: &str) -> Option<&'static str> {
 /// tmux/zellij (which spawn their own shells inside the window-server's
 /// environment) still see the user's settings. Suppressed when
 /// `no_env_forward` is set or when `auto_forward_prefix` returns `None`
-/// for this tool.
+/// for this tool. See [`CLAUDE_PARENT_CONTEXT_VARS`] for keys that are
+/// stripped even when forwarding is enabled.
 fn build_env_map(ai_tool_name: &str, no_env_forward: bool) -> BTreeMap<String, String> {
     let mut env = BTreeMap::new();
     if no_env_forward {
@@ -171,7 +190,7 @@ fn build_env_map(ai_tool_name: &str, no_env_forward: bool) -> BTreeMap<String, S
     }
     if let Some(prefix) = auto_forward_prefix(ai_tool_name) {
         for (k, v) in std::env::vars() {
-            if k.starts_with(prefix) {
+            if k.starts_with(prefix) && !CLAUDE_PARENT_CONTEXT_VARS.contains(&k.as_str()) {
                 env.insert(k, v);
             }
         }
@@ -601,5 +620,33 @@ mod tests {
         let env = build_env_map("unknown-tool", false);
         assert!(env.is_empty());
         std::env::remove_var("CLAUDE_FOO_TEST_UNK");
+    }
+
+    #[test]
+    fn build_env_map_strips_parent_context_vars() {
+        // When gw runs inside a parent Claude Code's Bash tool, the parent
+        // exports CLAUDE_CODE_ENTRYPOINT=sdk-cli into the subprocess. If we
+        // forward it, the launched terminal's claude inherits the SDK label
+        // and answers the prompt in print mode instead of opening the TUI.
+        std::env::set_var("CLAUDE_CODE_ENTRYPOINT", "sdk-cli");
+        std::env::set_var("CLAUDE_CODE_EXECPATH", "/parent/bundle/path");
+        std::env::set_var("CLAUDE_FOO_TEST_KEEP", "from-parent");
+        let env = build_env_map("claude", false);
+        assert!(
+            !env.contains_key("CLAUDE_CODE_ENTRYPOINT"),
+            "CLAUDE_CODE_ENTRYPOINT must be stripped to avoid forcing SDK/print mode in the child"
+        );
+        assert!(
+            !env.contains_key("CLAUDE_CODE_EXECPATH"),
+            "CLAUDE_CODE_EXECPATH points at the parent's binary; do not forward"
+        );
+        assert_eq!(
+            env.get("CLAUDE_FOO_TEST_KEEP").map(String::as_str),
+            Some("from-parent"),
+            "unrelated CLAUDE_* vars must still forward"
+        );
+        std::env::remove_var("CLAUDE_CODE_ENTRYPOINT");
+        std::env::remove_var("CLAUDE_CODE_EXECPATH");
+        std::env::remove_var("CLAUDE_FOO_TEST_KEEP");
     }
 }
