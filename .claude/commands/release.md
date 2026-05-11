@@ -25,7 +25,9 @@ breaking changes in the PR body instead.
 
 ## Procedure
 
-Stop and report on any failure. Do **not** auto-recover.
+Stop and report on any failure. Do **not** auto-recover — except for the
+single bounded retrigger in Step 2 that covers the documented
+`GITHUB_TOKEN` workflow-trigger gap.
 
 ### Step 0 — Preconditions
 
@@ -78,6 +80,66 @@ gh pr view <num> --json statusCheckRollup \
   minutes. Then abort if still not green.
 - `FAILURE` / `CANCELLED` → abort immediately, surface the failing check
   URL via `gh pr checks <num>`.
+
+**Empty rollup (no `ci-gate` row at all)** — the entire
+`statusCheckRollup` array is `[]` and the polling loop above will
+never observe anything. Distinguish this from "in progress" before
+the 10-minute timeout. To avoid racing GitHub's run-queue latency,
+wait at least **60 seconds** since the PR's current head was pushed
+before treating empty rollup as a trigger gap (two 30s poll cycles).
+Then check whether `Test` ran against the PR's current head — use
+`headRefName` from the Step 1 `gh pr list` output as `<pr-branch>`:
+
+```sh
+PR_HEAD=$(gh pr view <num> --json headRefOid --jq '.headRefOid')
+gh run list --branch <pr-branch> --workflow=Test --limit=5 \
+  --json headSha,conclusion --jq ".[] | select(.headSha==\"$PR_HEAD\")"
+```
+
+- **Query returns one or more rows** → `Test` is running (or already
+  ran) against the current head. The gap does not apply; do **not**
+  retrigger. Fall back into the normal `ci-gate` polling loop above.
+  This is also the re-run case: if a prior invocation already pushed
+  `chore: retrigger ci-gate`, that earlier push fired `Test` and this
+  query now sees it.
+- **Query returns nothing** → the workflow was not triggered for the
+  current head. Almost always because release-please bot used
+  `GITHUB_TOKEN` to force-update the PR branch (GitHub's documented
+  policy: pushes made with `GITHUB_TOKEN` do not trigger workflows
+  that would otherwise be triggered by `push` or `pull_request`).
+  Proceed with the retrigger recipe below.
+
+This is the **only** auto-recovery path this skill takes. The recipe
+is bounded, idempotent, and side-effect-free:
+
+```sh
+# Clear any stale temp branch from a prior aborted run, then recreate
+# from the current PR head, empty commit, push back.
+git branch -D rp-retrigger 2>/dev/null || true
+git fetch origin <pr-branch>
+git checkout -b rp-retrigger origin/<pr-branch>
+git commit --allow-empty -m "chore: retrigger ci-gate"
+git push origin HEAD:<pr-branch>
+git checkout main && git branch -D rp-retrigger
+```
+
+Why this is safe to do automatically here (and only here):
+
+- The push originates from your user credentials, so the `Test`
+  workflow does fire on the new head.
+- release-please's squash-merge keeps the PR **title** as the commit
+  subject (`chore(main): release X.Y.Z`), so the empty commit's
+  subject is discarded at merge time. The `release-please.yml` job
+  on `main` only needs that PR-title subject to fire; it doesn't read
+  the squashed-away commits.
+- No new code, no new artifact — purely a workflow-trigger nudge.
+
+After pushing, fall back into the normal `ci-gate` polling loop
+above with a **fresh 10-minute window** starting at the retrigger
+push (not carried over from Step 2's start). If `ci-gate` still does
+not appear within that window, abort: something other than the
+`GITHUB_TOKEN` trigger gap is in play, and the skill should not keep
+nudging.
 
 Then run the drift check that CI does not cover:
 
@@ -203,6 +265,11 @@ ran, so Steps 1-3 were no-ops), say so explicitly.
 Re-running this command after a partial failure is safe and idempotent:
 
 - Step 1 finds the existing release PR.
+- Step 2's empty-rollup retrigger is no-op once `ci-gate` exists; if a
+  prior run already pushed `chore: retrigger ci-gate` onto the PR
+  branch, the `Test`-run query now returns rows and the skill skips
+  retrigger automatically. The earlier empty commit disappears at
+  squash-merge.
 - Step 3 detects an already-merged PR via `gh pr view --json state` →
   `MERGED`, and skips merge.
 - Step 4 finds the most recent run regardless of who triggered it.
