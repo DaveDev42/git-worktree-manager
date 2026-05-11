@@ -539,10 +539,6 @@ fn refresh_shell_cache(shell_name: &str) {
     }
 }
 
-/// `gw spawn -- --model opus` and `gw resume -- --model opus` parse, under
-/// clap's `trailing_var_arg=true` + `Option<String>` positional combo, as
-/// `target=Some("--model")`, `forward_args=["opus"]` — clap silently absorbs
-/// the `--` into the optional positional. A real worktree name can never
 /// Reject gw's own `--prompt` / `--prompt-file` flags when they leak into
 /// the trailing forward-args slot (typically because the caller wrote
 /// `gw new <name> -- --prompt-file <path>`, which clap dutifully forwards
@@ -564,15 +560,19 @@ fn reject_gw_flags_in_forward(forward_args: &[String]) -> Result<()> {
         let head = arg.split_once('=').map(|(h, _)| h).unwrap_or(arg.as_str());
         if GW_PROMPT_FLAGS.contains(&head) {
             return Err(CwError::Other(format!(
-                "{head} is a gw option, not an AI tool option — move it before `--` \
-                 (e.g. `gw new {head} <value> <name>` instead of \
-                 `gw new <name> -- {head} <value>`)"
+                "{head} is a gw option, not an AI tool option — drop the `--` \
+                 separator so gw consumes the flag itself (write `{head} \
+                 <value>` without `--` in front of it)"
             )));
         }
     }
     Ok(())
 }
 
+/// `gw spawn -- --model opus` and `gw resume -- --model opus` parse, under
+/// clap's `trailing_var_arg=true` + `Option<String>` positional combo, as
+/// `target=Some("--model")`, `forward_args=["opus"]` — clap silently absorbs
+/// the `--` into the optional positional. A real worktree name can never
 /// start with `-` (git rejects it), so a hyphen-led "target" is unambiguously
 /// a misparsed forward arg. Lift it (and any captured forward args) back into
 /// forward_args, with `target` cleared so the dispatcher falls through to
