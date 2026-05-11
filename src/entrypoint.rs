@@ -81,6 +81,10 @@ pub fn run() {
                         .to_string(),
                 ));
             }
+            // Catch `gw new <name> -- --prompt-file <path>` — clap would
+            // forward those gw-owned flags verbatim into the AI tool's
+            // argv, and `claude` would then die with "unknown option".
+            reject_gw_flags_in_forward(&forward_args)?;
             // Resolve the prompt first so a missing file or unreadable stdin
             // fails before any interactive side effects (worktree creation,
             // AI-tool launch) leave the tree in a half-configured state.
@@ -122,19 +126,24 @@ pub fn run() {
             term,
             no_env_forward,
             forward_args,
-        }) => {
+        }) => (|| -> Result<()> {
             // clap's trailing_var_arg + Option<positional> combo lets `--`
             // get absorbed by the optional positional: `gw resume -- --model
             // opus` parses as branch=Some("--model"), forward_args=["opus"].
             // Detect a hyphen-led "branch" and lift it into forward_args.
             let (branch, forward_args) = lift_dash_target(branch, forward_args);
+            // `gw resume` has no `--prompt` of its own, but we still want
+            // `gw resume <branch> -- --prompt-file <path>` to fail fast
+            // here rather than inside the spawned terminal where the user
+            // can't see the AI tool's stderr.
+            reject_gw_flags_in_forward(&forward_args)?;
             let opts = LaunchOptions {
                 term_override: term.as_deref(),
                 forward_args: &forward_args,
                 no_env_forward,
             };
             ai_tools::resume_worktree(branch.as_deref(), &opts)
-        }
+        })(),
 
         Some(Commands::Spawn {
             target,
@@ -154,6 +163,8 @@ pub fn run() {
                         .to_string(),
                 ));
             }
+            // Same `-- --prompt-file` leak as `gw new`.
+            reject_gw_flags_in_forward(&forward_args)?;
             let resolved_prompt = resolve_prompt(
                 prompt,
                 prompt_file.as_deref(),
@@ -528,6 +539,36 @@ fn refresh_shell_cache(shell_name: &str) {
     }
 }
 
+/// Reject gw's own `--prompt` / `--prompt-file` flags when they leak into
+/// the trailing forward-args slot (typically because the caller wrote
+/// `gw new <name> -- --prompt-file <path>`, which clap dutifully forwards
+/// to the AI tool — `claude` then rejects the unknown option). We surface
+/// the error at dispatch time instead of letting it fail inside the spawned
+/// terminal where the user can't see it.
+///
+/// We scan every element rather than stopping at the first non-flag: these
+/// tokens are gw-owned and have no meaning to any AI tool we support, so
+/// catching them no matter where they sit in the forward list is strictly
+/// safer than letting the spawned process fail. If a real AI tool ever
+/// gains an identically-named flag, this is a one-line carve-out.
+fn reject_gw_flags_in_forward(forward_args: &[String]) -> Result<()> {
+    const GW_PROMPT_FLAGS: &[&str] = &["--prompt", "--prompt-file"];
+    for arg in forward_args {
+        if !arg.starts_with("--") {
+            continue;
+        }
+        let head = arg.split_once('=').map(|(h, _)| h).unwrap_or(arg.as_str());
+        if GW_PROMPT_FLAGS.contains(&head) {
+            return Err(CwError::Other(format!(
+                "{head} is a gw option, not an AI tool option — drop the `--` \
+                 separator so gw consumes the flag itself (write `{head} \
+                 <value>` without `--` in front of it)"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// `gw spawn -- --model opus` and `gw resume -- --model opus` parse, under
 /// clap's `trailing_var_arg=true` + `Option<String>` positional combo, as
 /// `target=Some("--model")`, `forward_args=["opus"]` — clap silently absorbs
@@ -553,7 +594,78 @@ fn lift_dash_target(
 
 #[cfg(test)]
 mod tests {
-    use super::lift_dash_target;
+    use super::{lift_dash_target, reject_gw_flags_in_forward};
+
+    fn forward(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn reject_forward_args_passes_when_empty() {
+        reject_gw_flags_in_forward(&[]).unwrap();
+    }
+
+    #[test]
+    fn reject_forward_args_passes_ai_tool_flags() {
+        // `--model opus`, `--resume`, `--continue`, `--print` — all legitimate
+        // claude/codex flags; must flow through untouched.
+        reject_gw_flags_in_forward(&forward(&["--model", "opus", "--resume"])).unwrap();
+        reject_gw_flags_in_forward(&forward(&["--print"])).unwrap();
+    }
+
+    #[test]
+    fn reject_forward_args_rejects_prompt_file_leading() {
+        let err = reject_gw_flags_in_forward(&forward(&["--prompt-file", "/tmp/p.txt"]))
+            .expect_err("must reject");
+        let msg = format!("{err}");
+        assert!(msg.contains("--prompt-file"), "unexpected msg: {msg}");
+        assert!(msg.contains("gw option"), "unexpected msg: {msg}");
+    }
+
+    #[test]
+    fn reject_forward_args_rejects_prompt_leading() {
+        let err =
+            reject_gw_flags_in_forward(&forward(&["--prompt", "hi"])).expect_err("must reject");
+        assert!(format!("{err}").contains("--prompt"));
+    }
+
+    #[test]
+    fn reject_forward_args_rejects_equals_form() {
+        let err = reject_gw_flags_in_forward(&forward(&["--prompt-file=/tmp/p.txt"]))
+            .expect_err("must reject");
+        assert!(format!("{err}").contains("--prompt-file"));
+        let err =
+            reject_gw_flags_in_forward(&forward(&["--prompt=hello"])).expect_err("must reject");
+        assert!(format!("{err}").contains("--prompt"));
+    }
+
+    #[test]
+    fn reject_forward_args_rejects_prompt_after_positional() {
+        // Catch even when the leaked gw flag follows a positional or another
+        // flag's value — claude/codex/gemini have no `--prompt-file` of their
+        // own, so any occurrence is a misroute regardless of position.
+        let err = reject_gw_flags_in_forward(&forward(&["some-prompt", "--prompt-file", "/tmp/p"]))
+            .expect_err("must reject");
+        assert!(format!("{err}").contains("--prompt-file"));
+    }
+
+    #[test]
+    fn reject_forward_args_rejects_prompt_after_other_flags() {
+        // Mixed: a legitimate AI-tool flag and its value, followed by a
+        // leaked gw flag.
+        let err =
+            reject_gw_flags_in_forward(&forward(&["--model", "opus", "--prompt-file", "/tmp/p"]))
+                .expect_err("must reject");
+        assert!(format!("{err}").contains("--prompt-file"));
+    }
+
+    #[test]
+    fn reject_forward_args_ignores_short_dash_and_bare_dash() {
+        // `-` (read stdin convention) and `-x`-style short flags must not
+        // trip the guard — we only match the two specific long flags.
+        reject_gw_flags_in_forward(&forward(&["-"])).unwrap();
+        reject_gw_flags_in_forward(&forward(&["-p", "hello"])).unwrap();
+    }
 
     #[test]
     fn lift_dash_target_lifts_hyphen_target() {
