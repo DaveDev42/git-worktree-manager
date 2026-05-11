@@ -25,7 +25,9 @@ breaking changes in the PR body instead.
 
 ## Procedure
 
-Stop and report on any failure. Do **not** auto-recover.
+Stop and report on any failure. Do **not** auto-recover — except for the
+single bounded retrigger in Step 2 that covers the documented
+`GITHUB_TOKEN` workflow-trigger gap.
 
 ### Step 0 — Preconditions
 
@@ -82,8 +84,11 @@ gh pr view <num> --json statusCheckRollup \
 **Empty rollup (no `ci-gate` row at all)** — the entire
 `statusCheckRollup` array is `[]` and the polling loop above will
 never observe anything. Distinguish this from "in progress" before
-the 10-minute timeout: if the rollup is empty after the first 30s
-poll, check whether `Test` ran against the PR's current head:
+the 10-minute timeout. To avoid racing GitHub's run-queue latency,
+wait at least **60 seconds** since the PR's current head was pushed
+before treating empty rollup as a trigger gap (two 30s poll cycles).
+Then check whether `Test` ran against the PR's current head — use
+`headRefName` from the Step 1 `gh pr list` output as `<pr-branch>`:
 
 ```sh
 PR_HEAD=$(gh pr view <num> --json headRefOid --jq '.headRefOid')
@@ -91,17 +96,26 @@ gh run list --branch <pr-branch> --workflow=Test --limit=5 \
   --json headSha,conclusion --jq ".[] | select(.headSha==\"$PR_HEAD\")"
 ```
 
-If that query returns nothing, the workflow was not triggered for the
-current head — almost always because release-please bot used
-`GITHUB_TOKEN` to force-update the PR branch (GitHub's documented
-policy: pushes made with `GITHUB_TOKEN` do not trigger workflows that
-would otherwise be triggered by `push` or `pull_request`).
+- **Query returns one or more rows** → `Test` is running (or already
+  ran) against the current head. The gap does not apply; do **not**
+  retrigger. Fall back into the normal `ci-gate` polling loop above.
+  This is also the re-run case: if a prior invocation already pushed
+  `chore: retrigger ci-gate`, that earlier push fired `Test` and this
+  query now sees it.
+- **Query returns nothing** → the workflow was not triggered for the
+  current head. Almost always because release-please bot used
+  `GITHUB_TOKEN` to force-update the PR branch (GitHub's documented
+  policy: pushes made with `GITHUB_TOKEN` do not trigger workflows
+  that would otherwise be triggered by `push` or `pull_request`).
+  Proceed with the retrigger recipe below.
 
 This is the **only** auto-recovery path this skill takes. The recipe
 is bounded, idempotent, and side-effect-free:
 
 ```sh
-# Local branch from the current PR head, empty commit, push back.
+# Clear any stale temp branch from a prior aborted run, then recreate
+# from the current PR head, empty commit, push back.
+git branch -D rp-retrigger 2>/dev/null || true
 git fetch origin <pr-branch>
 git checkout -b rp-retrigger origin/<pr-branch>
 git commit --allow-empty -m "chore: retrigger ci-gate"
@@ -121,10 +135,11 @@ Why this is safe to do automatically here (and only here):
 - No new code, no new artifact — purely a workflow-trigger nudge.
 
 After pushing, fall back into the normal `ci-gate` polling loop
-above (still bounded by the 10-minute deadline measured from the
-retrigger push, not from Step 2's start). If `ci-gate` still does
-not appear, abort: something other than the `GITHUB_TOKEN` trigger
-gap is in play, and the skill should not keep nudging.
+above with a **fresh 10-minute window** starting at the retrigger
+push (not carried over from Step 2's start). If `ci-gate` still does
+not appear within that window, abort: something other than the
+`GITHUB_TOKEN` trigger gap is in play, and the skill should not keep
+nudging.
 
 Then run the drift check that CI does not cover:
 
@@ -252,7 +267,9 @@ Re-running this command after a partial failure is safe and idempotent:
 - Step 1 finds the existing release PR.
 - Step 2's empty-rollup retrigger is no-op once `ci-gate` exists; if a
   prior run already pushed `chore: retrigger ci-gate` onto the PR
-  branch, leave it — it disappears at squash-merge.
+  branch, the `Test`-run query now returns rows and the skill skips
+  retrigger automatically. The earlier empty commit disappears at
+  squash-merge.
 - Step 3 detects an already-merged PR via `gh pr view --json state` →
   `MERGED`, and skips merge.
 - Step 4 finds the most recent run regardless of who triggered it.
