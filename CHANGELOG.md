@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.5...v0.1.6) (2026-05-11)
+
+
+### Bug Fixes
+
+* **cli:** reject gw --prompt/--prompt-file leaked into forward args ([#157](https://github.com/DaveDev42/git-worktree-manager/issues/157)) ([05a83b6](https://github.com/DaveDev42/git-worktree-manager/commit/05a83b60411401a2367a60f167b6cd38bf234f25))
+
 ## [0.1.5](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.4...v0.1.5) (2026-05-06)
 
 
