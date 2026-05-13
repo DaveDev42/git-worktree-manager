@@ -20,9 +20,14 @@ use tempfile::tempdir;
 fn gw(home_dir: &Path) -> Command {
     let mut c = Command::cargo_bin("gw").unwrap();
     c.env("HOME", home_dir);
-    // On Windows, `dirs::home_dir()` reads `USERPROFILE` rather than `HOME`.
-    // Set both so the production code lands inside the tempdir on every platform.
-    c.env("USERPROFILE", home_dir);
+    // On Windows, `dirs::home_dir()` uses a Windows API (`SHGetKnownFolderPath`)
+    // that ignores `HOME` and `USERPROFILE` env vars, so we cannot redirect the
+    // config path via those variables. Instead we set `GW_CONFIG_HOME` which
+    // `get_config_path()` checks first, giving us a cross-platform redirect.
+    c.env(
+        "GW_CONFIG_HOME",
+        home_dir.join(".config").join("git-worktree-manager"),
+    );
     // `dirs::cache_dir()` respects `$XDG_CACHE_HOME` on Linux — used by the
     // auto-update checker (`update.rs`) and the PR cache. Without removal a
     // CI runner with `$XDG_CACHE_HOME` exported would write outside the

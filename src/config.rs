@@ -169,7 +169,22 @@ pub fn claude_preset_names() -> Vec<&'static str> {
 // ---------------------------------------------------------------------------
 
 /// Get the path to the configuration file.
+///
+/// Resolution order:
+///   1. `$GW_CONFIG_HOME/config.json` — test / CI override; never set in
+///      production.
+///   2. `$HOME/.config/git-worktree-manager/config.json` — standard path.
+///
+/// The `$GW_CONFIG_HOME` escape hatch exists because `dirs::home_dir()` on
+/// Windows uses a Windows API call that ignores the `HOME` / `USERPROFILE`
+/// env vars, so integration tests cannot redirect config I/O through a
+/// tempdir without an explicit override.
 pub fn get_config_path() -> PathBuf {
+    if let Ok(override_dir) = std::env::var("GW_CONFIG_HOME") {
+        if !override_dir.is_empty() {
+            return PathBuf::from(override_dir).join("config.json");
+        }
+    }
     let home = home_dir_or_fallback();
     home.join(".config")
         .join("git-worktree-manager")
