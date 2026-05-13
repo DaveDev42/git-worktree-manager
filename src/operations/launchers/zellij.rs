@@ -52,8 +52,8 @@ pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str, tab_name: &str
     let wrapped = super::keep_shell_after(command);
     // `--close-on-exit` so the tab actually closes when the wrapped shell
     // exits. Without it Zellij holds the pane in an "exited" state and the
-    // user has to press a key (often misread as Ctrl+C ignoring `exit`) to
-    // clear it.
+    // user has to manually close it — easily mistaken for `exit` being
+    // ignored.
     Command::new("zellij")
         .args([
             "action",
