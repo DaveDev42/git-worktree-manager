@@ -472,37 +472,36 @@ fn inject_guard_into_argv(argv: &mut Vec<String>, guard_enabled: bool) -> Result
     Ok(())
 }
 
+/// Worktree directory basename, or a stable fallback for rootless paths.
+fn dir_name_of(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "worktree".to_string())
+}
+
+/// Truncate to at most `MAX_SESSION_NAME_LENGTH` characters, never splitting a
+/// codepoint (tmux/zellij names and sockets are byte-bounded, but a panic on a
+/// multi-byte boundary is worse than a slightly-short label).
+fn cap_session_len(s: String) -> String {
+    if s.chars().count() > MAX_SESSION_NAME_LENGTH {
+        s.chars().take(MAX_SESSION_NAME_LENGTH).collect()
+    } else {
+        s
+    }
+}
+
 /// Derive a tab/window label for terminal multiplexers from the worktree
 /// directory name. Sanitized the same way branch-derived names are, and
 /// capped at `MAX_SESSION_NAME_LENGTH` so tmux/zellij don't choke on it.
 fn tab_label_for(path: &Path) -> String {
-    let dir_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "worktree".to_string());
-    let label = crate::constants::sanitize_branch_name(&dir_name);
-    if label.chars().count() > MAX_SESSION_NAME_LENGTH {
-        label.chars().take(MAX_SESSION_NAME_LENGTH).collect()
-    } else {
-        label
-    }
+    cap_session_len(crate::constants::sanitize_branch_name(&dir_name_of(path)))
 }
 
 /// Generate a session name from path with length limit.
 fn generate_session_name(path: &Path) -> String {
     let config = config::load_config().unwrap_or_default();
     let prefix = &config.launch.tmux_session_prefix;
-    let dir_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "worktree".to_string());
-
-    let name = format!("{}-{}", prefix, dir_name);
-    if name.len() > MAX_SESSION_NAME_LENGTH {
-        name[..MAX_SESSION_NAME_LENGTH].to_string()
-    } else {
-        name
-    }
+    cap_session_len(format!("{}-{}", prefix, dir_name_of(path)))
 }
 
 #[cfg(test)]
