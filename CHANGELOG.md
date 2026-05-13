@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.6...v0.1.7) (2026-05-13)
+
+
+### Features
+
+* **launchers:** name new multiplexer tabs/windows after the worktree ([#160](https://github.com/DaveDev42/git-worktree-manager/issues/160)) ([ede873c](https://github.com/DaveDev42/git-worktree-manager/commit/ede873c9a36ad68683f251d72a822310b152e7cc))
+
 ## [0.1.6](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.5...v0.1.6) (2026-05-11)
 
 
