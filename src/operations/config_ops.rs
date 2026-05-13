@@ -144,11 +144,6 @@ pub fn parse_value_for(key: ConfigKey, input: &str) -> Result<Value> {
         },
         ConfigKey::LaunchWeztermReadyTimeout => trimmed
             .parse::<f64>()
-            .map(|n| {
-                serde_json::Number::from_f64(n)
-                    .map(Value::Number)
-                    .unwrap_or(Value::Null)
-            })
             .map_err(|e| {
                 CwError::Config(format!(
                     "{} expects a number, got {:?}: {}",
@@ -156,6 +151,20 @@ pub fn parse_value_for(key: ConfigKey, input: &str) -> Result<Value> {
                     trimmed,
                     e
                 ))
+            })
+            .and_then(|n| {
+                // `Number::from_f64` returns None for inf/-inf/NaN — JSON has
+                // no representation for non-finite floats. Surface that as an
+                // error rather than silently writing `null`.
+                serde_json::Number::from_f64(n)
+                    .map(Value::Number)
+                    .ok_or_else(|| {
+                        CwError::Config(format!(
+                            "{} expects a finite number (got {})",
+                            key.name(),
+                            n
+                        ))
+                    })
             }),
         ConfigKey::AiToolArgs => {
             // Accept a JSON array literal first (lets users pass exact tokens
@@ -534,6 +543,30 @@ mod tests {
         let v = parse_value_for(ConfigKey::LaunchWeztermReadyTimeout, "7.5").unwrap();
         assert!(v.is_number());
         assert!((v.as_f64().unwrap() - 7.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn parse_number_rejects_non_finite() {
+        // serde_json::Number cannot represent inf/NaN; we surface that as an
+        // error instead of silently writing `null` to the file.
+        for input in ["inf", "-inf", "NaN"] {
+            let err = parse_value_for(ConfigKey::LaunchWeztermReadyTimeout, input).unwrap_err();
+            let msg = format!("{err}");
+            assert!(
+                msg.contains("finite") || msg.contains("expects a number"),
+                "unexpected error for {input:?}: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_empty_string_value_is_empty_string() {
+        // Documenting the divergence between `gw config set <key> ""` (writes
+        // an empty string for non-array keys) and the TUI's empty buffer (which
+        // calls `unset_value` instead). Two surfaces, two semantics — captured
+        // here so a future change is a conscious one.
+        let v = parse_value_for(ConfigKey::AiToolCommand, "").unwrap();
+        assert_eq!(v, Value::String(String::new()));
     }
 
     #[test]

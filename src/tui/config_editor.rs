@@ -27,12 +27,12 @@
 use std::io::{stdout, IsTerminal};
 use std::path::{Path, PathBuf};
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
-use crossterm::execute;
-use crossterm::terminal::{
+use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::execute;
+use ratatui::crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -242,16 +242,23 @@ impl AppState {
         Ok(())
     }
 
+    /// Remove `key` from the given scope. Only flips the dirty flag when the
+    /// key was actually present — avoids no-op writes when the user clears an
+    /// already-unset field.
     fn apply_unset(&mut self, key: ConfigKey, scope: Scope) {
         match scope {
             Scope::Global => {
-                unset_value(&mut self.global_value, key);
-                self.dirty_global = true;
+                if lookup_value(&self.global_value, key).is_some() {
+                    unset_value(&mut self.global_value, key);
+                    self.dirty_global = true;
+                }
             }
             Scope::Repo => {
                 if let Some(v) = self.repo_value.as_mut() {
-                    unset_value(v, key);
-                    self.dirty_repo = true;
+                    if lookup_value(v, key).is_some() {
+                        unset_value(v, key);
+                        self.dirty_repo = true;
+                    }
                 }
             }
         }
@@ -331,11 +338,27 @@ impl SaveSummary {
 fn run_loop(mut state: AppState) -> Result<Option<SaveSummary>> {
     enable_raw_mode().map_err(io_err)?;
     let mut out = stdout();
-    execute!(out, EnterAlternateScreen).map_err(io_err)?;
+    if let Err(e) = execute!(out, EnterAlternateScreen) {
+        // Construction failed before we marked active — make sure raw mode
+        // is released so the user's shell isn't left wedged.
+        let _ = disable_raw_mode();
+        return Err(io_err(e));
+    }
     crate::tui::mark_ratatui_active();
 
     let backend = CrosstermBackend::new(out);
-    let mut terminal = Terminal::new(backend).map_err(io_err)?;
+    let mut terminal = match Terminal::new(backend) {
+        Ok(t) => t,
+        Err(e) => {
+            // Active flag is set but no terminal exists — undo both screen
+            // changes by hand. Matches the `display.rs` error arm.
+            let _ = disable_raw_mode();
+            let _ = execute!(stdout(), LeaveAlternateScreen);
+            crate::tui::mark_ratatui_inactive();
+            return Err(io_err(e));
+        }
+    };
+
     let result = (|| -> Result<Option<SaveSummary>> {
         let mut last_save: Option<SaveSummary> = None;
         loop {
@@ -518,7 +541,7 @@ fn render_body(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
 
 fn render_footer(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
     let dirty = state.dirty_global || state.dirty_repo;
-    let mut spans = vec![Span::raw(state.status.clone())];
+    let mut spans = vec![Span::raw(state.status.as_str())];
     if dirty {
         spans.push(Span::raw("   "));
         spans.push(Span::styled(
@@ -607,7 +630,12 @@ mod tests {
         let mut s = fresh_state();
         s.toggle_scope();
         assert_eq!(s.active, Scope::Global);
-        assert!(s.status.contains("not inside") || s.status.to_lowercase().contains("repo"));
+        let lc = s.status.to_lowercase();
+        assert!(
+            lc.contains("not inside") && lc.contains("repo"),
+            "unexpected status: {:?}",
+            s.status
+        );
     }
 
     #[test]

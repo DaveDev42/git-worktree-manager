@@ -41,8 +41,14 @@ static RATATUI_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Mark that a ratatui terminal is now active.
 ///
 /// # Safety contract
-/// Must be called only from `TerminalGuard::new`. Direct callers can corrupt
-/// the panic-hook contract.
+/// Callers must pair every `mark_ratatui_active` with a `mark_ratatui_inactive`
+/// on all exit paths (Ok / Err / panic). The canonical wrapper is
+/// `display.rs::TerminalGuard`, which uses Drop to guarantee the pairing. The
+/// fullscreen-alt-screen editor in `tui::config_editor` calls these directly
+/// because its lifecycle differs (alt-screen + raw mode rather than inline
+/// viewport), and it accepts the burden of manual cleanup on every arm,
+/// including the `Terminal::new` failure path. New callers should prefer
+/// `TerminalGuard` unless they have the same justification.
 pub(crate) fn mark_ratatui_active() {
     RATATUI_ACTIVE.store(true, Ordering::Relaxed);
 }
@@ -50,8 +56,10 @@ pub(crate) fn mark_ratatui_active() {
 /// Mark that the ratatui terminal has been released.
 ///
 /// # Safety contract
-/// Must be called only from `TerminalGuard::Drop`. Direct callers can corrupt
-/// the panic-hook contract.
+/// See [`mark_ratatui_active`]. Pair every `mark_ratatui_active` with exactly
+/// one `mark_ratatui_inactive`, including on error and panic paths. Skipping
+/// the clear leaves the panic hook armed to call `ratatui::restore()` on the
+/// next unrelated panic, which can scribble on a healthy terminal.
 pub(crate) fn mark_ratatui_inactive() {
     RATATUI_ACTIVE.store(false, Ordering::Relaxed);
 }

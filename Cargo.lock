@@ -806,7 +806,6 @@ dependencies = [
  "clap",
  "clap_complete",
  "console",
- "crossterm",
  "dialoguer",
  "dirs",
  "filetime",
