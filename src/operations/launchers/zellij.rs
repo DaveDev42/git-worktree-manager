@@ -20,8 +20,13 @@ pub fn launch_session(
         ));
     }
 
+    // Like the tab/pane variants below, the command is the session's only
+    // program — keep a login shell after it exits so the session survives.
+    // (tmux's session launcher doesn't need this: it `send-keys` into a
+    // pre-spawned interactive shell rather than running the command as PID 1.)
+    let wrapped = super::keep_shell_after(command);
     Command::new("zellij")
-        .args(["-s", session_name, "--", "bash", "-lc", command])
+        .args(["-s", session_name, "--", "bash", "-lc", &wrapped])
         .current_dir(path)
         .status()
         .map_err(|e| CwError::Git(format!("zellij launch failed: {}", e)))?;
@@ -44,10 +49,11 @@ pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str, tab_name: &str
     }
 
     let path_str = path.to_string_lossy().to_string();
+    let wrapped = super::keep_shell_after(command);
     Command::new("zellij")
         .args([
             "action", "new-tab", "--name", tab_name, "--cwd", &path_str, "--", "bash", "-lc",
-            command,
+            &wrapped,
         ])
         .status()
         .map_err(|e| CwError::Git(format!("zellij new-tab failed: {}", e)))?;
@@ -71,9 +77,11 @@ pub fn launch_pane(path: &Path, command: &str, ai_tool_name: &str, horizontal: b
 
     let direction = if horizontal { "right" } else { "down" };
     let path_str = path.to_string_lossy().to_string();
+    let wrapped = super::keep_shell_after(command);
     Command::new("zellij")
         .args([
-            "action", "new-pane", "-d", direction, "--cwd", &path_str, "--", "bash", "-lc", command,
+            "action", "new-pane", "-d", direction, "--cwd", &path_str, "--", "bash", "-lc",
+            &wrapped,
         ])
         .status()
         .map_err(|e| CwError::Git(format!("zellij new-pane failed: {}", e)))?;
