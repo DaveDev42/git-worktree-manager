@@ -6,6 +6,7 @@ pub mod claude_process;
 pub mod claude_session;
 pub mod claude_settings;
 pub mod complete;
+pub mod config_ops;
 pub mod diagnostics;
 pub mod display;
 pub mod exec;

@@ -6,7 +6,7 @@
 
 use clap::Parser;
 
-use crate::cli::{Cli, Commands};
+use crate::cli::{Cli, Commands, ConfigAction};
 use crate::config;
 use crate::console as cwconsole;
 use crate::constants;
@@ -14,8 +14,8 @@ use crate::cwshare_setup;
 use crate::error::{CwError, Result};
 use crate::operations::ai_tools::LaunchOptions;
 use crate::operations::{
-    ai_tools, diagnostics, display, exec, guard, helpers, path_cmd, run, setup_claude, spawn_spec,
-    worktree,
+    ai_tools, config_ops, diagnostics, display, exec, guard, helpers, path_cmd, run, setup_claude,
+    spawn_spec, worktree,
 };
 use crate::resolve_prompt;
 use crate::shell_functions;
@@ -251,6 +251,20 @@ pub fn run() {
 
         Some(Commands::Guard { tool_input }) => guard::run(&tool_input),
         Some(Commands::SetupClaude) => setup_claude::setup_claude(),
+
+        Some(Commands::Config { action }) => match action {
+            ConfigAction::List => config_ops::list_cmd(),
+            ConfigAction::Get { key } => config_ops::get_cmd(key),
+            ConfigAction::Set { key, value, repo } => {
+                let scope = if repo {
+                    config_ops::Scope::Repo
+                } else {
+                    config_ops::Scope::Global
+                };
+                config_ops::set_cmd(key, &value, scope)
+            }
+            ConfigAction::Edit => crate::tui::config_editor::run(),
+        },
 
         Some(Commands::Upgrade { yes }) => {
             update::upgrade(yes);

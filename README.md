@@ -138,6 +138,7 @@ for the foreground / detached launchers that inherit the parent env directly.
 | `gw upgrade` | Check for updates / upgrade |
 | `gw setup-claude` | Install Claude Code skill for worktree task delegation |
 | `gw shell-setup` | Interactive shell integration setup |
+| `gw config <list\|get\|set\|edit>` | View or edit gw config (global / `.cwconfig.json`) — see [Configuration](#configuration) |
 
 ## Scope and Target Resolution
 
@@ -248,9 +249,22 @@ Generate shell completions separately with `gw --generate-completion <bash|zsh|f
 
 ## Configuration
 
-Config is resolved in layers (later layers override earlier ones): built-in defaults → `~/.config/git-worktree-manager/config.json` → repo-local `.cwconfig.json`. There are no `gw config` subcommands — edit the JSON files directly.
+Config is resolved in layers (later layers override earlier ones): built-in defaults → `~/.config/git-worktree-manager/config.json` → repo-local `.cwconfig.json`.
 
 Also reads legacy `~/.config/claude-worktree/config.json` from the Python predecessor.
+
+### `gw config`
+
+A small surface for viewing and editing config without hand-rolling JSON:
+
+| Command | What it does |
+|---|---|
+| `gw config list` | Show every known key with its resolved value and the scope it came from (`[global]`, `[repo]`, `[override: repo]`, `[default]`). |
+| `gw config get <key>` | Print the resolved value of a single key (script-friendly: one line, exits non-zero when nothing is set). |
+| `gw config set <key> <value>` | Write to global config. Add `--repo` to write a repo-local override to `<repo-root>/.cwconfig.json`. |
+| `gw config edit` | Interactive TUI: scroll keys, `Tab` to swap between global and repo, `Enter` to edit, empty input to unset, `s` to save. |
+
+Keys mirror the JSON paths in dot/kebab form: `ai-tool.command`, `ai-tool.args`, `ai-tool.guard`, `launch.method`, `launch.tmux-session-prefix`, `launch.wezterm-ready-timeout`, `update.auto-check`, `hooks.post-new`, `hooks.pre-rm`. Tab completion enumerates them.
 
 Example `.cwconfig.json`:
 

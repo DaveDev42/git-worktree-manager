@@ -6,6 +6,8 @@ pub mod completions;
 use clap::{Parser, Subcommand, ValueHint};
 use std::path::PathBuf;
 
+use crate::operations::config_ops::ConfigKey;
+
 /// Git worktree manager CLI.
 #[derive(Parser, Debug)]
 #[command(
@@ -230,6 +232,20 @@ pub enum Commands {
     #[command(name = "setup-claude")]
     SetupClaude,
 
+    /// View or edit gw configuration.
+    ///
+    /// Configuration lives in two scopes:
+    ///   - `global`: `~/.config/git-worktree-manager/config.json`
+    ///   - `repo`:   `<repo-root>/.cwconfig.json` (overrides global)
+    ///
+    /// `set` writes to `global` by default; pass `--repo` for a repo
+    /// override. `edit` opens an interactive TUI that lets you toggle
+    /// between scopes with Tab.
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+
     /// Interactive shell integration setup
     ShellSetup,
 
@@ -310,4 +326,34 @@ pub enum Commands {
         #[arg(value_hint = ValueHint::FilePath)]
         spec: Option<PathBuf>,
     },
+}
+
+/// Subcommands under `gw config`.
+#[derive(Subcommand, Debug)]
+pub enum ConfigAction {
+    /// List every known key with its current value and scope.
+    List,
+
+    /// Print the resolved value of a single key (repo > global > default).
+    Get {
+        /// Key to look up (e.g. `ai-tool.command`).
+        key: ConfigKey,
+    },
+
+    /// Set a key. Writes to global config by default; `--repo` writes to
+    /// `<repo-root>/.cwconfig.json` as an override.
+    Set {
+        /// Key to set.
+        key: ConfigKey,
+        /// New value. Strings are taken as-is; booleans accept
+        /// true/false/1/0/yes/no/on/off; `ai-tool.args` accepts either
+        /// whitespace-separated tokens or a JSON array literal.
+        value: String,
+        /// Write to repo scope instead of global.
+        #[arg(long)]
+        repo: bool,
+    },
+
+    /// Open an interactive TUI that lets you browse/edit both scopes.
+    Edit,
 }
