@@ -63,6 +63,7 @@ pub fn launch_window(
     }
 
     let path_str = path.to_string_lossy().to_string();
+    let wrapped = super::keep_shell_after(command);
     Command::new("tmux")
         .args([
             "new-window",
@@ -72,7 +73,7 @@ pub fn launch_window(
             &path_str,
             "bash",
             "-lc",
-            command,
+            &wrapped,
         ])
         .status()
         .map_err(|e| CwError::Git(format!("tmux new-window failed: {}", e)))?;
@@ -96,6 +97,7 @@ pub fn launch_pane(path: &Path, command: &str, ai_tool_name: &str, horizontal: b
 
     let split_flag = if horizontal { "-h" } else { "-v" };
     let path_str = path.to_string_lossy().to_string();
+    let wrapped = super::keep_shell_after(command);
     Command::new("tmux")
         .args([
             "split-window",
@@ -104,7 +106,7 @@ pub fn launch_pane(path: &Path, command: &str, ai_tool_name: &str, horizontal: b
             &path_str,
             "bash",
             "-lc",
-            command,
+            &wrapped,
         ])
         .status()
         .map_err(|e| CwError::Git(format!("tmux split-window failed: {}", e)))?;
