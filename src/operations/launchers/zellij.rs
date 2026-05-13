@@ -20,8 +20,13 @@ pub fn launch_session(
         ));
     }
 
+    // Like the tab/pane variants below, the command is the session's only
+    // program — keep a login shell after it exits so the session survives.
+    // (tmux's session launcher doesn't need this: it `send-keys` into a
+    // pre-spawned interactive shell rather than running the command as PID 1.)
+    let wrapped = super::keep_shell_after(command);
     Command::new("zellij")
-        .args(["-s", session_name, "--", "bash", "-lc", command])
+        .args(["-s", session_name, "--", "bash", "-lc", &wrapped])
         .current_dir(path)
         .status()
         .map_err(|e| CwError::Git(format!("zellij launch failed: {}", e)))?;
