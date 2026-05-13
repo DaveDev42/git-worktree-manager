@@ -53,7 +53,17 @@ pub fn run() {
         update::check_for_update_if_needed();
     }
 
-    if !is_internal {
+    // `gw config` is the user's tool for inspecting/editing the same file the
+    // one-time shell-completion hint persists to. Triggering the prompt here
+    // would seed a fresh global config file as a side-effect of `gw config
+    // list` (or even `gw config get`), surprising the user — and worse, makes
+    // every `[default]` row of `list` render as `[global]` once the autosave
+    // lands. Skip the hint for the `config` family; users who want it can
+    // discover it via any other command (or `gw shell-setup` directly).
+    let skip_shell_completion_prompt =
+        is_internal || matches!(&cli.command, Some(Commands::Config { .. }));
+
+    if !skip_shell_completion_prompt {
         config::prompt_shell_completion_setup();
     }
 
