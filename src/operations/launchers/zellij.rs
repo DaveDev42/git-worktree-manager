@@ -50,9 +50,22 @@ pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str, tab_name: &str
 
     let path_str = path.to_string_lossy().to_string();
     let wrapped = super::keep_shell_after(command);
+    // `--close-on-exit` so the tab actually closes when the wrapped shell
+    // exits. Without it Zellij holds the pane in an "exited" state and the
+    // user has to manually close it — easily mistaken for `exit` being
+    // ignored.
     Command::new("zellij")
         .args([
-            "action", "new-tab", "--name", tab_name, "--cwd", &path_str, "--", "bash", "-lc",
+            "action",
+            "new-tab",
+            "--close-on-exit",
+            "--name",
+            tab_name,
+            "--cwd",
+            &path_str,
+            "--",
+            "bash",
+            "-lc",
             &wrapped,
         ])
         .status()
@@ -78,9 +91,20 @@ pub fn launch_pane(path: &Path, command: &str, ai_tool_name: &str, horizontal: b
     let direction = if horizontal { "right" } else { "down" };
     let path_str = path.to_string_lossy().to_string();
     let wrapped = super::keep_shell_after(command);
+    // See `launch_tab` for why `--close-on-exit` matters: without it the pane
+    // is held open in "exited" state after the wrapped shell ends.
     Command::new("zellij")
         .args([
-            "action", "new-pane", "-d", direction, "--cwd", &path_str, "--", "bash", "-lc",
+            "action",
+            "new-pane",
+            "--close-on-exit",
+            "-d",
+            direction,
+            "--cwd",
+            &path_str,
+            "--",
+            "bash",
+            "-lc",
             &wrapped,
         ])
         .status()
