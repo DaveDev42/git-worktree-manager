@@ -205,6 +205,8 @@ Use `-T skip` (or its aliases `-T none` / `-T noop`) to skip the AI tool launch 
 | **Zellij** | `zellij`, `zellij-tab`, `zellij-pane-h`, `zellij-pane-v` |
 | **WezTerm** | `wezterm-window`, `wezterm-tab`, `wezterm-tab-bg`, `wezterm-pane-h`, `wezterm-pane-v` |
 
+New tabs/windows (`tmux-window`, `zellij-tab`, `wezterm-window`/`wezterm-tab`/`wezterm-tab-bg`) are named after the worktree directory so you can tell sessions apart at a glance.
+
 ## Claude Code Integration
 
 Install the gw plugin into your Claude Code setup:

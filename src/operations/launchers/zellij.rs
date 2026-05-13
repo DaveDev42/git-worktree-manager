@@ -36,7 +36,7 @@ pub fn launch_session(
 }
 
 /// Launch in new Zellij tab.
-pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str) -> Result<()> {
+pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str, tab_name: &str) -> Result<()> {
     if std::env::var("ZELLIJ").is_err() {
         return Err(CwError::Git(
             "--term zellij-tab requires running inside a Zellij session".to_string(),
@@ -46,15 +46,17 @@ pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str) -> Result<()> 
     let path_str = path.to_string_lossy().to_string();
     Command::new("zellij")
         .args([
-            "action", "new-tab", "--cwd", &path_str, "--", "bash", "-lc", command,
+            "action", "new-tab", "--name", tab_name, "--cwd", &path_str, "--", "bash", "-lc",
+            command,
         ])
         .status()
         .map_err(|e| CwError::Git(format!("zellij new-tab failed: {}", e)))?;
 
     println!(
-        "{} {} running in new Zellij tab\n",
+        "{} {} running in new Zellij tab '{}'\n",
         style("*").green().bold(),
-        ai_tool_name
+        ai_tool_name,
+        tab_name
     );
     Ok(())
 }

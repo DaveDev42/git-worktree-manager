@@ -498,7 +498,8 @@ fn test_invalid_env_falls_through() {
 #[test]
 fn test_tmux_window_requires_tmux_session() {
     with_clean_env(&["TMUX"], || {
-        let result = launchers::tmux::launch_window(Path::new("/tmp"), "echo test", "test-tool");
+        let result =
+            launchers::tmux::launch_window(Path::new("/tmp"), "echo test", "test-tool", "wt");
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
@@ -542,7 +543,8 @@ fn test_tmux_pane_vertical_requires_tmux_session() {
 #[test]
 fn test_zellij_tab_requires_zellij_session() {
     with_clean_env(&["ZELLIJ"], || {
-        let result = launchers::zellij::launch_tab(Path::new("/tmp"), "echo test", "test-tool");
+        let result =
+            launchers::zellij::launch_tab(Path::new("/tmp"), "echo test", "test-tool", "wt");
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
