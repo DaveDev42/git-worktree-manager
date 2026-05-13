@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.7...v0.1.8) (2026-05-13)
+
+
+### Features
+
+* **launchers:** keep an interactive shell open after the AI tool exits ([#163](https://github.com/DaveDev42/git-worktree-manager/issues/163)) ([04cdd94](https://github.com/DaveDev42/git-worktree-manager/commit/04cdd94e9d5bb7f24291d520eaeb8fc9f6db2cfb))
+
 ## [0.1.7](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.6...v0.1.7) (2026-05-13)
 
 
