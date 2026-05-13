@@ -20,6 +20,9 @@ use tempfile::tempdir;
 fn gw(home_dir: &Path) -> Command {
     let mut c = Command::cargo_bin("gw").unwrap();
     c.env("HOME", home_dir);
+    // On Windows, `dirs::home_dir()` reads `USERPROFILE` rather than `HOME`.
+    // Set both so the production code lands inside the tempdir on every platform.
+    c.env("USERPROFILE", home_dir);
     // `dirs::cache_dir()` respects `$XDG_CACHE_HOME` on Linux — used by the
     // auto-update checker (`update.rs`) and the PR cache. Without removal a
     // CI runner with `$XDG_CACHE_HOME` exported would write outside the
