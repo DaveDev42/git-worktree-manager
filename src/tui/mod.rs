@@ -11,6 +11,7 @@
 //! ratatui is reserved for commands that need declarative/progressive rendering.
 
 pub mod arrow_select;
+pub mod config_editor;
 pub mod list_view;
 pub mod multi_select;
 pub mod raw_mode;
