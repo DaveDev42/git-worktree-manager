@@ -4,8 +4,9 @@ use clap::Parser;
 use git_worktree_manager::cli::{Cli, Commands};
 use predicates::prelude::*;
 
-// Note: gw config, gw export, and gw import were removed in 1.0.
-// Edit ~/.config/git-worktree-manager/config.json directly instead.
+// Note: `gw export` / `gw import` were removed in 1.0. `gw config`
+// (list/get/set/edit) was re-added; see `tests/test_config_cli.rs` for its
+// CLI-level coverage.
 
 fn cw() -> Command {
     Command::cargo_bin("gw").unwrap()
