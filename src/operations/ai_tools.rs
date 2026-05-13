@@ -108,7 +108,9 @@ fn dispatch_launch(
             let sn = session_name.unwrap_or_else(|| generate_session_name(path));
             launchers::tmux::launch_session(path, cmd, ai_tool_name, &sn)?;
         }
-        LaunchMethod::TmuxWindow => launchers::tmux::launch_window(path, cmd, ai_tool_name)?,
+        LaunchMethod::TmuxWindow => {
+            launchers::tmux::launch_window(path, cmd, ai_tool_name, &tab_label_for(path))?
+        }
         LaunchMethod::TmuxPaneH => launchers::tmux::launch_pane(path, cmd, ai_tool_name, true)?,
         LaunchMethod::TmuxPaneV => launchers::tmux::launch_pane(path, cmd, ai_tool_name, false)?,
         // Zellij
@@ -116,15 +118,23 @@ fn dispatch_launch(
             let sn = session_name.unwrap_or_else(|| generate_session_name(path));
             launchers::zellij::launch_session(path, cmd, ai_tool_name, &sn)?;
         }
-        LaunchMethod::ZellijTab => launchers::zellij::launch_tab(path, cmd, ai_tool_name)?,
+        LaunchMethod::ZellijTab => {
+            launchers::zellij::launch_tab(path, cmd, ai_tool_name, &tab_label_for(path))?
+        }
         LaunchMethod::ZellijPaneH => launchers::zellij::launch_pane(path, cmd, ai_tool_name, true)?,
         LaunchMethod::ZellijPaneV => {
             launchers::zellij::launch_pane(path, cmd, ai_tool_name, false)?
         }
         // WezTerm
-        LaunchMethod::WeztermWindow => launchers::wezterm::launch_window(path, cmd, ai_tool_name)?,
-        LaunchMethod::WeztermTab => launchers::wezterm::launch_tab(path, cmd, ai_tool_name)?,
-        LaunchMethod::WeztermTabBg => launchers::wezterm::launch_tab_bg(path, cmd, ai_tool_name)?,
+        LaunchMethod::WeztermWindow => {
+            launchers::wezterm::launch_window(path, cmd, ai_tool_name, &tab_label_for(path))?
+        }
+        LaunchMethod::WeztermTab => {
+            launchers::wezterm::launch_tab(path, cmd, ai_tool_name, &tab_label_for(path))?
+        }
+        LaunchMethod::WeztermTabBg => {
+            launchers::wezterm::launch_tab_bg(path, cmd, ai_tool_name, &tab_label_for(path))?
+        }
         LaunchMethod::WeztermPaneH => {
             launchers::wezterm::launch_pane(path, cmd, ai_tool_name, true)?
         }
@@ -462,21 +472,36 @@ fn inject_guard_into_argv(argv: &mut Vec<String>, guard_enabled: bool) -> Result
     Ok(())
 }
 
+/// Worktree directory basename, or a stable fallback for rootless paths.
+fn dir_name_of(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "worktree".to_string())
+}
+
+/// Truncate to at most `MAX_SESSION_NAME_LENGTH` characters, never splitting a
+/// codepoint (tmux/zellij names and sockets are byte-bounded, but a panic on a
+/// multi-byte boundary is worse than a slightly-short label).
+fn cap_session_len(s: String) -> String {
+    if s.chars().count() > MAX_SESSION_NAME_LENGTH {
+        s.chars().take(MAX_SESSION_NAME_LENGTH).collect()
+    } else {
+        s
+    }
+}
+
+/// Derive a tab/window label for terminal multiplexers from the worktree
+/// directory name. Sanitized the same way branch-derived names are, and
+/// capped at `MAX_SESSION_NAME_LENGTH` so tmux/zellij don't choke on it.
+fn tab_label_for(path: &Path) -> String {
+    cap_session_len(crate::constants::sanitize_branch_name(&dir_name_of(path)))
+}
+
 /// Generate a session name from path with length limit.
 fn generate_session_name(path: &Path) -> String {
     let config = config::load_config().unwrap_or_default();
     let prefix = &config.launch.tmux_session_prefix;
-    let dir_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "worktree".to_string());
-
-    let name = format!("{}-{}", prefix, dir_name);
-    if name.len() > MAX_SESSION_NAME_LENGTH {
-        name[..MAX_SESSION_NAME_LENGTH].to_string()
-    } else {
-        name
-    }
+    cap_session_len(format!("{}-{}", prefix, dir_name_of(path)))
 }
 
 #[cfg(test)]
@@ -496,6 +521,26 @@ mod tests {
         let _guard = EnvGuard::capture(&["CW_SPAWN_AI_BIN"]);
         std::env::set_var("CW_SPAWN_AI_BIN", "/usr/local/bin/gw");
         f();
+    }
+
+    #[test]
+    fn tab_label_uses_sanitized_dir_name() {
+        assert_eq!(
+            tab_label_for(Path::new("/tmp/repo-feat-auth")),
+            "repo-feat-auth"
+        );
+        // Path components are already sanitized on disk, but defensive: a
+        // name with odd chars still comes back hyphen-safe.
+        assert_eq!(tab_label_for(Path::new("/tmp/odd name@v1")), "odd-name-v1");
+        // Empty / rootless paths fall back to a stable default.
+        assert_eq!(tab_label_for(Path::new("/")), "worktree");
+    }
+
+    #[test]
+    fn tab_label_caps_at_max_session_length() {
+        let long = "a".repeat(MAX_SESSION_NAME_LENGTH + 20);
+        let label = tab_label_for(Path::new(&format!("/tmp/{long}")));
+        assert_eq!(label.chars().count(), MAX_SESSION_NAME_LENGTH);
     }
 
     #[test]

@@ -50,7 +50,12 @@ pub fn launch_session(
 }
 
 /// Launch in new tmux window (requires active tmux session).
-pub fn launch_window(path: &Path, command: &str, ai_tool_name: &str) -> Result<()> {
+pub fn launch_window(
+    path: &Path,
+    command: &str,
+    ai_tool_name: &str,
+    window_name: &str,
+) -> Result<()> {
     if std::env::var("TMUX").is_err() {
         return Err(CwError::Git(
             "--term tmux-window requires running inside a tmux session".to_string(),
@@ -59,14 +64,24 @@ pub fn launch_window(path: &Path, command: &str, ai_tool_name: &str) -> Result<(
 
     let path_str = path.to_string_lossy().to_string();
     Command::new("tmux")
-        .args(["new-window", "-c", &path_str, "bash", "-lc", command])
+        .args([
+            "new-window",
+            "-n",
+            window_name,
+            "-c",
+            &path_str,
+            "bash",
+            "-lc",
+            command,
+        ])
         .status()
         .map_err(|e| CwError::Git(format!("tmux new-window failed: {}", e)))?;
 
     println!(
-        "{} {} running in new tmux window\n",
+        "{} {} running in new tmux window '{}'\n",
         style("*").green().bold(),
-        ai_tool_name
+        ai_tool_name,
+        window_name
     );
     Ok(())
 }

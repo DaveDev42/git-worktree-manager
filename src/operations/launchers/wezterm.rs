@@ -66,6 +66,17 @@ fn wait_for_shell_ready(pane_id: &str, timeout: f64) {
     }
 }
 
+/// Set the tab title for the tab containing `pane_id`. Best-effort: a
+/// failure here is cosmetic, so we swallow errors rather than abort the launch.
+fn set_tab_title(pane_id: &str, title: &str) {
+    if pane_id.is_empty() || title.is_empty() {
+        return;
+    }
+    let _ = Command::new("wezterm")
+        .args(["cli", "set-tab-title", "--pane-id", pane_id, title])
+        .status();
+}
+
 /// Send text to a WezTerm pane after waiting for readiness.
 fn send_text(pane_id: &str, command: &str) -> Result<()> {
     if pane_id.is_empty() {
@@ -100,7 +111,12 @@ fn send_text(pane_id: &str, command: &str) -> Result<()> {
 }
 
 /// Launch in new WezTerm window.
-pub fn launch_window(path: &Path, command: &str, ai_tool_name: &str) -> Result<()> {
+pub fn launch_window(
+    path: &Path,
+    command: &str,
+    ai_tool_name: &str,
+    tab_title: &str,
+) -> Result<()> {
     if !git::has_command("wezterm") {
         return Err(CwError::Git(
             "wezterm not installed. Install from https://wezterm.org/".to_string(),
@@ -114,18 +130,20 @@ pub fn launch_window(path: &Path, command: &str, ai_tool_name: &str) -> Result<(
         .map_err(|e| CwError::Git(format!("wezterm spawn failed: {}", e)))?;
 
     let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    set_tab_title(&pane_id, tab_title);
     send_text(&pane_id, command)?;
 
     println!(
-        "{} {} running in new WezTerm window\n",
+        "{} {} running in new WezTerm window '{}'\n",
         style("*").green().bold(),
-        ai_tool_name
+        ai_tool_name,
+        tab_title
     );
     Ok(())
 }
 
 /// Launch in new WezTerm tab.
-pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str) -> Result<()> {
+pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str, tab_title: &str) -> Result<()> {
     if !git::has_command("wezterm") {
         return Err(CwError::Git(
             "wezterm not installed. Install from https://wezterm.org/".to_string(),
@@ -139,12 +157,14 @@ pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str) -> Result<()> 
         .map_err(|e| CwError::Git(format!("wezterm spawn failed: {}", e)))?;
 
     let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    set_tab_title(&pane_id, tab_title);
     send_text(&pane_id, command)?;
 
     println!(
-        "{} {} running in new WezTerm tab\n",
+        "{} {} running in new WezTerm tab '{}'\n",
         style("*").green().bold(),
-        ai_tool_name
+        ai_tool_name,
+        tab_title
     );
     Ok(())
 }
@@ -153,7 +173,12 @@ pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str) -> Result<()> 
 ///
 /// Spawns a new tab, immediately restores focus to the original tab,
 /// then sends the command to the new pane in the background.
-pub fn launch_tab_bg(path: &Path, command: &str, ai_tool_name: &str) -> Result<()> {
+pub fn launch_tab_bg(
+    path: &Path,
+    command: &str,
+    ai_tool_name: &str,
+    tab_title: &str,
+) -> Result<()> {
     if !git::has_command("wezterm") {
         return Err(CwError::Git(
             "wezterm not installed. Install from https://wezterm.org/".to_string(),
@@ -173,6 +198,7 @@ pub fn launch_tab_bg(path: &Path, command: &str, ai_tool_name: &str) -> Result<(
         .map_err(|e| CwError::Git(format!("wezterm spawn failed: {}", e)))?;
 
     let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    set_tab_title(&pane_id, tab_title);
 
     // Immediately restore focus to the original pane before send_text polling.
     if let Some(pane) = &current_pane {
@@ -189,9 +215,10 @@ pub fn launch_tab_bg(path: &Path, command: &str, ai_tool_name: &str) -> Result<(
     send_text(&pane_id, command)?;
 
     println!(
-        "{} {} running in new WezTerm tab (background)\n",
+        "{} {} running in new WezTerm tab '{}' (background)\n",
         style("*").green().bold(),
-        ai_tool_name
+        ai_tool_name,
+        tab_title
     );
     Ok(())
 }
