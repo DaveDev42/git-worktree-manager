@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.9](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.8...v0.1.9) (2026-05-13)
+
+
+### Features
+
+* **config:** re-add `gw config` (list/get/set/edit) ([#165](https://github.com/DaveDev42/git-worktree-manager/issues/165)) ([2833afb](https://github.com/DaveDev42/git-worktree-manager/commit/2833afb6fe83c834fec5146f2f44a7d96b96b616))
+
+
+### Bug Fixes
+
+* **config:** skip shell-completion hint for gw config commands ([#166](https://github.com/DaveDev42/git-worktree-manager/issues/166)) ([96d58b5](https://github.com/DaveDev42/git-worktree-manager/commit/96d58b55b9d074a73570949cec848bf3526a8ae1))
+* **launchers:** close zellij tab/pane when wrapped shell exits ([#167](https://github.com/DaveDev42/git-worktree-manager/issues/167)) ([1e60496](https://github.com/DaveDev42/git-worktree-manager/commit/1e604966d9d56a81334425b23462a1e5a302fea6))
+
 ## [0.1.8](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.7...v0.1.8) (2026-05-13)
 
 
