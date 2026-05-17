@@ -2,7 +2,20 @@
 
 This document tracks remaining planned features and enhancements.
 
-No pending items.
+## Open
+
+### Infrastructure / CI
+
+- [ ] **Provision `RELEASE_PLEASE_TOKEN` repo secret.** The
+  `release-please.yml` workflow now prefers a maintainer-supplied PAT
+  (fine-grained: `Contents: r/w` + `Pull requests: r/w` on this repo;
+  or classic with `repo`) and falls back to `GITHUB_TOKEN` when unset.
+  With the PAT, release-please's push to the release-PR branch
+  triggers `pull_request` CI normally; without it, the release PR
+  stays BLOCKED on required status checks (e.g. PR #168 currently)
+  until someone closes-and-reopens it. A single fine-grained PAT can
+  be scoped to both this repo and `DaveDev42/nokhwa` (same issue
+  there) — see `nokhwa/TODO.md` for the matching item.
 
 ## Known Issues
 
