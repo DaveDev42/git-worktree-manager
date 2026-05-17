@@ -29,6 +29,18 @@ jobs:
       - uses: googleapis/release-please-action@v5
         id: release
         with:
+          # Prefer a maintainer-supplied PAT (repo secret
+          # `RELEASE_PLEASE_TOKEN`, fine-grained with `Contents: r/w` +
+          # `Pull requests: r/w` on this repo; or classic with `repo`)
+          # so release-please's push to the release-PR branch triggers
+          # normal `pull_request` CI. GitHub Actions suppresses
+          # workflow re-runs on pushes made by the default
+          # `GITHUB_TOKEN`, which leaves the release PR permanently
+          # BLOCKED on required status checks (close-and-reopen is the
+          # manual workaround). When the secret is unset, fall back to
+          # `GITHUB_TOKEN` so the workflow still functions — just
+          # without auto-triggered CI on the release PR.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
