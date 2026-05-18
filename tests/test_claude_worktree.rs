@@ -15,6 +15,15 @@ use std::process::{Command, Stdio};
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Converts a path to a forward-slash string safe for embedding in JSON.
+///
+/// On Windows, `Path::display()` produces backslashes which are invalid JSON
+/// escape sequences. Replacing them with forward slashes produces valid JSON
+/// that the Rust JSON parser (and Windows APIs) accept.
+fn json_path(p: &std::path::Path) -> String {
+    p.to_string_lossy().replace('\\', "/")
+}
+
 /// Run `gw _claude-worktree-create` with the given stdin payload, inside
 /// `cwd`. Returns the full `Output`.
 fn run_create_with_stdin(cwd: &std::path::Path, stdin_payload: &str) -> std::process::Output {
@@ -71,7 +80,7 @@ fn create_minimal_payload_outputs_path_and_dir_exists() {
     let repo = TestRepo::new();
     let payload = format!(
         r#"{{"hook_event_name":"WorktreeCreate","session_id":"s1","cwd":"{path}","worktree_path":"/ignored","base_path":"{path}","branch_name":"claude-create-test"}}"#,
-        path = repo.path().display()
+        path = json_path(repo.path())
     );
 
     let out = run_create_with_stdin(repo.path(), &payload);
@@ -110,7 +119,7 @@ fn create_output_path_reflects_branch_name() {
     let branch = "claude-naming-test";
     let payload = format!(
         r#"{{"hook_event_name":"WorktreeCreate","cwd":"{path}","base_path":"{path}","branch_name":"{branch}"}}"#,
-        path = repo.path().display(),
+        path = json_path(repo.path()),
         branch = branch
     );
 
@@ -137,7 +146,7 @@ fn create_ignores_unknown_fields() {
     let repo = TestRepo::new();
     let payload = format!(
         r#"{{"hook_event_name":"WorktreeCreate","unknown_future_field":42,"base_path":"{path}","branch_name":"claude-unknown-fields"}}"#,
-        path = repo.path().display()
+        path = json_path(repo.path())
     );
 
     let out = run_create_with_stdin(repo.path(), &payload);
@@ -178,7 +187,7 @@ fn create_missing_branch_name_exits_nonzero() {
     // `branch_name` is absent; serde should fail deserialization.
     let payload = format!(
         r#"{{"hook_event_name":"WorktreeCreate","base_path":"{}"}}"#,
-        repo.path().display()
+        json_path(repo.path())
     );
 
     let out = run_create_with_stdin(repo.path(), &payload);
@@ -212,8 +221,8 @@ fn remove_no_hook_exits_zero_silently() {
 
     let payload = format!(
         r#"{{"hook_event_name":"WorktreeRemove","session_id":"s1","cwd":"{repo}","worktree_path":"{wt}","isolation_mode":"worktree"}}"#,
-        repo = repo.path().display(),
-        wt = wt_path.display()
+        repo = json_path(repo.path()),
+        wt = json_path(&wt_path)
     );
 
     let out = run_remove_with_stdin(repo.path(), &payload);
