@@ -3,10 +3,20 @@
 /// Mirrors the Typer-based CLI in src/git_worktree_manager/cli.py.
 pub mod completions;
 
-use clap::{Parser, Subcommand, ValueHint};
+use clap::{Parser, Subcommand, ValueEnum, ValueHint};
 use std::path::PathBuf;
 
 use crate::operations::config_ops::ConfigKey;
+
+/// Output format for `gw new --emit`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
+pub enum EmitFormat {
+    /// Human-readable styled output (default).
+    #[default]
+    Text,
+    /// Single-line JSON object with worktree metadata; suppresses AI-tool launch.
+    Json,
+}
 
 /// Git worktree manager CLI.
 #[derive(Parser, Debug)]
@@ -76,6 +86,13 @@ pub enum Commands {
         /// wezterm/iterm/tmux/zellij behave like a normal child process.
         #[arg(long = "no-env-forward")]
         no_env_forward: bool,
+
+        /// Output format for stdout. `text` (default) for human-readable styled
+        /// output; `json` emits a single-line JSON object with worktree metadata
+        /// and suppresses the AI-tool launch. Useful for scripts and the Claude
+        /// Code `WorktreeCreate` hook integration.
+        #[arg(long, value_enum, default_value_t = EmitFormat::Text)]
+        emit: EmitFormat,
 
         /// Extra arguments forwarded verbatim to the AI tool (claude/codex/
         /// gemini). Mutually exclusive with `--prompt`/`--prompt-file`
@@ -228,7 +245,13 @@ pub enum Commands {
         yes: bool,
     },
 
-    /// Install Claude Code skill for worktree task delegation
+    /// Install Claude Code skills and hooks into the current repo's `.claude/`.
+    ///
+    /// Writes skill files into `.claude/skills/gw-delegate/` and
+    /// `.claude/skills/gw-manage/`, then registers three Claude Code hooks
+    /// (PreToolUse Bash guard, WorktreeCreate, WorktreeRemove) into
+    /// `.claude/settings.json`. Idempotent — re-running only writes files
+    /// whose content changed.
     #[command(name = "setup-claude")]
     SetupClaude,
 
@@ -287,6 +310,18 @@ pub enum Commands {
         #[arg(long, value_name = "PATH")]
         tool_input: String,
     },
+
+    /// [Internal] Read a Claude Code WorktreeCreate hook payload from stdin
+    /// and create a worktree via `gw new --emit json --term skip` under the hood.
+    /// Prints only the worktree path (plain text, one line) to stdout.
+    #[command(name = "_claude-worktree-create", hide = true)]
+    ClaudeWorktreeCreate,
+
+    /// [Internal] Read a Claude Code WorktreeRemove hook payload from stdin
+    /// and run the configured `pre_rm` hook as a best-effort advisory step.
+    /// Always exits 0; Claude Code owns the actual removal.
+    #[command(name = "_claude-worktree-remove", hide = true)]
+    ClaudeWorktreeRemove,
 
     /// [Internal] Get worktree path for a branch
     #[command(name = "_path", hide = true)]

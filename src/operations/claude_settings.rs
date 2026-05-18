@@ -21,23 +21,58 @@ use crate::operations::spawn_spec::quote_path_for_shell;
 /// into the same `gw` that spawned the session. `CW_SPAWN_AI_BIN` overrides
 /// the path — used by integration tests to point at a cargo-built binary.
 pub fn guard_settings_json() -> Result<String> {
-    let self_exe = resolve_self_exe()?;
-    let command = format!("{} guard --tool-input -", quote_path_for_shell(&self_exe));
-
     let payload = json!({
         "hooks": {
             "PreToolUse": [
-                {
-                    "matcher": "Bash",
-                    "hooks": [
-                        { "type": "command", "command": command }
-                    ]
-                }
+                pre_tool_use_bash_entry()?
             ]
         }
     });
 
     Ok(payload.to_string())
+}
+
+/// One PreToolUse(Bash) hook entry — used by both `--settings` inline injection
+/// and `setup-claude`'s `.claude/settings.json` merge.
+pub fn pre_tool_use_bash_entry() -> Result<serde_json::Value> {
+    let self_exe = resolve_self_exe()?;
+    let command = format!("{} guard --tool-input -", quote_path_for_shell(&self_exe));
+    Ok(json!({
+        "matcher": "Bash",
+        "hooks": [
+            { "type": "command", "command": command }
+        ]
+    }))
+}
+
+/// One WorktreeCreate hook entry (no matcher — Claude Code does not support
+/// matchers for worktree lifecycle events).
+pub fn worktree_create_entry() -> Result<serde_json::Value> {
+    let self_exe = resolve_self_exe()?;
+    let command = format!(
+        "{} _claude-worktree-create",
+        quote_path_for_shell(&self_exe)
+    );
+    Ok(json!({
+        "hooks": [
+            { "type": "command", "command": command }
+        ]
+    }))
+}
+
+/// One WorktreeRemove hook entry (no matcher — Claude Code does not support
+/// matchers for worktree lifecycle events).
+pub fn worktree_remove_entry() -> Result<serde_json::Value> {
+    let self_exe = resolve_self_exe()?;
+    let command = format!(
+        "{} _claude-worktree-remove",
+        quote_path_for_shell(&self_exe)
+    );
+    Ok(json!({
+        "hooks": [
+            { "type": "command", "command": command }
+        ]
+    }))
 }
 
 fn resolve_self_exe() -> Result<PathBuf> {
@@ -124,5 +159,50 @@ mod tests {
             .as_str()
             .expect("str");
         assert!(cmd.starts_with("\"C:\\Program Files\\gw\\gw.exe\""));
+    }
+
+    #[test]
+    fn pre_tool_use_bash_entry_structure() {
+        let _lock = env_lock();
+        let _guard = EnvGuard::capture(&["CW_SPAWN_AI_BIN"]);
+        std::env::set_var("CW_SPAWN_AI_BIN", "/usr/local/bin/gw");
+
+        let entry = pre_tool_use_bash_entry().expect("ok");
+        assert_eq!(entry["matcher"], "Bash");
+        let inner = entry["hooks"].as_array().expect("inner hooks array");
+        assert_eq!(inner[0]["type"], "command");
+        let cmd = inner[0]["command"].as_str().expect("command str");
+        assert!(cmd.ends_with(" guard --tool-input -"));
+        assert!(cmd.contains("/usr/local/bin/gw"));
+    }
+
+    #[test]
+    fn worktree_create_entry_structure() {
+        let _lock = env_lock();
+        let _guard = EnvGuard::capture(&["CW_SPAWN_AI_BIN"]);
+        std::env::set_var("CW_SPAWN_AI_BIN", "/usr/local/bin/gw");
+
+        let entry = worktree_create_entry().expect("ok");
+        // WorktreeCreate entries must NOT have a matcher key.
+        assert!(entry.get("matcher").is_none());
+        let inner = entry["hooks"].as_array().expect("inner hooks array");
+        assert_eq!(inner[0]["type"], "command");
+        let cmd = inner[0]["command"].as_str().expect("command str");
+        assert!(cmd.ends_with(" _claude-worktree-create"));
+    }
+
+    #[test]
+    fn worktree_remove_entry_structure() {
+        let _lock = env_lock();
+        let _guard = EnvGuard::capture(&["CW_SPAWN_AI_BIN"]);
+        std::env::set_var("CW_SPAWN_AI_BIN", "/usr/local/bin/gw");
+
+        let entry = worktree_remove_entry().expect("ok");
+        // WorktreeRemove entries must NOT have a matcher key.
+        assert!(entry.get("matcher").is_none());
+        let inner = entry["hooks"].as_array().expect("inner hooks array");
+        assert_eq!(inner[0]["type"], "command");
+        let cmd = inner[0]["command"].as_str().expect("command str");
+        assert!(cmd.ends_with(" _claude-worktree-remove"));
     }
 }

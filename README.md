@@ -210,16 +210,17 @@ New tabs/windows (`tmux-window`, `zellij-tab`, `wezterm-window`/`wezterm-tab`/`w
 
 ## Claude Code Integration
 
-Install the gw plugin into your Claude Code setup:
+Install gw's Claude Code integration into the current repo:
 
 ```bash
-gw setup-claude    # One-time: installs the gw plugin to ~/.claude/plugins/gw/
+gw setup-claude    # Writes skill files + registers hooks into .claude/
 ```
 
-The plugin bundles two skills:
+This installs two skills and three hooks:
 
-- **`delegate`** — invoked via `/gw <task description>`. Spawns a new worktree and a Claude Code session inside it with the given task as the initial prompt. One-shot, fire-and-forget.
-- **`manage`** — auto-applies when you (or Claude) run worktree management commands. Encodes a worktree-health rulebook and a catalog of recommended Claude Code hooks. When relevant, Claude will *suggest* installing a hook into your project's `.claude/settings.json` and edit it on your consent — gw itself never modifies any settings file.
+- **`gw-delegate`** — when you ask Claude to fix/build/refactor something that warrants isolation, Claude spawns a subagent in a new worktree via `Agent(isolation: "worktree")`. One-shot, fire-and-forget.
+- **`gw-manage`** — auto-applies when you run worktree management commands. Encodes a worktree-health rulebook and hook-integration guidance.
+- **Hooks**: PreToolUse(Bash) guard, WorktreeCreate (routes `Agent` calls through `gw new`), WorktreeRemove (runs `pre_rm` advisory). All registered into `.claude/settings.json`. Idempotent — safe to re-run.
 
 ## Shell Integration
 
@@ -293,8 +294,8 @@ Two lifecycle hooks are available, configured in `.cwconfig.json` (or the global
 
 Hooks run as `sh -c <cmd>` with the worktree directory as the working directory.
 
-- `pre_rm` non-zero exit aborts the remove (the worktree stays). This is independent of `--force` — `--force` bypasses busy detection, not user hooks.
-- `post_new` non-zero exit surfaces as a non-zero `gw new` exit code, but the worktree itself remains on disk because the hook runs after `git worktree add`. The AI tool launch is skipped.
+- `pre_rm` non-zero exit logs a warning but does **not** block removal (advisory). The worktree is removed regardless. `--force` bypasses busy detection only — never this hook. _(Changed in v0.2.0: was blocking, now advisory, to align with Claude Code's WorktreeRemove hook which cannot block cleanup.)_
+- `post_new` non-zero exit surfaces as a non-zero `gw new` exit code, but the worktree itself remains on disk because the hook runs after `git worktree add`. The AI tool launch is skipped. _(Still blocking — a failed `post_new` signals the worktree is not ready.)_
 
 There are no `gw hook` CRUD subcommands — set hooks in the config file directly.
 

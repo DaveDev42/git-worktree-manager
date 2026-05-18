@@ -11,16 +11,9 @@ use git_worktree_manager::operations::diagnostics;
 fn doctor_setup_claude_messages_present() {
     let msgs = diagnostics::setup_claude_doctor_messages();
     assert!(
-        msgs.installed.contains("plugin installed"),
-        "installed message"
-    );
-    assert!(
-        msgs.legacy_alert.contains("Legacy") && msgs.legacy_alert.contains("pre-marketplace"),
-        "legacy alert line"
-    );
-    assert!(
-        msgs.legacy_tip.contains("Re-run") && msgs.legacy_tip.contains("setup-claude"),
-        "legacy upgrade tip"
+        msgs.installed.contains("skills installed"),
+        "installed message: got {:?}",
+        msgs.installed
     );
     assert!(
         msgs.missing_alert.contains("Claude Code detected"),

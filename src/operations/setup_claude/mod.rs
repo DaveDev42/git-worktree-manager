@@ -1,43 +1,21 @@
-//! Local-marketplace installer for Claude Code integration.
+//! `gw setup-claude` — project-local one-click installer for Claude Code
+//! integration.
 //!
-//! `gw setup-claude` writes a self-contained Claude Code marketplace tree
-//! under the OS data-local dir (e.g. `~/.local/share/git-worktree-manager/
-//! claude-marketplace/` on Linux/macOS, `%LOCALAPPDATA%\git-worktree-
-//! manager\claude-marketplace\` on Windows). After writing, we shell out
-//! to the `claude` CLI to register the marketplace and install/update the
-//! plugin so Claude Code actually loads it.
-//!
-//! Re-runs are idempotent: file content is content-addressed, and the
-//! `claude` CLI calls switch between fresh install and update based on a
-//! sentinel marker we drop on first run.
+//! Writes skill files into `<repo>/.claude/skills/{gw-delegate,gw-manage}/`
+//! and registers three Claude Code hooks (PreToolUse Bash guard,
+//! WorktreeCreate, WorktreeRemove) in `<repo>/.claude/settings.json`.
+//! Idempotent — re-running only writes files whose content changed.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use console::style;
 
-use crate::constants::home_dir_or_fallback;
 use crate::error::{CwError, Result};
+use crate::git;
+use crate::operations::sync_claude;
 
-pub mod claude_cli;
-pub mod command_gw;
-pub mod legacy;
-pub mod manifest;
-pub mod paths;
 mod skill_delegate;
 mod skill_manage;
-pub mod writer;
-
-use claude_cli::{ClaudeCli, RealClaudeCli};
-
-/// Tracks which branch of the `claude` CLI invocation path was taken.
-enum CliOutcome {
-    /// `claude` CLI was not available; we wrote files but did not call it.
-    NotRun,
-    /// We called `marketplace_add` + `plugin_install` (fresh registration).
-    AddInstall,
-    /// We called `marketplace_update` + `plugin_update` (refresh).
-    UpdateUpdate,
-}
 
 #[doc(hidden)]
 pub fn manage_skill_content_for_test() -> &'static str {
@@ -54,174 +32,149 @@ pub fn delegate_skill_content_for_test() -> &'static str {
     skill_delegate::content()
 }
 
-/// True if our marketplace tree exists at the canonical data-local path.
-pub fn is_installed() -> bool {
-    let dl = data_local_or_fallback();
-    paths::sentinel_under(&dl).exists()
-}
-
-/// Backward-compat alias used by `gw doctor`. Returns true if either the
-/// new install OR a legacy install (any of three layouts) is present.
-pub fn is_skill_installed() -> bool {
-    is_installed() || legacy::any_legacy_present()
-}
-
-/// Backward-compat alias kept for diagnostics.rs. Same meaning as
-/// `is_installed()`.
-pub fn is_plugin_installed() -> bool {
-    is_installed()
-}
-
-/// Production entry point: resolves real home + data-local dirs and uses
-/// the real `claude` CLI.
+/// Production entry point.
 pub fn setup_claude() -> Result<()> {
-    let home = home_dir_or_fallback();
-    let data_local = data_local_or_fallback();
-    setup_claude_with_cli(&home, &data_local, &RealClaudeCli)
-}
+    let repo_root = git::get_repo_root(None).map_err(|_| {
+        CwError::Other(
+            "setup-claude: not inside a git repository. Run from within a git repo.".to_string(),
+        )
+    })?;
 
-/// Test/composition entry point. Lets callers inject the home root, the
-/// data-local root, and a `ClaudeCli` impl independently.
-pub fn setup_claude_with_cli(home: &Path, data_local: &Path, cli: &dyn ClaudeCli) -> Result<()> {
-    legacy::remove_legacy_installs_under(home);
+    let mut wrote_any = false;
+    wrote_any |= write_skill_files(&repo_root)?;
+    wrote_any |= sync_hooks(&repo_root)?;
 
-    // Check whether Claude Code has our plugin registered in its own state
-    // file. This is the source of truth for CLI branching: if Claude Code has
-    // uninstalled the plugin (e.g. via `claude plugin uninstall`), the sentinel
-    // file still exists but the plugin is gone — we must re-run add+install,
-    // not update+update, to re-register it.
-    let claude_registered = claude_has_plugin_registered(home);
-
-    let any_changed = write_files(data_local)?;
-
-    let cli_outcome = if cli.is_available() {
-        if claude_registered {
-            // Refresh: pull marketplace source (no-op for local), then
-            // bump the cached plugin to the new version if plugin.json
-            // changed.
-            let _ = cli.marketplace_update(paths::MARKETPLACE_NAME);
-            let _ = cli.plugin_update(paths::PLUGIN_SLUG);
-            CliOutcome::UpdateUpdate
-        } else {
-            cli.marketplace_add(&paths::marketplace_root_under(data_local))
-                .map_err(|e| {
-                    CwError::Other(format!("`claude plugin marketplace add` failed: {e}"))
-                })?;
-            cli.plugin_install(paths::PLUGIN_SLUG)
-                .map_err(|e| CwError::Other(format!("`claude plugin install` failed: {e}")))?;
-            CliOutcome::AddInstall
-        }
-    } else {
-        eprintln!(
-            "{} `claude` CLI not found on PATH. Files were written but the plugin",
-            style("!").yellow()
-        );
-        eprintln!("  is not registered with Claude Code. Install Claude Code, then run:");
-        eprintln!(
-            "    claude plugin marketplace add {}",
-            paths::marketplace_root_under(data_local).display()
-        );
-        eprintln!("    claude plugin install {}", paths::PLUGIN_SLUG);
-        CliOutcome::NotRun
-    };
-
-    print_outcome(data_local, any_changed, cli_outcome);
+    print_outcome(&repo_root, wrote_any);
     Ok(())
 }
 
-/// Returns true iff Claude Code's `installed_plugins.json` contains a
-/// non-empty entry for our plugin slug (`gw@gw-local`).
-///
-/// Treats any I/O or parse error as "not registered" so we fall back safely
-/// to a fresh add+install rather than silently doing nothing.
-fn claude_has_plugin_registered(home: &Path) -> bool {
-    let path = paths::installed_plugins_json_under(home);
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return false;
-    };
-    let Ok(json): std::result::Result<serde_json::Value, _> = serde_json::from_str(&text) else {
-        return false;
-    };
-    json.get("plugins")
-        .and_then(|p| p.get(paths::PLUGIN_SLUG))
-        .and_then(|v| v.as_array())
-        .map(|arr| !arr.is_empty())
-        .unwrap_or(false)
-}
-
-fn write_files(data_local: &Path) -> Result<bool> {
-    let mut any_changed = false;
-    any_changed |= writer::write_if_changed(
-        &paths::marketplace_manifest_under(data_local),
-        manifest::marketplace_json(),
-    )?;
-    any_changed |= writer::write_if_changed(
-        &paths::plugin_manifest_under(data_local),
-        &manifest::plugin_json(),
-    )?;
-    any_changed |=
-        writer::write_if_changed(&paths::command_gw_under(data_local), command_gw::content())?;
-    any_changed |= writer::write_if_changed(
-        &paths::skill_delegate_under(data_local),
-        skill_delegate::content(),
-    )?;
-    any_changed |= writer::write_if_changed(
-        &paths::skill_manage_under(data_local),
-        skill_manage::content(),
-    )?;
-    any_changed |= writer::write_if_changed(
-        &paths::skill_manage_reference_under(data_local),
-        skill_manage::reference_content(),
-    )?;
-    let sentinel = paths::sentinel_under(data_local);
-    if !writer::sentinel_present(&sentinel) {
-        writer::write_sentinel(&sentinel)?;
-        any_changed = true;
-    }
-    Ok(any_changed)
-}
-
-fn print_outcome(data_local: &Path, any_changed: bool, cli_outcome: CliOutcome) {
-    let location = paths::marketplace_root_under(data_local);
-    if !any_changed {
-        match cli_outcome {
-            CliOutcome::AddInstall => {
-                println!(
-                    "{} gw plugin re-registered with Claude Code (files unchanged).",
-                    style("*").green()
-                );
-                println!("  Location: {}", style(location.display()).dim());
-            }
-            CliOutcome::NotRun | CliOutcome::UpdateUpdate => {
-                println!("{} gw plugin already up to date.", style("*").green());
-                println!("  Location: {}", style(location.display()).dim());
-            }
+/// Returns true if any skill file was written/updated. A file is only
+/// rewritten when its on-disk content differs from the embedded content.
+fn write_skill_files(repo_root: &Path) -> Result<bool> {
+    let mut changed = false;
+    let triples = [
+        (
+            ".claude/skills/gw-delegate/SKILL.md",
+            skill_delegate::content(),
+        ),
+        (".claude/skills/gw-manage/SKILL.md", skill_manage::content()),
+        (
+            ".claude/skills/gw-manage/references/gw-commands.md",
+            skill_manage::reference_content(),
+        ),
+    ];
+    for (rel, content) in triples {
+        let path = repo_root.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                CwError::Other(format!(
+                    "setup-claude: failed to create {}: {}",
+                    parent.display(),
+                    e
+                ))
+            })?;
         }
-        return;
+        let current = std::fs::read_to_string(&path).ok();
+        if current.as_deref() != Some(content) {
+            std::fs::write(&path, content).map_err(|e| {
+                CwError::Other(format!(
+                    "setup-claude: failed to write {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?;
+            changed = true;
+        }
     }
-
-    let verb = match cli_outcome {
-        CliOutcome::UpdateUpdate => "refreshed",
-        CliOutcome::AddInstall | CliOutcome::NotRun => "installed",
-    };
-    println!(
-        "{} gw plugin {} at {}.",
-        style("*").green().bold(),
-        verb,
-        style(location.display()).dim()
-    );
-    println!(
-        "  Use {} in Claude Code to delegate tasks to worktrees.",
-        style("/gw").cyan()
-    );
-    println!(
-        "  The bundled '{}' skill recommends hooks (e.g. SessionStart sanity)",
-        style("manage").cyan()
-    );
-    println!("  in-session when relevant. It edits your project's .claude/settings.json");
-    println!("  on your consent — gw itself never modifies any settings file.");
+    Ok(changed)
 }
 
-fn data_local_or_fallback() -> PathBuf {
-    dirs::data_local_dir().unwrap_or_else(|| home_dir_or_fallback().join(".local").join("share"))
+/// Returns true if `.claude/settings.json` was updated (i.e. at least one
+/// hook was newly merged in).
+fn sync_hooks(repo_root: &Path) -> Result<bool> {
+    let claude_dir = repo_root.join(".claude");
+    let settings_path = claude_dir.join("settings.json");
+    std::fs::create_dir_all(&claude_dir).map_err(|e| {
+        CwError::Other(format!(
+            "setup-claude: failed to create {}: {}",
+            claude_dir.display(),
+            e
+        ))
+    })?;
+
+    let mut settings: serde_json::Value = if settings_path.exists() {
+        let raw = std::fs::read_to_string(&settings_path).map_err(|e| {
+            CwError::Other(format!(
+                "setup-claude: failed to read {}: {}",
+                settings_path.display(),
+                e
+            ))
+        })?;
+        serde_json::from_str(&raw).map_err(|e| {
+            CwError::Other(format!(
+                "setup-claude: malformed JSON in {}: {}. Fix the file manually before re-running.",
+                settings_path.display(),
+                e
+            ))
+        })?
+    } else {
+        serde_json::Value::Object(serde_json::Map::new())
+    };
+
+    let changed = sync_claude::merge_hooks_into(&mut settings)?;
+    if changed {
+        let mut out = serde_json::to_string_pretty(&settings).map_err(|e| {
+            CwError::Other(format!("setup-claude: failed to serialize settings: {}", e))
+        })?;
+        out.push('\n');
+        std::fs::write(&settings_path, &out).map_err(|e| {
+            CwError::Other(format!(
+                "setup-claude: failed to write {}: {}",
+                settings_path.display(),
+                e
+            ))
+        })?;
+    }
+    Ok(changed)
+}
+
+/// Returns true if both skill files exist under the repo root's
+/// `.claude/skills/gw-*/`.
+pub fn is_installed_in_repo(repo_root: &Path) -> bool {
+    repo_root
+        .join(".claude/skills/gw-delegate/SKILL.md")
+        .exists()
+        && repo_root.join(".claude/skills/gw-manage/SKILL.md").exists()
+}
+
+/// Back-compat alias for `gw doctor`. Resolves repo root and checks installation.
+pub fn is_installed() -> bool {
+    if let Ok(root) = git::get_repo_root(None) {
+        is_installed_in_repo(&root)
+    } else {
+        false
+    }
+}
+
+fn print_outcome(repo_root: &Path, wrote_any: bool) {
+    let location = repo_root.join(".claude");
+    if wrote_any {
+        println!(
+            "{} Claude Code integration installed at {}.",
+            style("*").green().bold(),
+            style(location.display()).dim()
+        );
+    } else {
+        println!(
+            "{} Claude Code integration already up to date.",
+            style("*").green()
+        );
+    }
+    println!(
+        "  Skills: {} {}",
+        style("gw-delegate").cyan(),
+        style("gw-manage").cyan()
+    );
+    println!("  Hooks: PreToolUse(Bash), WorktreeCreate, WorktreeRemove");
+    println!("  Re-run `gw setup-claude` after upgrading gw to refresh skills/hooks.");
 }

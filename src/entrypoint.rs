@@ -6,7 +6,7 @@
 
 use clap::Parser;
 
-use crate::cli::{Cli, Commands, ConfigAction};
+use crate::cli::{Cli, Commands, ConfigAction, EmitFormat};
 use crate::config;
 use crate::console as cwconsole;
 use crate::constants;
@@ -14,8 +14,8 @@ use crate::cwshare_setup;
 use crate::error::{CwError, Result};
 use crate::operations::ai_tools::LaunchOptions;
 use crate::operations::{
-    ai_tools, config_ops, diagnostics, display, exec, guard, helpers, path_cmd, run, setup_claude,
-    spawn_spec, worktree,
+    ai_tools, claude_worktree, config_ops, diagnostics, display, exec, guard, helpers, path_cmd,
+    run, setup_claude, spawn_spec, worktree,
 };
 use crate::resolve_prompt;
 use crate::shell_functions;
@@ -45,6 +45,8 @@ pub fn run() {
                 | Commands::ShellFunction { .. }
                 | Commands::SpawnAi { .. }
                 | Commands::Guard { .. }
+                | Commands::ClaudeWorktreeCreate
+                | Commands::ClaudeWorktreeRemove
         )
     );
 
@@ -78,6 +80,7 @@ pub fn run() {
             prompt,
             prompt_file,
             no_env_forward,
+            emit,
             forward_args,
         }) => (|| -> Result<()> {
             // Reject --prompt + trailing forward args at dispatch time —
@@ -116,8 +119,15 @@ pub fn run() {
             let _ = config::parse_term_option(term.as_deref())?;
             cwshare_setup::prompt_cwshare_setup();
 
+            // --emit json implies -T skip: the caller reads worktree_path from
+            // stdout, so spawning a terminal would race with that contract.
+            let effective_term = if emit == EmitFormat::Json && term.is_none() {
+                Some("skip".to_string())
+            } else {
+                term
+            };
             let opts = LaunchOptions {
-                term_override: term.as_deref(),
+                term_override: effective_term.as_deref(),
                 forward_args: &forward_args,
                 no_env_forward,
             };
@@ -127,6 +137,7 @@ pub fn run() {
                 path.as_deref(),
                 resolved.as_deref(),
                 &opts,
+                emit,
             )?;
             Ok(())
         })(),
@@ -260,6 +271,10 @@ pub fn run() {
         })(),
 
         Some(Commands::Guard { tool_input }) => guard::run(&tool_input),
+
+        Some(Commands::ClaudeWorktreeCreate) => claude_worktree::run_create(),
+        Some(Commands::ClaudeWorktreeRemove) => claude_worktree::run_remove(),
+
         Some(Commands::SetupClaude) => setup_claude::setup_claude(),
 
         Some(Commands::Config { action }) => match action {

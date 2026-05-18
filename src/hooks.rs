@@ -16,6 +16,14 @@ use crate::error::Result;
 /// No-op (returns `Ok(())`) when the event name is unknown or the hook is
 /// unset. Hook is run as `sh -c <cmd>`. A non-zero exit propagates as
 /// `CwError::Other`.
+///
+/// **Caller policy** — this function always returns `Err` on non-zero exit;
+/// callers decide what that means:
+/// - `pre_rm` callers treat the error as **advisory**: log a warning, then
+///   continue with removal (aligned with Claude Code's `WorktreeRemove` hook,
+///   which cannot block cleanup).
+/// - `post_new` callers treat the error as **blocking**: propagate it as a
+///   non-zero `gw new` exit code and skip the AI tool launch.
 pub fn run_event(event: &str, cwd: &Path) -> Result<()> {
     // Worktrees are siblings of the main repo (default ../<repo>-<branch>),
     // so walking up from `cwd` would never find the main repo's .cwconfig.json.
