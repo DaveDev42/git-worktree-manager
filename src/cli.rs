@@ -305,6 +305,18 @@ pub enum Commands {
         tool_input: String,
     },
 
+    /// [Internal] Read a Claude Code WorktreeCreate hook payload from stdin
+    /// and create a worktree via `gw new --emit json --term skip` under the hood.
+    /// Prints only the worktree path (plain text, one line) to stdout.
+    #[command(name = "_claude-worktree-create", hide = true)]
+    ClaudeWorktreeCreate,
+
+    /// [Internal] Read a Claude Code WorktreeRemove hook payload from stdin
+    /// and run the configured `pre_rm` hook as a best-effort advisory step.
+    /// Always exits 0; Claude Code owns the actual removal.
+    #[command(name = "_claude-worktree-remove", hide = true)]
+    ClaudeWorktreeRemove,
+
     /// [Internal] Get worktree path for a branch
     #[command(name = "_path", hide = true)]
     Path {

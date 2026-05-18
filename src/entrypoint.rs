@@ -14,8 +14,8 @@ use crate::cwshare_setup;
 use crate::error::{CwError, Result};
 use crate::operations::ai_tools::LaunchOptions;
 use crate::operations::{
-    ai_tools, config_ops, diagnostics, display, exec, guard, helpers, path_cmd, run, setup_claude,
-    spawn_spec, worktree,
+    ai_tools, claude_worktree, config_ops, diagnostics, display, exec, guard, helpers, path_cmd,
+    run, setup_claude, spawn_spec, worktree,
 };
 use crate::resolve_prompt;
 use crate::shell_functions;
@@ -45,6 +45,8 @@ pub fn run() {
                 | Commands::ShellFunction { .. }
                 | Commands::SpawnAi { .. }
                 | Commands::Guard { .. }
+                | Commands::ClaudeWorktreeCreate
+                | Commands::ClaudeWorktreeRemove
         )
     );
 
@@ -269,6 +271,10 @@ pub fn run() {
         })(),
 
         Some(Commands::Guard { tool_input }) => guard::run(&tool_input),
+
+        Some(Commands::ClaudeWorktreeCreate) => claude_worktree::run_create(),
+        Some(Commands::ClaudeWorktreeRemove) => claude_worktree::run_remove(),
+
         Some(Commands::SetupClaude) => setup_claude::setup_claude(),
 
         Some(Commands::Config { action }) => match action {
