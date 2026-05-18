@@ -21,6 +21,7 @@ pub mod rm_batch;
 pub mod run;
 pub mod setup_claude;
 pub mod spawn_spec;
+pub mod sync_claude;
 #[cfg(test)]
 pub(crate) mod test_env;
 pub mod worktree;

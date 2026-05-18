@@ -15,7 +15,7 @@ use crate::error::{CwError, Result};
 use crate::operations::ai_tools::LaunchOptions;
 use crate::operations::{
     ai_tools, claude_worktree, config_ops, diagnostics, display, exec, guard, helpers, path_cmd,
-    run, setup_claude, spawn_spec, worktree,
+    run, setup_claude, spawn_spec, sync_claude, worktree,
 };
 use crate::resolve_prompt;
 use crate::shell_functions;
@@ -276,6 +276,7 @@ pub fn run() {
         Some(Commands::ClaudeWorktreeRemove) => claude_worktree::run_remove(),
 
         Some(Commands::SetupClaude) => setup_claude::setup_claude(),
+        Some(Commands::SyncClaude) => sync_claude::run(),
 
         Some(Commands::Config { action }) => match action {
             ConfigAction::List => config_ops::list_cmd(),

@@ -249,6 +249,18 @@ pub enum Commands {
     #[command(name = "setup-claude")]
     SetupClaude,
 
+    /// Sync gw's hooks into the current repo's `.claude/settings.json`.
+    ///
+    /// Registers three Claude Code hooks idempotently:
+    /// - PreToolUse(Bash) — guards against running Bash inside a stale cwd
+    /// - WorktreeCreate — routes Claude's `Agent(isolation: "worktree")`
+    ///   into gw so `.cwshare` files and `post_new` hooks fire
+    /// - WorktreeRemove — runs the `pre_rm` hook as a best-effort cleanup
+    ///
+    /// Safe to re-run.
+    #[command(name = "sync-claude")]
+    SyncClaude,
+
     /// View or edit gw configuration.
     ///
     /// Configuration lives in two scopes:
