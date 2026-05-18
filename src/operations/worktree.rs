@@ -275,11 +275,16 @@ pub(crate) fn delete_one(
         }
     }
 
-    // pre_rm fires unconditionally — `--force` bypasses the busy-detection
-    // gate, not the user's hook. A non-zero exit from the hook aborts the
-    // remove (matches the README contract).
+    // pre_rm is advisory: a non-zero exit logs a warning but does not block
+    // removal. The historical "block on non-zero" contract was dropped to
+    // align with Claude Code's WorktreeRemove hook, which cannot block
+    // cleanup. `--force` bypasses busy detection only — never this hook.
     if let Err(e) = crate::hooks::run_event("pre_rm", worktree_path) {
-        return DeletionOutcome::Failed { error: e };
+        eprintln!(
+            "{} pre_rm hook failed (continuing anyway): {}",
+            style("!").yellow().bold(),
+            e
+        );
     }
 
     // Remove worktree

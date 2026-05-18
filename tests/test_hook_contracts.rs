@@ -5,7 +5,8 @@
 //!   hook runs after `git worktree add`, but the failure is reported).
 //! - `pre_rm` fires before `gw rm` removes a worktree, including when
 //!   `--force` is passed. `--force` only bypasses the busy-detection
-//!   gate, not the user's hook.
+//!   gate, not the user's hook. A non-zero `pre_rm` exit is **advisory**:
+//!   gw logs a warning but continues removing the worktree.
 //!
 //! Unix-only: hooks run via `sh -c` and these tests use `touch` / `exit`.
 //! Windows lacks `sh` in $PATH for the test repo, so the same contracts
@@ -72,11 +73,44 @@ fn pre_rm_fires_with_force_flag() {
     );
 }
 
-/// `pre_rm` non-zero exit must abort `gw rm`, with or without `--force`.
+/// Regression guard: `pre_rm` exit 0 (success) must still remove the worktree
+/// and produce no warning on stderr.
 #[test]
-fn pre_rm_nonzero_exit_aborts_rm_with_force() {
+fn pre_rm_zero_exit_removes_worktree_cleanly() {
     let repo = TestRepo::new();
-    let wt_path = repo.create_worktree("feat-prerm-abort");
+    let wt_path = repo.create_worktree("feat-prerm-ok");
+
+    std::fs::write(
+        repo.path().join(".cwconfig.json"),
+        r#"{"hooks":{"pre_rm":"exit 0"}}"#,
+    )
+    .unwrap();
+
+    let out = repo.cw(&["rm", "feat-prerm-ok", "--force"]);
+    assert!(
+        out.status.success(),
+        "gw rm should succeed when pre_rm exits 0. stdout={:?} stderr={:?}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !wt_path.exists(),
+        "worktree dir should be removed when pre_rm exits 0"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("pre_rm hook failed"),
+        "stderr should not contain a warning when hook succeeds, got: {:?}",
+        stderr
+    );
+}
+
+/// `pre_rm` non-zero exit must NOT abort `gw rm` — it is advisory.
+/// The worktree is removed regardless, and stderr must contain a warning.
+#[test]
+fn pre_rm_nonzero_exit_is_advisory_rm_continues() {
+    let repo = TestRepo::new();
+    let wt_path = repo.create_worktree("feat-prerm-advisory");
 
     std::fs::write(
         repo.path().join(".cwconfig.json"),
@@ -84,13 +118,21 @@ fn pre_rm_nonzero_exit_aborts_rm_with_force() {
     )
     .unwrap();
 
-    let out = repo.cw(&["rm", "feat-prerm-abort", "--force"]);
+    let out = repo.cw(&["rm", "feat-prerm-advisory", "--force"]);
     assert!(
-        !out.status.success(),
-        "gw rm --force should fail when pre_rm exits non-zero"
+        out.status.success(),
+        "gw rm --force should succeed even when pre_rm exits non-zero. stdout={:?} stderr={:?}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
     );
     assert!(
-        wt_path.exists(),
-        "worktree dir should still exist after pre_rm aborted the remove"
+        !wt_path.exists(),
+        "worktree dir should be removed despite the failing pre_rm hook"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("pre_rm hook failed"),
+        "stderr should contain a warning about the failing hook, got: {:?}",
+        stderr
     );
 }
