@@ -1,99 +1,16 @@
-//! `gw sync-claude` — register WorktreeCreate, WorktreeRemove, and
+//! Hook-merge logic for Claude Code settings.json integration.
+//!
+//! Used by `gw setup-claude` to register WorktreeCreate, WorktreeRemove, and
 //! PreToolUse(Bash) hooks in `<repo>/.claude/settings.json` idempotently.
 //!
-//! Safe to re-run: existing hook entries are detected by exact command-string
-//! match and skipped; other user-configured hooks are never touched.
+//! Safe to call repeatedly: existing hook entries are detected by exact
+//! command-string match and skipped; other user-configured hooks are never
+//! touched.
 
-use console::style;
 use serde_json::Value;
 
 use crate::error::{CwError, Result};
-use crate::git;
 use crate::operations::claude_settings;
-
-/// Entry point for `gw sync-claude`.
-pub fn run() -> Result<()> {
-    let repo_root = git::get_repo_root(None).map_err(|_| {
-        CwError::Other(
-            "sync-claude: not inside a git repository. \
-             Run this command from within a git repo."
-                .to_string(),
-        )
-    })?;
-
-    let claude_dir = repo_root.join(".claude");
-    let settings_path = claude_dir.join("settings.json");
-
-    // Ensure the .claude directory exists.
-    if !claude_dir.exists() {
-        std::fs::create_dir_all(&claude_dir).map_err(|e| {
-            CwError::Other(format!(
-                "sync-claude: failed to create {}: {}",
-                claude_dir.display(),
-                e
-            ))
-        })?;
-    }
-
-    // Read existing settings or start with an empty object.
-    let mut settings: Value = if settings_path.exists() {
-        let raw = std::fs::read_to_string(&settings_path).map_err(|e| {
-            CwError::Other(format!(
-                "sync-claude: failed to read {}: {}",
-                settings_path.display(),
-                e
-            ))
-        })?;
-        serde_json::from_str(&raw).map_err(|e| {
-            CwError::Other(format!(
-                "sync-claude: malformed JSON in {}: {}. \
-                 Fix the file manually before re-running.",
-                settings_path.display(),
-                e
-            ))
-        })?
-    } else {
-        Value::Object(serde_json::Map::new())
-    };
-
-    let changed = merge_hooks_into(&mut settings)?;
-
-    if changed {
-        // Pretty-print with 2-space indent, trailing newline.
-        let mut out = serde_json::to_string_pretty(&settings).map_err(|e| {
-            CwError::Other(format!("sync-claude: failed to serialize settings: {}", e))
-        })?;
-        out.push('\n');
-        std::fs::write(&settings_path, &out).map_err(|e| {
-            CwError::Other(format!(
-                "sync-claude: failed to write {}: {}",
-                settings_path.display(),
-                e
-            ))
-        })?;
-        println!(
-            "{} {}",
-            style("synced").green().bold(),
-            style(settings_path.display().to_string()).dim()
-        );
-        println!(
-            "  {} PreToolUse(Bash) guard, WorktreeCreate, WorktreeRemove hooks registered.",
-            style("✓").green()
-        );
-    } else {
-        println!(
-            "{} {}",
-            style("already up to date:").cyan().bold(),
-            style(settings_path.display().to_string()).dim()
-        );
-        println!(
-            "  {} All gw hooks are already present — nothing to change.",
-            style("✓").green()
-        );
-    }
-
-    Ok(())
-}
 
 /// Idempotently merge the three gw hooks into `settings`.
 ///

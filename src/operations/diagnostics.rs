@@ -239,10 +239,6 @@ fn check_claude_integration() {
         );
     } else if setup_claude::is_installed() {
         println!("   {} {}", style("*").green(), msgs.installed);
-    } else if setup_claude::is_skill_installed() {
-        // Legacy install (any pre-marketplace layout).
-        println!("   {} {}", style("!").yellow(), msgs.legacy_alert);
-        println!("   {}", style(format!("Tip: {}", msgs.legacy_tip)).dim());
     } else {
         println!("   {} {}", style("!").yellow(), msgs.missing_alert);
         println!("   {}", style(format!("Tip: {}", msgs.missing_tip)).dim());
@@ -299,10 +295,10 @@ pub struct SetupClaudeDoctorMessages {
 /// Returns the strings printed by [`check_claude_integration`].
 pub fn setup_claude_doctor_messages() -> SetupClaudeDoctorMessages {
     SetupClaudeDoctorMessages {
-        installed: "gw plugin installed",
+        installed: "gw skills installed",
         legacy_alert: "Legacy gw install detected (pre-marketplace layout)",
-        legacy_tip: "Re-run 'gw setup-claude' to upgrade to the marketplace install",
-        missing_alert: "Claude Code detected but gw plugin not installed",
-        missing_tip: "Run 'gw setup-claude' to install the gw plugin for Claude Code",
+        legacy_tip: "Re-run 'gw setup-claude' to refresh skill files and hooks",
+        missing_alert: "Claude Code detected but gw skills not installed",
+        missing_tip: "Run 'gw setup-claude' to install gw skills and hooks into this repo",
     }
 }

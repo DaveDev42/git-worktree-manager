@@ -77,8 +77,9 @@ CI runs default `cargo clippy`; the `--all-targets --all-features` form catches 
 
 ## Claude Code Integration
 
-Run `gw setup-claude` to install the Claude Code skill for this project.
-Once installed, use the `/gw` slash command or natural language to delegate coding tasks to isolated worktrees.
+Run `gw setup-claude` to install the Claude Code integration for this project.
+Once installed, ask Claude in natural language to delegate tasks; gw will route
+Claude's `Agent(isolation: "worktree")` calls through the registered hooks.
 Each delegated task runs in its own branch with a separate Claude Code instance.
 
 릴리스 작업: 패치 릴리스("release new patch version" 등)는 `/release` 슬래시 명령으로 진행 (`.claude/commands/release.md`). ad-hoc git/cargo 명령으로 매번 재구성 X.

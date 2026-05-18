@@ -245,21 +245,15 @@ pub enum Commands {
         yes: bool,
     },
 
-    /// Install Claude Code skill for worktree task delegation
+    /// Install Claude Code skills and hooks into the current repo's `.claude/`.
+    ///
+    /// Writes skill files into `.claude/skills/gw-delegate/` and
+    /// `.claude/skills/gw-manage/`, then registers three Claude Code hooks
+    /// (PreToolUse Bash guard, WorktreeCreate, WorktreeRemove) into
+    /// `.claude/settings.json`. Idempotent — re-running only writes files
+    /// whose content changed.
     #[command(name = "setup-claude")]
     SetupClaude,
-
-    /// Sync gw's hooks into the current repo's `.claude/settings.json`.
-    ///
-    /// Registers three Claude Code hooks idempotently:
-    /// - PreToolUse(Bash) — guards against running Bash inside a stale cwd
-    /// - WorktreeCreate — routes Claude's `Agent(isolation: "worktree")`
-    ///   into gw so `.cwshare` files and `post_new` hooks fire
-    /// - WorktreeRemove — runs the `pre_rm` hook as a best-effort cleanup
-    ///
-    /// Safe to re-run.
-    #[command(name = "sync-claude")]
-    SyncClaude,
 
     /// View or edit gw configuration.
     ///

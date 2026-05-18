@@ -1,5 +1,4 @@
-//! Body of the `manage` skill — worktree management + health rulebook +
-//! hook recommendation catalog.
+//! Body of the `manage` skill — worktree management, health rulebook, and hook integration.
 
 pub fn content() -> &'static str {
     r#"---
@@ -14,8 +13,8 @@ This skill helps you (Claude) operate the `gw` (git-worktree-manager) management
 commands safely when the user is working across multiple parallel worktrees.
 Use it whenever the user asks about listing, deleting, resuming
 sessions, or otherwise inspecting worktree state. It also
-defines a health rulebook (problems to watch for) and a catalog of Claude Code
-hooks you may suggest installing on the user's consent.
+defines a health rulebook (problems to watch for) and guidance on Claude Code
+hook integration.
 
 ## 1. Command Guidance
 
@@ -29,7 +28,9 @@ These are the management-side commands. For full flag detail, see
 | `gw resume [branch]` | Resume an AI session in a worktree (auto-uses `--continue` when possible). |
 
 `gw new` (creating a worktree to delegate work into) is owned by the sibling
-`delegate` skill — defer to that skill for new-task workflows.
+`delegate` skill — defer to that skill for new-task workflows. Use Claude Code's
+`Agent(isolation: "worktree")` for delegation; `gw` provides the lifecycle
+wrapper via hooks.
 
 For the full flag matrix, terminal launch methods, config keys, and helper
 commands, read `references/gw-commands.md`.
@@ -172,85 +173,44 @@ test/lint/build invocation for this project? I'll write it into CLAUDE.md
 so future sessions don't re-derive." On consent, edit `CLAUDE.md` (do
 not silently rewrite it).
 
-## 3. Recommended-Hooks Catalog
+## 3. Hook integration
 
-When a rule's suggested action is to add a Claude Code hook, pick from
-this catalog. Each entry includes the JSON to write, the dependency (the
-`gw` helper command it invokes), and the rationale. Edit the **project's**
-`.claude/settings.json` (NOT `~/.claude/settings.json`) on user consent.
+`gw` ships three Claude Code hooks that integrate worktree lifecycle:
+- **PreToolUse(Bash) guard** — blocks Bash commands when cwd is unhealthy.
+- **WorktreeCreate** — routes `Agent(isolation: "worktree")` through
+  `gw new`, so `.cwshare` files and `post_new` hooks fire for subagent
+  worktrees.
+- **WorktreeRemove** — runs the `pre_rm` hook (advisory) before the
+  subagent worktree is cleaned up.
 
-### Hook 1 — SessionStart sanity (primary)
+To install all three idempotently into the current repo's
+`.claude/settings.json`:
 
-The default recommendation. At session start, runs a fast sanity check
-on the current cwd: validates that the directory exists, that it's a
-registered gw worktree, that the configured base branch is reachable.
-Cost is roughly ~5ms. Output is a single summary line. Directly addresses
-the dominant friction (publish/test commands blocked because cwd was
-removed by a sibling session).
-
-```jsonc
-{
-  "hooks": {
-    "SessionStart": [
-      { "matcher": "*", "hooks": [
-        { "type": "command", "command": "gw doctor --session-start --quiet" }
-      ]}
-    ]
-  }
-}
+```bash
+gw setup-claude
 ```
 
-### Hook 2 — PreToolUse guard (advanced)
+Safe to re-run; existing user hooks are preserved. Suggest this command
+*once* per session if the user is hitting friction that one of the three
+hooks would resolve. Don't volunteer it unprompted on a fresh project.
 
-Parses the inbound bash command from the hook payload via stdin. If the
-command matches a risky pattern (`git push`, `gh release`, `npm publish`,
-`cargo publish`, `bun publish`, `pnpm publish`) AND the cwd looks
-unhealthy (missing, unregistered, or significantly behind base), the hook
-blocks the tool call with a clear explanation. Suggest only after the
-user has expressed interest in stronger pre-publish safety — this hook
-runs on every Bash invocation, so the latency budget matters.
-
-```jsonc
-{
-  "hooks": {
-    "PreToolUse": [
-      { "matcher": "Bash", "hooks": [
-        { "type": "command", "command": "gw guard --tool-input -" }
-      ]}
-    ]
-  }
-}
-```
+Never edit `~/.claude/settings.json` (user-global) — `gw setup-claude`
+only ever writes to the project-local `.claude/settings.json`.
 
 ## 4. When to suggest, when to stop
 
-Read this section before recommending any hook. It is addressed to you,
-the in-session Claude.
-
-- **Default behavior:** when running a worktree command and the
-  SessionStart hook (Hook 1) is NOT present in the project's
-  `.claude/settings.json`, suggest Hook 1 *once* in this session. If the
-  user accepts, edit `.claude/settings.json` (project-local). If the user
-  refuses, or the hook is already present in equivalent form, do NOT
-  bring it up again in subsequent sessions — the file's contents are the
-  implicit state record. Do not maintain a separate memory of "I asked
-  already".
-- **Hook 2** (PreToolUse guard): mention only after the user has
-  expressed interest in stronger pre-publish safety after seeing Hook 1's
-  value. Do not volunteer it unprompted on a fresh project.
-- **NEVER** edit `~/.claude/settings.json` or
-  `~/.claude/settings.local.json`. Always edit the project-local file at
-  `.claude/settings.json` (creating it if absent).
-- **NEVER** install a hook silently — always state what the hook does,
-  show the JSON, and ask for explicit consent before writing.
-- When applying changes to `.claude/settings.json`, **preserve any
-  existing hooks the user has** — read the file, parse it, and add to
-  the relevant `hooks.<Event>` array. Do not replace the file wholesale,
-  do not overwrite unrelated keys, and do not deduplicate by removing
-  hooks the user installed for other reasons.
-- If `.claude/settings.json` exists but is malformed JSON, do not try to
-  repair it silently — surface the parse error to the user and ask how
-  they want to proceed.
+- When a rule's suggested action involves Claude Code hook integration
+  (e.g., stale-cwd guard, automatic worktree lifecycle), suggest `gw
+  setup-claude` *once* per session, then stop. If the user accepts, run
+  it. If the user refuses, don't bring it up again — the file's contents
+  in `.claude/settings.json` are the implicit state record.
+- Never modify `.claude/settings.json` by hand for the three hooks
+  `gw setup-claude` manages. Use the command.
+- If `.claude/settings.json` is malformed JSON, surface the parse error
+  to the user — `gw setup-claude` will refuse to overwrite a broken file.
+- Other manual hook edits (project-specific custom hooks) are fine; you
+  can still edit `.claude/settings.json` for those, just preserve the
+  three entries `gw setup-claude` owns.
 "#
 }
 
@@ -304,6 +264,13 @@ Target is resolved in order: exact worktree name → exact branch name → exact
 
 ### `gw doctor`
 Run a 5-check health audit: (1) git version, (2) worktree accessibility (no missing/orphaned dirs), (3) uncommitted changes across worktrees, (4) busy-worktree detection, (5) Claude Code integration (skill installation + plugin paths). Use `--session-start --quiet` for hook-friendly single-line output.
+
+### `gw setup-claude`
+Project-local one-click install: writes skill files into
+`.claude/skills/gw-delegate/` and `.claude/skills/gw-manage/`, then
+registers three Claude Code hooks (PreToolUse Bash guard, WorktreeCreate,
+WorktreeRemove) in `<repo>/.claude/settings.json`. Idempotent — re-running
+only writes files whose content changed. Existing user hooks are preserved.
 
 ### `gw upgrade`
 Check for updates and install latest version from GitHub Releases.

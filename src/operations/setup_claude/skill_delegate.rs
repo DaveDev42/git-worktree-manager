@@ -1,227 +1,106 @@
-//! Body of the `delegate` skill — task delegation via `gw new`.
+//! Body of the `delegate` skill — task delegation via Agent(isolation: "worktree").
 
 pub fn content() -> &'static str {
     r#"---
 name: delegate
-description: "Delegate coding tasks to isolated git worktrees. Invoke with: /gw <natural language task description>. Also handles worktree management: list, delete, etc."
-allowed-tools: Bash
+description: "Delegate isolated coding tasks to git worktrees via Agent(isolation: worktree). Auto-applies when the user asks you to fix/build/refactor something that warrants an isolated branch."
+allowed-tools: Task
 ---
 
-# git-worktree-manager (gw)
+# git-worktree-manager (gw) — Task delegation
 
-CLI tool integrating git worktree with AI coding assistants. Single binary, ~3ms startup.
+When the user describes a task that warrants isolation (a fix, a feature, a
+refactor — anything where you'd want a clean branch), spawn it as a subagent
+in an isolated worktree using Claude Code's native `Agent` tool with
+`isolation: "worktree"`.
 
-## Natural Language Task Delegation
+`gw` registers `WorktreeCreate` / `WorktreeRemove` hooks at the project level
+(via `gw setup-claude`), so any `Agent(isolation: "worktree")` call in this repo
+is routed through `gw new`. That means:
 
-When the user invokes `/gw <task description>` (e.g., `/gw fix the auth token expiration bug`), follow these steps:
+- `.cwshare` files (e.g., `.env`) are copied into the new worktree automatically.
+- The `post_new` hook configured in `.cwconfig.json` / global config
+  (e.g., `npm install`, `cargo build`) runs before the subagent starts.
+- The worktree appears in `gw list` and is managed via `gw rm`.
 
-### Step 1: Parse the user's intent
-From the natural language input, determine:
-- **Task description** — the full task text (will be passed via `--prompt-file` in Step 2)
-- **Branch name** — generate a short, descriptive branch name from the task (e.g., `fix-auth-token-expiration`). Use conventional prefixes: `fix-`, `feat-`, `refactor-`, `docs-`, `test-`, `chore-`.
-- **Base branch** — use the default unless the user specifies otherwise
+If the user reports that subagent worktrees don't have the expected shared files,
+or that `post_new` isn't firing, they probably need to run `gw setup-claude` once
+in this repo's root.
 
-### Step 1.5: Pre-flight check
+## When to delegate vs. work in-session
 
-Run these three checks in order *before* invoking `gw new`. They are
-procedural, not advisory — execute them the same way you execute parsing
-in Step 1.
+Delegate when:
+- The task is well-scoped (clear inputs, clear acceptance criteria).
+- It can run independently — the subagent has everything it needs in the initial
+  prompt.
+- The user is OK with a separate branch / worktree being created.
 
-#### A.1 Stacked-base resolution
+Work in-session (don't delegate) when:
+- The task requires back-and-forth with the user.
+- It touches the *current* worktree's state and shouldn't be branched off.
+- The user explicitly asked you to make the change here.
 
-Determine where the new worktree should branch from.
+If unsure, ask.
 
-```bash
-git rev-parse --show-toplevel 2>/dev/null
-git branch --show-current 2>/dev/null
-```
+## Pre-flight: choosing the base
 
-- If cwd is the main repo or the default-base worktree (`main` / `master`
-  / configured default): proceed with default base, omit `--base`.
-- If cwd is inside a worktree whose branch is **not** the default base,
-  ask the user one explicit question:
-  > "You're currently inside the `<branch>` worktree. Should this new
-  > task stack on `<branch>`, or branch from the default base
-  > `<default>`?"
-  - On "stack on `<branch>`" → pass `--base <branch>` to `gw new`.
-  - On "default base" → omit `--base`.
+`Agent(isolation: "worktree")` defaults to branching off the current worktree's
+HEAD. If you're in a non-default worktree, ask once:
 
-Do not guess. The cost of asking once is small; the cost of a wrong base
-is a manual rebase.
+> "You're currently inside `<branch>`. Should this new task stack on `<branch>`,
+> or branch from `main`?"
 
-#### A.2 Duplicate-task detection
+(Surface this only when the cwd branch != default base. The cost of asking once
+is small; the cost of a wrong base is a manual rebase later.)
 
-Cheap probes to avoid spawning a worktree for work that already exists.
+## Duplicate-task detection (light pass)
+
+Before spawning, a cheap probe:
 
 ```bash
 gw list
-# Only if `gh` is on PATH and the repo has a GitHub remote:
-gh pr list --state all --search '<keyword>' --limit 5
 ```
 
-Extract 2–3 high-signal keywords from the task description (the task-type
-prefix you generated for the branch name plus the most distinctive noun
-phrase). **Only confirm with the user if the match is unambiguous** — a
-branch / PR title that contains the same task-type prefix AND a strong
-noun match. Borderline matches are not surfaced; false-positive cost is
-higher than the friction cost.
+If an existing worktree's branch name strongly matches the task (same prefix +
+distinctive noun), surface it and ask:
 
-On unambiguous match, present options:
-- continue anyway (spawn fresh)
-- resume in the existing worktree (`gw resume <branch>`)
-- cancel
+- Continue anyway (spawn fresh)?
+- Resume in the existing worktree (`gw resume <branch>`)?
+- Cancel?
 
-#### A.3 Stale-cwd handling
+Don't surface borderline matches — false-positive friction is worse than the
+occasional duplicate.
 
-If `git rev-parse --show-toplevel` errored with ENOENT or `pwd -P`
-resolves to a path that no longer exists, the current shell is in a dead
-worktree (likely deleted by another session).
+## Branch naming
 
-This does **not** block spawn — `gw new` creates a fresh worktree
-elsewhere — but you must:
+When invoking the Agent, give the subagent a clear, comprehensive task prompt.
+Claude Code's worktree hook will derive a branch name from the task, or you can
+suggest one in the prompt.
 
-- Tell the user clearly: "Current cwd `<path>` no longer exists — likely
-  deleted by another session."
-- After spawn succeeds, advise the user to `cd` into the new worktree (or
-  the main repo) before running anything else from the dead shell.
-
-### Step 2: Confirm and execute
-
-All prompt ingestion modes (`--prompt`, `--prompt-file`, `--prompt -`) are equally safe from shell-escaping issues. Use `--prompt-file` for convenience when managing multi-line prompts in an editor or passing skill-generated files.
-
-**Recommended (use this by default):**
-```bash
-# Write the full prompt to a temp file, then pass the path.
-# `trap` ensures the file is cleaned up even if `gw new` fails.
-trap 'rm -f /tmp/gw-prompt-$$.txt' EXIT
-cat > /tmp/gw-prompt-$$.txt <<'PROMPT'
-<task description — multi-line OK, quotes OK, no escaping needed>
-PROMPT
-gw new <branch-name> -T <terminal-method> --prompt-file /tmp/gw-prompt-$$.txt
-```
-
-**Short one-liner alternative:**
-```bash
-gw new <branch-name> -T <terminal-method> --prompt "<short task>"
-```
-
-**Piping from another command:**
-```bash
-generate-spec | gw new <branch-name> --prompt -
-```
-
-Note: `--prompt -` consumes the process's stdin (the `-` is the conventional
-Unix sentinel for "read from stdin"). Avoid combining it with
-`-T <terminal-method>` — the spawned terminal may inherit a closed stdin and
-behave unpredictably. Use `--prompt-file` if you need to specify a terminal launcher alongside the prompt.
-
-Only one of `--prompt`, `--prompt-file` may be given per invocation
-(`--prompt -` is just a special value of `--prompt`).
-
-### Branch name rules
-- Lowercase, hyphen-separated, max ~50 chars
-- Strip filler words (the, a, an, for, in, on, etc.)
+Conventions if you suggest a branch name:
+- Lowercase, hyphen-separated, max ~50 chars.
+- Conventional prefixes: `fix-`, `feat-`, `refactor-`, `docs-`, `test-`, `chore-`.
+- Strip filler words (the, a, an, for, in, on, etc.).
 - Examples:
   - "Fix the JWT token expiration check in auth" → `fix-jwt-token-expiration`
   - "Add user avatar upload feature" → `feat-avatar-upload`
   - "Refactor the database connection pool" → `refactor-db-connection-pool`
 
-### Terminal method selection
-- **Default: omit the `-T` flag** to use the system default (configured in `~/.config/git-worktree-manager/config.json` → `launch.method`). Only add `-T` if the user explicitly requests a specific terminal method.
-- If the user explicitly asks for a specific method, use it. Common methods: `w-t` (WezTerm tab), `w-t-b` (WezTerm tab, background — no focus steal), `i-t` (iTerm2 tab), `t` (tmux session), `d` (detached/background)
-- Once the user specifies a method, remember it for subsequent calls in the same session.
+## What you don't do
 
-## Quick Reference
+- Don't call `gw new` directly. The `Agent(isolation: "worktree")` path goes
+  through `gw`'s WorktreeCreate hook automatically.
+- Don't write `--prompt-file` shell wrappers. The Agent's prompt IS the task
+  description; nothing else is needed.
+- Don't assume you can send follow-up messages to a spawned subagent. Make the
+  initial prompt comprehensive — include all requirements, constraints, and
+  acceptance criteria upfront. If the user's request is vague, ask clarifying
+  questions before spawning.
 
-| Command | Description |
-|---------|-------------|
-| `gw new <branch> [--prompt-file <path> \| --prompt "..." \| --prompt -]` | Create worktree + optionally launch AI with task |
-| `gw rm <branch>` | Delete worktree and branch |
-| `gw list` | List all worktrees with status |
-| `gw resume [branch]` | Resume AI session in worktree |
-| `gw doctor` | Run diagnostics |
+## Cleanup
 
-## Delegate a task to a new worktree
-
-Three ways to supply the initial prompt (mutually exclusive):
-
-| Flag | When to use |
-|------|-------------|
-| `--prompt-file <path>` ⭐ | Convenient for multi-line prompts, editor-managed content, or skill-generated files. |
-| `--prompt "<text>"` | Short single-line prompts only. |
-| `--prompt -` | Piping from another command (`cmd \| gw new ... --prompt -`). |
-
-Example (recommended):
-```bash
-trap 'rm -f /tmp/gw-prompt-$$.txt' EXIT
-cat > /tmp/gw-prompt-$$.txt <<'PROMPT'
-Fix JWT token expiration check in src/auth.rs.
-Make sure to cover the "leeway" edge case and add a unit test.
-PROMPT
-gw new fix-auth -T w-t --prompt-file /tmp/gw-prompt-$$.txt
-```
-
-Example (short form):
-```bash
-gw new fix-auth -T w-t --prompt "Fix JWT token expiration check"
-```
-
-### Terminal methods (use with -T flag)
-- `w-t` — WezTerm new tab
-- `w-t-b` — WezTerm new tab (background, no focus steal)
-- `w-w` — WezTerm new window
-- `i-t` — iTerm2 new tab
-- `i-w` — iTerm2 new window
-- `t` — tmux new session
-- `t-w` — tmux new window
-- `d` — detached (background, no terminal)
-
-Use the method matching the user's terminal. If unsure, ask.
-
-## Common Workflows
-
-### Feature development
-```bash
-trap 'rm -f /tmp/gw-prompt-$$.txt' EXIT
-cat > /tmp/gw-prompt-$$.txt <<'PROMPT'
-Implement feature X
-PROMPT
-# `-T` omitted — uses the default launcher from config (`launch.method` in `~/.config/git-worktree-manager/config.json`).
-gw new feature-x --prompt-file /tmp/gw-prompt-$$.txt
-# ... work is done in the new worktree ...
-gh pr create                       # create PR (run inside the worktree)
-gw rm feature-x                # cleanup after merge
-```
-
-### Batch cleanup
-```bash
-gw rm -i                       # interactive selection of worktrees to delete
-```
-
-## Guidelines
-
-- Before running any `gw` subcommand that reads the current worktree (`gw list`, `gw rm` without an explicit target, etc.), make sure the shell's cwd still exists. If another session or an earlier `gw rm` removed the worktree, the shell holds a stale pwd and commands behave unexpectedly. Quick guard:
-  ```bash
-  [ -d "$(pwd -P 2>/dev/null)" ] || { echo "FATAL: cwd missing (worktree likely deleted). Abort."; exit 1; }
-  ```
-  `gw new` does not need this guard (it creates a fresh worktree elsewhere); the guard matters for in-worktree commands.
-- Use descriptive branch names: `fix-auth`, `feat-login-page`, `refactor-api`
-- Specify base branch if not main/master:
-  ```bash
-  trap 'rm -f /tmp/gw-prompt-$$.txt' EXIT
-  cat > /tmp/gw-prompt-$$.txt <<'PROMPT'
-  <task description>
-  PROMPT
-  gw new fix-auth --base develop -T w-t --prompt-file /tmp/gw-prompt-$$.txt
-  ```
-- One focused task per worktree
-- The delegated Claude Code instance works independently in its own worktree directory
-- You can delegate multiple tasks in parallel to different worktrees
-- **Fire-and-forget**: Once a worktree task is spawned, you CANNOT stop it, send follow-up messages, or interact with it. The initial prompt is the ONLY instruction the delegated instance receives. Therefore:
-  - Make the prompt comprehensive — include all requirements, constraints, and acceptance criteria upfront
-  - Use `--prompt-file` for complex or skill-generated prompts to manage them conveniently
-  - If the user's request is vague or ambiguous, ask clarifying questions BEFORE spawning
-  - Do NOT spawn a task assuming you can "correct course later" — you cannot
-- For destructive worktree operations (`gw rm`), defer to the `manage` skill — in particular the don't-kill-busy-siblings rule.
+After a delegated task ships (PR merged or abandoned), the worktree can be
+removed with `gw rm <branch>`. The `manage` skill covers cleanup safety
+(busy-detection, etc.) — defer to that skill for destructive operations.
 "#
 }

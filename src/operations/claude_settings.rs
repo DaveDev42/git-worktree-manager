@@ -33,7 +33,7 @@ pub fn guard_settings_json() -> Result<String> {
 }
 
 /// One PreToolUse(Bash) hook entry — used by both `--settings` inline injection
-/// and `sync-claude`'s `.claude/settings.json` merge.
+/// and `setup-claude`'s `.claude/settings.json` merge.
 pub fn pre_tool_use_bash_entry() -> Result<serde_json::Value> {
     let self_exe = resolve_self_exe()?;
     let command = format!("{} guard --tool-input -", quote_path_for_shell(&self_exe));
