@@ -16,14 +16,6 @@ fn doctor_setup_claude_messages_present() {
         msgs.installed
     );
     assert!(
-        msgs.legacy_alert.contains("Legacy") && msgs.legacy_alert.contains("pre-marketplace"),
-        "legacy alert line"
-    );
-    assert!(
-        msgs.legacy_tip.contains("Re-run") && msgs.legacy_tip.contains("setup-claude"),
-        "legacy upgrade tip"
-    );
-    assert!(
         msgs.missing_alert.contains("Claude Code detected"),
         "missing alert line"
     );

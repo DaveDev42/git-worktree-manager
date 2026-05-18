@@ -72,6 +72,10 @@ pub fn run_create() -> Result<()> {
             "--term",
             "skip",
         ])
+        // Force the inner `gw new` to error rather than silently returning an
+        // existing worktree path with no JSON on stdout — the hook contract
+        // requires that we only succeed when a fresh worktree was created.
+        .env("CW_NON_INTERACTIVE", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())

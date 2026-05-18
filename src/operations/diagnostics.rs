@@ -286,8 +286,6 @@ fn print_recommendations(stale_count: u32) {
 /// Source-of-truth strings for the Claude Code section of `gw doctor`.
 pub struct SetupClaudeDoctorMessages {
     pub installed: &'static str,
-    pub legacy_alert: &'static str,
-    pub legacy_tip: &'static str,
     pub missing_alert: &'static str,
     pub missing_tip: &'static str,
 }
@@ -296,8 +294,6 @@ pub struct SetupClaudeDoctorMessages {
 pub fn setup_claude_doctor_messages() -> SetupClaudeDoctorMessages {
     SetupClaudeDoctorMessages {
         installed: "gw skills installed",
-        legacy_alert: "Legacy gw install detected (pre-marketplace layout)",
-        legacy_tip: "Re-run 'gw setup-claude' to refresh skill files and hooks",
         missing_alert: "Claude Code detected but gw skills not installed",
         missing_tip: "Run 'gw setup-claude' to install gw skills and hooks into this repo",
     }

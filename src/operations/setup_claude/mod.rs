@@ -156,16 +156,6 @@ pub fn is_installed() -> bool {
     }
 }
 
-/// Alias kept for diagnostics compatibility.
-pub fn is_skill_installed() -> bool {
-    is_installed()
-}
-
-/// Alias kept for diagnostics compatibility.
-pub fn is_plugin_installed() -> bool {
-    is_installed()
-}
-
 fn print_outcome(repo_root: &Path, wrote_any: bool) {
     let location = repo_root.join(".claude");
     if wrote_any {
