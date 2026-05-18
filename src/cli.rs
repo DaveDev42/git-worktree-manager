@@ -3,10 +3,20 @@
 /// Mirrors the Typer-based CLI in src/git_worktree_manager/cli.py.
 pub mod completions;
 
-use clap::{Parser, Subcommand, ValueHint};
+use clap::{Parser, Subcommand, ValueEnum, ValueHint};
 use std::path::PathBuf;
 
 use crate::operations::config_ops::ConfigKey;
+
+/// Output format for `gw new --emit`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
+pub enum EmitFormat {
+    /// Human-readable styled output (default).
+    #[default]
+    Text,
+    /// Single-line JSON object with worktree metadata; suppresses AI-tool launch.
+    Json,
+}
 
 /// Git worktree manager CLI.
 #[derive(Parser, Debug)]
@@ -76,6 +86,13 @@ pub enum Commands {
         /// wezterm/iterm/tmux/zellij behave like a normal child process.
         #[arg(long = "no-env-forward")]
         no_env_forward: bool,
+
+        /// Output format for stdout. `text` (default) for human-readable styled
+        /// output; `json` emits a single-line JSON object with worktree metadata
+        /// and suppresses the AI-tool launch. Useful for scripts and the Claude
+        /// Code `WorktreeCreate` hook integration.
+        #[arg(long, value_enum, default_value_t = EmitFormat::Text)]
+        emit: EmitFormat,
 
         /// Extra arguments forwarded verbatim to the AI tool (claude/codex/
         /// gemini). Mutually exclusive with `--prompt`/`--prompt-file`

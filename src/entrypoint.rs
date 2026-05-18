@@ -6,7 +6,7 @@
 
 use clap::Parser;
 
-use crate::cli::{Cli, Commands, ConfigAction};
+use crate::cli::{Cli, Commands, ConfigAction, EmitFormat};
 use crate::config;
 use crate::console as cwconsole;
 use crate::constants;
@@ -78,6 +78,7 @@ pub fn run() {
             prompt,
             prompt_file,
             no_env_forward,
+            emit,
             forward_args,
         }) => (|| -> Result<()> {
             // Reject --prompt + trailing forward args at dispatch time —
@@ -116,8 +117,15 @@ pub fn run() {
             let _ = config::parse_term_option(term.as_deref())?;
             cwshare_setup::prompt_cwshare_setup();
 
+            // --emit json implies -T skip: the caller reads worktree_path from
+            // stdout, so spawning a terminal would race with that contract.
+            let effective_term = if emit == EmitFormat::Json && term.is_none() {
+                Some("skip".to_string())
+            } else {
+                term
+            };
             let opts = LaunchOptions {
-                term_override: term.as_deref(),
+                term_override: effective_term.as_deref(),
                 forward_args: &forward_args,
                 no_env_forward,
             };
@@ -127,6 +135,7 @@ pub fn run() {
                 path.as_deref(),
                 resolved.as_deref(),
                 &opts,
+                emit,
             )?;
             Ok(())
         })(),

@@ -13,6 +13,7 @@ use crate::git;
 use crate::shared_files;
 
 use super::ai_tools::LaunchOptions;
+use crate::cli::EmitFormat;
 use crate::messages;
 
 /// Create a new worktree with a feature branch.
@@ -22,6 +23,7 @@ pub fn create_worktree(
     path: Option<&str>,
     initial_prompt: Option<&str>,
     launch_opts: &LaunchOptions<'_>,
+    emit: EmitFormat,
 ) -> Result<PathBuf> {
     let repo = git::get_repo_root(None)?;
 
@@ -33,13 +35,25 @@ pub fn create_worktree(
         )));
     }
 
+    // In json emit mode, route human-readable output to stderr so stdout
+    // stays clean for the single-line JSON result.
+    macro_rules! say {
+        ($($arg:tt)*) => {
+            if emit == EmitFormat::Json {
+                eprintln!($($arg)*);
+            } else {
+                println!($($arg)*);
+            }
+        };
+    }
+
     // Check if worktree already exists
     let existing = git::find_worktree_by_branch(&repo, branch_name)?.or(
         git::find_worktree_by_branch(&repo, &format!("refs/heads/{}", branch_name))?,
     );
 
     if let Some(existing_path) = existing {
-        println!(
+        say!(
             "\n{}\nBranch '{}' already has a worktree at:\n  {}\n",
             style("! Worktree already exists").yellow().bold(),
             style(branch_name).cyan(),
@@ -57,7 +71,7 @@ pub fn create_worktree(
         }
 
         // In interactive mode, suggest resume
-        println!(
+        say!(
             "Use '{}' to resume work in this worktree.\n",
             style(format!("gw resume {}", branch_name)).cyan()
         );
@@ -69,14 +83,14 @@ pub fn create_worktree(
     let mut is_remote_only = false;
 
     if git::branch_exists(branch_name, Some(&repo)) {
-        println!(
+        say!(
             "\n{}\nBranch '{}' already exists locally but has no worktree.\n",
             style("! Branch already exists").yellow().bold(),
             style(branch_name).cyan(),
         );
         branch_already_exists = true;
     } else if git::remote_branch_exists(branch_name, Some(&repo), "origin") {
-        println!(
+        say!(
             "\n{}\nBranch '{}' exists on remote but not locally.\n",
             style("! Remote branch found").yellow().bold(),
             style(branch_name).cyan(),
@@ -106,10 +120,10 @@ pub fn create_worktree(
         default_worktree_path(&repo, branch_name)
     };
 
-    println!("\n{}", style("Creating new worktree:").cyan().bold());
-    println!("  Base branch: {}", style(&base).green());
-    println!("  New branch:  {}", style(branch_name).green());
-    println!("  Path:        {}\n", style(worktree_path.display()).blue());
+    say!("\n{}", style("Creating new worktree:").cyan().bold());
+    say!("  Base branch: {}", style(&base).green());
+    say!("  New branch:  {}", style(branch_name).green());
+    say!("  Path:        {}\n", style(worktree_path.display()).blue());
 
     // Create parent dir
     if let Some(parent) = worktree_path.parent() {
@@ -159,7 +173,7 @@ pub fn create_worktree(
     git::set_config(&bp_key, &repo.to_string_lossy(), Some(&repo))?;
     git::set_config(&ib_key, branch_name, Some(&repo))?;
 
-    println!(
+    say!(
         "{} Worktree created successfully\n",
         style("*").green().bold()
     );
@@ -173,6 +187,21 @@ pub fn create_worktree(
     // surfaces the cause); the worktree itself stays. The AI-tool launch
     // is skipped because the user signalled "this worktree isn't ready."
     crate::hooks::run_event("post_new", &worktree_path)?;
+
+    // --emit json: write the machine-readable result to stdout and skip spawn.
+    // The caller (hook or script) reads exactly this one line.
+    if emit == EmitFormat::Json {
+        println!(
+            "{}",
+            serde_json::to_string(&serde_json::json!({
+                "worktree_path": worktree_path.display().to_string(),
+                "branch": branch_name,
+                "base": base,
+            }))
+            .map_err(|e| CwError::Other(format!("json serialization failed: {e}")))?
+        );
+        return Ok(worktree_path);
+    }
 
     // Launch AI tool in the new worktree. `-T skip|none|noop` (the
     // replacement for the old `--no-term`) is handled inside
