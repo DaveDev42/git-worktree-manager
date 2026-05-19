@@ -507,7 +507,7 @@ fn generate_session_name(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::operations::test_env::{env_lock, EnvGuard};
+    use crate::operations::test_env::env_lock;
 
     /// Resolve --settings JSON to the index immediately following argv[0].
     /// Returns (settings_json, remainder_argv_excluding_inserted_flag_pair).
@@ -517,9 +517,10 @@ mod tests {
     }
 
     fn with_self_exe<F: FnOnce()>(f: F) {
+        // Hook commands no longer interpolate a path — `guard_settings_json`
+        // emits the bare `gw` name. We still hold the env lock so other env-
+        // mutating tests in this crate stay serialised relative to us.
         let _lock = env_lock();
-        let _guard = EnvGuard::capture(&["CW_SPAWN_AI_BIN"]);
-        std::env::set_var("CW_SPAWN_AI_BIN", "/usr/local/bin/gw");
         f();
     }
 
