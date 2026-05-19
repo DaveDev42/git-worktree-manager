@@ -38,7 +38,13 @@ fn cwd_is_healthy(cwd: &Path) -> bool {
 
 pub fn run(tool_input_source: &str) -> Result<()> {
     let raw = read_input(tool_input_source).map_err(CwError::Io)?;
-    let payload: HookPayload = serde_json::from_str(&raw).map_err(CwError::Json)?;
+    // Malformed or empty input: pass through rather than blocking the tool call.
+    // A hook that exits non-zero unconditionally due to bad input would be
+    // worse than a hook that silently allows (the guard is best-effort).
+    let payload: HookPayload = match serde_json::from_str(&raw) {
+        Ok(p) => p,
+        Err(_) => return Ok(()),
+    };
 
     if payload.tool_name.as_deref() != Some("Bash") {
         return Ok(());

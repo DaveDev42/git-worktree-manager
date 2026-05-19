@@ -138,13 +138,16 @@ fn sync_hooks(repo_root: &Path) -> Result<bool> {
     Ok(changed)
 }
 
-/// Returns true if both skill files exist under the repo root's
+/// Returns true if all skill files exist under the repo root's
 /// `.claude/skills/gw-*/`.
 pub fn is_installed_in_repo(repo_root: &Path) -> bool {
     repo_root
         .join(".claude/skills/gw-delegate/SKILL.md")
         .exists()
         && repo_root.join(".claude/skills/gw-manage/SKILL.md").exists()
+        && repo_root
+            .join(".claude/skills/gw-manage/references/gw-commands.md")
+            .exists()
 }
 
 /// Back-compat alias for `gw doctor`. Resolves repo root and checks installation.
