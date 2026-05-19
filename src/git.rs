@@ -26,7 +26,7 @@ pub fn run_command(
     capture: bool,
 ) -> Result<CommandResult> {
     if cmd.is_empty() {
-        return Err(CwError::Git("Empty command".to_string()));
+        return Err(CwError::Other("Empty command".to_string()));
     }
 
     let mut command = Command::new(cmd[0]);
@@ -326,9 +326,12 @@ pub fn find_worktree_by_intended_branch(
                 let key = parts[0];
                 let value = parts[1];
                 // Extract branch name from key: worktree.<branch>.intendedBranch
-                let key_parts: Vec<&str> = key.split('.').collect();
-                if key_parts.len() >= 2 {
-                    let branch_from_key = key_parts[1];
+                // Strip the known prefix and suffix instead of splitting on '.' to
+                // correctly handle branch names that contain dots (e.g. "feat-v2.0").
+                if let Some(branch_from_key) = key
+                    .strip_prefix("worktree.")
+                    .and_then(|s| s.strip_suffix(".intendedBranch"))
+                {
                     if branch_from_key == intended_branch || value == intended_branch {
                         let worktrees = parse_worktrees(repo)?;
                         let repo_name = repo

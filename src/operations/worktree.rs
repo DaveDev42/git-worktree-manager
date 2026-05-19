@@ -260,7 +260,7 @@ pub(crate) fn delete_one(
     let main_resolved = git::canonicalize_or(main_repo);
     if wt_resolved == main_resolved {
         return DeletionOutcome::Failed {
-            error: CwError::Git(messages::cannot_delete_main_worktree()),
+            error: CwError::Other(messages::cannot_delete_main_worktree()),
         };
     }
 
@@ -375,7 +375,7 @@ pub fn delete_worktree(
     let wt_resolved = git::canonicalize_or(&worktree_path);
     let main_resolved = git::canonicalize_or(&main_repo);
     if wt_resolved == main_resolved {
-        return Err(CwError::Git(messages::cannot_delete_main_worktree()));
+        return Err(CwError::Other(messages::cannot_delete_main_worktree()));
     }
 
     // If cwd is inside worktree, change to main repo *before* busy detection

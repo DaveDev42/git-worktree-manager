@@ -161,7 +161,7 @@ pub fn get_worktree_metadata(branch: &str, repo: &Path) -> Result<(String, PathB
     // Infer base_path from first worktree entry
     let worktrees = git::parse_worktrees(repo)?;
     let inferred_base_path = worktrees.first().map(|(_, p)| p.clone()).ok_or_else(|| {
-        CwError::Git(format!(
+        CwError::Other(format!(
             "Cannot infer base repository path for branch '{}'. Use 'gw new' to create worktrees.",
             branch
         ))
@@ -185,7 +185,7 @@ pub fn get_worktree_metadata(branch: &str, repo: &Path) -> Result<(String, PathB
     }
 
     let base = inferred_base_branch.ok_or_else(|| {
-        CwError::Git(format!(
+        CwError::Other(format!(
             "Cannot infer base branch for '{}'. Use 'gw new' to create worktrees.",
             branch
         ))

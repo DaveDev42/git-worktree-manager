@@ -16,7 +16,7 @@ pub fn worktree_path(branch: Option<&str>, list_branches: bool, interactive: boo
     }
 
     let branch = branch.ok_or_else(|| {
-        CwError::Git(
+        CwError::Other(
             "branch argument is required (unless --list-branches or --interactive is used)"
                 .to_string(),
         )
@@ -30,7 +30,7 @@ pub fn worktree_path(branch: Option<&str>, list_branches: bool, interactive: boo
             &repo,
             &format!("refs/heads/{}", normalized),
         )?)
-        .ok_or_else(|| CwError::Git(messages::worktree_not_found(branch)))?;
+        .ok_or_else(|| CwError::WorktreeNotFound(messages::worktree_not_found(branch)))?;
 
     println!("{}", path.display());
     Ok(())
