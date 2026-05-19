@@ -22,9 +22,9 @@ fn rm_auto_unlocks_when_pid_is_dead() {
     let wt_path = repo.create_worktree("stale");
     let wt_str = wt_path.to_string_lossy().to_string();
 
-    // PID 99_999_999 is well outside the typical max-pid range on Linux
-    // (default 32768) and macOS (default 99999), so it is virtually certain
-    // to be dead at test time.
+    // PID 99_999_999 exceeds Linux's `PID_MAX_LIMIT` (4_194_304) and macOS's
+    // default `pid_max` (99_999), so `kill(pid, 0)` is guaranteed to return
+    // ESRCH and `pid_alive` will report dead at test time.
     lock_with_reason(&repo, &wt_str, "agent (pid 99999999)");
 
     let out = repo.cw(&["rm", "stale"]);

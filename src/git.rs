@@ -564,6 +564,18 @@ pub(crate) fn is_locked_worktree_error(output: &str) -> bool {
 /// and the lock reason carries a `(pid N)` marker, we check whether that PID is
 /// still alive. If it is dead, the lock is stale: emit a one-line info notice,
 /// unlock the worktree, and retry. If the PID is live, surface a clearer error.
+///
+/// Trade-off: the parser matches `(pid N)` anywhere in the lock reason, so a
+/// user-authored reason like `"PR (pid 123) status check"` would also enter
+/// this branch. `pid_alive` is the second guard — auto-unlock only fires when
+/// that PID is also dead. Worst case is unlocking a deliberate hold whose PID
+/// happens to be dead, which we judge acceptable; the alternative
+/// (a strict gw-prefix allowlist) would miss real stale locks from other
+/// tools that use the same convention.
+///
+/// Non-Unix: `pid_alive` always returns `true`, so the dead-PID branch never
+/// fires and auto-recovery is effectively Unix-only. The live-PID error path
+/// still applies and yields a clearer message than git's raw error.
 pub fn remove_worktree_safe(worktree_path: &Path, repo: &Path, force: bool) -> Result<()> {
     let worktree_str = canonicalize_or(worktree_path).to_string_lossy().to_string();
     let result = run_remove(&worktree_str, repo, force)?;
@@ -594,7 +606,12 @@ pub fn remove_worktree_safe(worktree_path: &Path, repo: &Path, force: bool) -> R
                 Some(repo),
                 true,
                 true,
-            )?;
+            )
+            .map_err(|e| {
+                CwError::Git(format!(
+                    "auto-unlock failed during stale-lock recovery: {e}"
+                ))
+            })?;
             let retried = run_remove(&worktree_str, repo, force)?;
             if retried.returncode == 0 {
                 return Ok(());
