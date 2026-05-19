@@ -106,6 +106,11 @@ pub fn run_in_scope_to_writer<W: Write>(
 }
 
 pub(crate) fn run_capture_one(name: &str, path: &Path, cmd: &[String]) -> Result<(String, i32)> {
+    if cmd.is_empty() {
+        return Err(crate::error::CwError::Other(
+            "run_capture_one: empty command".into(),
+        ));
+    }
     let prefix = format!("[{}] ", name);
     let mut child = Command::new(&cmd[0])
         .args(&cmd[1..])

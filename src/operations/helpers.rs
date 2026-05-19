@@ -63,7 +63,7 @@ pub fn resolve_worktree_target(
     target: Option<&str>,
     lookup_mode: Option<&str>,
 ) -> Result<ResolvedTarget> {
-    if target.is_none() {
+    let Some(target) = target else {
         // Use current directory
         let cwd = std::env::current_dir()?;
         let branch = git::get_current_branch(Some(&cwd))?;
@@ -73,9 +73,7 @@ pub fn resolve_worktree_target(
             branch,
             repo,
         });
-    }
-
-    let target = target.unwrap();
+    };
 
     let main_repo = git::get_main_repo_root(None)?;
 
@@ -94,25 +92,15 @@ pub fn resolve_worktree_target(
     };
 
     match (branch_match, worktree_match) {
-        (Some(bp), Some(wp)) => {
-            let bp_resolved = git::canonicalize_or(&bp);
-            let wp_resolved = git::canonicalize_or(&wp);
-            if bp_resolved == wp_resolved {
-                let repo = git::get_repo_root(Some(&bp))?;
-                Ok(ResolvedTarget {
-                    path: bp,
-                    branch: target.to_string(),
-                    repo,
-                })
-            } else {
-                // Ambiguous — prefer branch match
-                let repo = git::get_repo_root(Some(&bp))?;
-                Ok(ResolvedTarget {
-                    path: bp,
-                    branch: target.to_string(),
-                    repo,
-                })
-            }
+        (Some(bp), Some(_wp)) => {
+            // Both branch and worktree name match — prefer the branch match.
+            // (Intentional: branch is the canonical identifier in gw.)
+            let repo = git::get_repo_root(Some(&bp))?;
+            Ok(ResolvedTarget {
+                path: bp,
+                branch: target.to_string(),
+                repo,
+            })
         }
         (Some(bp), None) => {
             let repo = git::get_repo_root(Some(&bp))?;
