@@ -23,6 +23,12 @@ use crate::tui;
 use crate::update;
 use std::io::{IsTerminal, Read};
 
+/// Error returned when `--prompt`/`--prompt-file` and trailing AI-tool args
+/// are both provided. Both ultimately set the AI tool's prompt, so mixing them
+/// would silently produce two conflicting prompts.
+const ERR_PROMPT_AND_FORWARD: &str = "--prompt / --prompt-file cannot be combined with trailing \
+     AI tool args; pick one or the other";
+
 pub fn run() {
     tui::install_panic_hook();
     let cli = Cli::parse();
@@ -88,11 +94,7 @@ pub fn run() {
             // would silently produce two prompts. Surface this before
             // anything touches disk.
             if (prompt.is_some() || prompt_file.is_some()) && !forward_args.is_empty() {
-                return Err(CwError::Other(
-                    "--prompt / --prompt-file cannot be combined with trailing AI tool args; \
-                     pick one or the other"
-                        .to_string(),
-                ));
+                return Err(CwError::Other(ERR_PROMPT_AND_FORWARD.to_string()));
             }
             // Catch `gw new <name> -- --prompt-file <path>` — clap would
             // forward those gw-owned flags verbatim into the AI tool's
@@ -178,11 +180,7 @@ pub fn run() {
             let (target, forward_args) = lift_dash_target(target, forward_args);
             // Same prompt/forward conflict as `gw new`.
             if (prompt.is_some() || prompt_file.is_some()) && !forward_args.is_empty() {
-                return Err(CwError::Other(
-                    "--prompt / --prompt-file cannot be combined with trailing AI tool args; \
-                     pick one or the other"
-                        .to_string(),
-                ));
+                return Err(CwError::Other(ERR_PROMPT_AND_FORWARD.to_string()));
             }
             // Same `-- --prompt-file` leak as `gw new`.
             reject_gw_flags_in_forward(&forward_args)?;
@@ -454,7 +452,7 @@ fn shell_setup() {
         profile_path
             .as_ref()
             .map(|p| p.display().to_string())
-            .unwrap_or("your profile".to_string())
+            .unwrap_or_else(|| "your profile".to_string())
     );
 
     println!(
@@ -567,7 +565,9 @@ fn refresh_shell_cache(shell_name: &str) {
         .join(".cache")
         .join(format!("gw-shell-function.{}", shell_name));
     if let Some(content) = shell_functions::generate(shell_name) {
-        let _ = std::fs::create_dir_all(cache_path.parent().unwrap_or(&home));
+        if let Some(cache_dir) = cache_path.parent() {
+            let _ = std::fs::create_dir_all(cache_dir);
+        }
         if std::fs::write(&cache_path, &content).is_ok() {
             println!(
                 "  {} {}",
