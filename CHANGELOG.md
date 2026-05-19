@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.12](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.11...v0.1.12) (2026-05-19)
+
+
+### Features
+
+* **claude:** emit hook commands as bare `gw` for portability ([#173](https://github.com/DaveDev42/git-worktree-manager/issues/173)) ([d91df5d](https://github.com/DaveDev42/git-worktree-manager/commit/d91df5db9d06a9795304b25e242536b6c1d4b187))
+* **claude:** one-click `gw setup-claude` registers hooks + skills in repo ([#172](https://github.com/DaveDev42/git-worktree-manager/issues/172)) ([78a313b](https://github.com/DaveDev42/git-worktree-manager/commit/78a313bfa7b0be36e46ffbb6c2c157035a39e5b0))
+* **rm:** auto-unlock stale `(pid N)` worktree locks ([#174](https://github.com/DaveDev42/git-worktree-manager/issues/174)) ([e810f97](https://github.com/DaveDev42/git-worktree-manager/commit/e810f97459389e88ede841ab1a81841ab85886be))
+
 ## [0.1.11](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.10...v0.1.11) (2026-05-17)
 
 
