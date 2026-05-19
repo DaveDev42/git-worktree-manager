@@ -532,19 +532,78 @@ pub fn get_branch_name_error(branch_name: &str) -> String {
     )
 }
 
+/// Parse a `(pid N)` substring from a `git worktree remove` lock-failure
+/// message. Returns the first PID found, or `None`.
+///
+/// Examples that match:
+///   `cannot remove a locked working tree, lock reason: agent worktree (pid 12345)`
+/// Examples that do not:
+///   `cannot remove a locked working tree, lock reason: WIP`
+///
+/// Match is intentionally narrow: we only recover stale locks when the locking
+/// process recorded its PID in the standard `(pid N)` shape. User-defined
+/// `git worktree lock --reason "WIP"` locks (no PID) fall through to the normal
+/// error path so we don't silently override a deliberate hold.
+pub(crate) fn parse_locked_lock_reason_pid(output: &str) -> Option<u32> {
+    // Find `(pid ` (case-sensitive, with the trailing space) then a numeric run.
+    let needle = "(pid ";
+    let start = output.find(needle)?;
+    let rest = &output[start + needle.len()..];
+    let end = rest.find(')')?;
+    rest[..end].trim().parse::<u32>().ok()
+}
+
+/// True if `git worktree remove` output indicates a locked-worktree failure.
+pub(crate) fn is_locked_worktree_error(output: &str) -> bool {
+    output.contains("cannot remove a locked working tree")
+}
+
 /// Remove a git worktree with platform-safe fallback.
+///
+/// If the underlying `git worktree remove` fails because the worktree is locked
+/// and the lock reason carries a `(pid N)` marker, we check whether that PID is
+/// still alive. If it is dead, the lock is stale: emit a one-line info notice,
+/// unlock the worktree, and retry. If the PID is live, surface a clearer error.
 pub fn remove_worktree_safe(worktree_path: &Path, repo: &Path, force: bool) -> Result<()> {
     let worktree_str = canonicalize_or(worktree_path).to_string_lossy().to_string();
-
-    let mut args = vec!["worktree", "remove", &worktree_str];
-    if force {
-        args.push("--force");
-    }
-
-    let result = git_command(&args, Some(repo), false, true)?;
+    let result = run_remove(&worktree_str, repo, force)?;
 
     if result.returncode == 0 {
         return Ok(());
+    }
+
+    // Stale-lock recovery: attempt at most once per call.
+    if is_locked_worktree_error(&result.stdout) {
+        if let Some(pid) = parse_locked_lock_reason_pid(&result.stdout) {
+            if crate::operations::lockfile::pid_alive(pid) {
+                return Err(CwError::Git(crate::messages::worktree_locked_live_pid(
+                    &worktree_str,
+                    pid,
+                )));
+            }
+            eprintln!(
+                "{}",
+                console::style(crate::messages::worktree_unlocking_stale(
+                    &worktree_str,
+                    pid
+                ))
+                .dim()
+            );
+            git_command(
+                &["worktree", "unlock", &worktree_str],
+                Some(repo),
+                true,
+                true,
+            )?;
+            let retried = run_remove(&worktree_str, repo, force)?;
+            if retried.returncode == 0 {
+                return Ok(());
+            }
+            return Err(CwError::Git(format!(
+                "Command failed (after auto-unlock): git worktree remove {}\n{}",
+                worktree_str, retried.stdout
+            )));
+        }
     }
 
     // Windows fallback for "Directory not empty"
@@ -565,11 +624,23 @@ pub fn remove_worktree_safe(worktree_path: &Path, repo: &Path, force: bool) -> R
         }
     }
 
+    let mut args = vec!["worktree", "remove", &worktree_str];
+    if force {
+        args.push("--force");
+    }
     Err(CwError::Git(format!(
         "Command failed: {}\n{}",
         args.join(" "),
         result.stdout
     )))
+}
+
+fn run_remove(worktree_str: &str, repo: &Path, force: bool) -> Result<CommandResult> {
+    let mut args = vec!["worktree", "remove", worktree_str];
+    if force {
+        args.push("--force");
+    }
+    git_command(&args, Some(repo), false, true)
 }
 
 /// Check if a branch has been merged into the base branch.
@@ -649,6 +720,49 @@ mod tests {
         assert_eq!(normalize_branch_name("refs/heads/main"), "main");
         assert_eq!(normalize_branch_name("feature-branch"), "feature-branch");
         assert_eq!(normalize_branch_name("refs/heads/feat/auth"), "feat/auth");
+    }
+
+    #[test]
+    fn parse_pid_extracts_first_pid() {
+        let out = "fatal: cannot remove a locked working tree, lock reason: agent (pid 12345)";
+        assert_eq!(parse_locked_lock_reason_pid(out), Some(12345));
+    }
+
+    #[test]
+    fn parse_pid_handles_trailing_text() {
+        let out = "lock reason: foo (pid 42) and more text";
+        assert_eq!(parse_locked_lock_reason_pid(out), Some(42));
+    }
+
+    #[test]
+    fn parse_pid_returns_none_without_marker() {
+        let out = "fatal: cannot remove a locked working tree, lock reason: WIP";
+        assert_eq!(parse_locked_lock_reason_pid(out), None);
+    }
+
+    #[test]
+    fn parse_pid_returns_none_for_malformed() {
+        // No closing paren
+        assert_eq!(parse_locked_lock_reason_pid("(pid 99"), None);
+        // Non-numeric
+        assert_eq!(parse_locked_lock_reason_pid("(pid abc)"), None);
+        // Empty
+        assert_eq!(parse_locked_lock_reason_pid("(pid )"), None);
+    }
+
+    #[test]
+    fn parse_pid_picks_first_when_multiple() {
+        let out = "first (pid 11) second (pid 22)";
+        assert_eq!(parse_locked_lock_reason_pid(out), Some(11));
+    }
+
+    #[test]
+    fn is_locked_error_detects_git_message() {
+        assert!(is_locked_worktree_error(
+            "fatal: cannot remove a locked working tree, lock reason: x"
+        ));
+        assert!(!is_locked_worktree_error("fatal: some other error"));
+        assert!(!is_locked_worktree_error(""));
     }
 
     #[test]
