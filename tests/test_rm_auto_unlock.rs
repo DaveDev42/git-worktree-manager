@@ -16,6 +16,7 @@ fn lock_with_reason(repo: &TestRepo, worktree: &str, reason: &str) {
     repo.git(&["worktree", "lock", "--reason", reason, worktree]);
 }
 
+#[cfg(unix)]
 #[test]
 fn rm_auto_unlocks_when_pid_is_dead() {
     let repo = TestRepo::new();
