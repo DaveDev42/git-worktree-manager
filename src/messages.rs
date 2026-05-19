@@ -87,6 +87,18 @@ pub fn switched_to_worktree(path: &std::path::Path) -> String {
     format!("Switched to worktree: {}", path.display())
 }
 
+pub fn worktree_unlocking_stale(path: &str, pid: u32) -> String {
+    format!("info: stale lock from dead pid {pid} on {path} — unlocking")
+}
+
+pub fn worktree_locked_live_pid(path: &str, pid: u32) -> String {
+    format!(
+        "Worktree {path} is locked by pid {pid} which is still running — \
+         refusing to unlock. Stop that process or unlock manually with \
+         `git worktree unlock {path}`."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
