@@ -48,10 +48,16 @@ APPLESCRIPT"#,
         shell_quote(&path.to_string_lossy()),
         applescript_escape(command),
     );
-    Command::new("bash")
+    let status = Command::new("bash")
         .args(["-lc", &script])
         .status()
         .map_err(|e| CwError::Git(format!("iTerm launch failed: {}", e)))?;
+    if !status.success() {
+        return Err(CwError::Git(format!(
+            "iTerm launch failed (osascript exit {})",
+            status
+        )));
+    }
     println!(
         "{} {} running in new iTerm window\n",
         style("*").green().bold(),
@@ -78,10 +84,16 @@ APPLESCRIPT"#,
         shell_quote(&path.to_string_lossy()),
         applescript_escape(command),
     );
-    Command::new("bash")
+    let status = Command::new("bash")
         .args(["-lc", &script])
         .status()
         .map_err(|e| CwError::Git(format!("iTerm launch failed: {}", e)))?;
+    if !status.success() {
+        return Err(CwError::Git(format!(
+            "iTerm launch failed (osascript exit {})",
+            status
+        )));
+    }
     println!(
         "{} {} running in new iTerm tab\n",
         style("*").green().bold(),
@@ -114,10 +126,16 @@ APPLESCRIPT"#,
         path = shell_quote(&path.to_string_lossy()),
         cmd = applescript_escape(command),
     );
-    Command::new("bash")
+    let status = Command::new("bash")
         .args(["-lc", &script])
         .status()
         .map_err(|e| CwError::Git(format!("iTerm launch failed: {}", e)))?;
+    if !status.success() {
+        return Err(CwError::Git(format!(
+            "iTerm launch failed (osascript exit {})",
+            status
+        )));
+    }
     let pane_type = if horizontal { "horizontal" } else { "vertical" };
     println!(
         "{} {} running in iTerm {} pane\n",

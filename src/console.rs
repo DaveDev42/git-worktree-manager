@@ -38,7 +38,7 @@ pub fn status_style(status: &str) -> Style {
         "merged" => Style::new().magenta(),
         "pr-open" => Style::new().cyan(),
         "busy" => Style::new().red().bold(),
-        "stale" => Style::new().red(),
+        "stale" => Style::new().dim(),
         _ => Style::new(),
     }
 }

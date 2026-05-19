@@ -62,60 +62,71 @@ pub(crate) fn write_stderr(s: &str) {
     let _ = handle.flush();
 }
 
-/// Strip ANSI escape sequences and return the visible length.
+/// Strip ANSI escape sequences and return the visible display width.
+///
+/// Iterates over Unicode characters so that multi-byte chars are counted as
+/// one unit each (consistent with `truncate`). ANSI CSI sequences of the form
+/// `ESC [ ... m` are skipped in their entirety.
 #[cfg(any(unix, test))]
 pub(crate) fn visible_len(text: &str) -> usize {
     let mut len = 0;
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\x1b' {
-            // Skip until 'm'
-            i += 1;
-            while i < bytes.len() && bytes[i] != b'm' {
-                i += 1;
-            }
-            if i < bytes.len() {
-                i += 1; // skip 'm'
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            // Skip CSI sequence: ESC [ ... m
+            if chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                for c in chars.by_ref() {
+                    if c == 'm' {
+                        break;
+                    }
+                }
             }
         } else {
             len += 1;
-            i += 1;
         }
     }
     len
 }
 
 /// Truncate text to fit within `width` visible characters, preserving ANSI codes.
+///
+/// Uses character (not byte) boundaries so multi-byte Unicode chars count as
+/// one visible unit each.
 #[cfg(any(unix, test))]
 pub(crate) fn truncate(text: &str, width: usize) -> String {
     if visible_len(text) <= width {
         return text.to_string();
     }
 
+    let target = width.saturating_sub(1);
     let mut vis_pos = 0;
-    let mut cut_pos = 0;
-    let bytes = text.as_bytes();
-    let mut i = 0;
+    let mut result = String::new();
+    let mut chars = text.chars().peekable();
 
-    while i < bytes.len() && vis_pos < width.saturating_sub(1) {
-        if bytes[i] == b'\x1b' {
-            // Skip ANSI escape sequence
-            i += 1;
-            while i < bytes.len() && bytes[i] != b'm' {
-                i += 1;
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            // Capture and re-emit the CSI sequence verbatim.
+            let mut seq = String::from('\x1b');
+            if chars.peek() == Some(&'[') {
+                seq.push(chars.next().unwrap()); // '['
+                for c in chars.by_ref() {
+                    seq.push(c);
+                    if c == 'm' {
+                        break;
+                    }
+                }
             }
-            if i < bytes.len() {
-                i += 1; // skip 'm'
-            }
+            result.push_str(&seq);
         } else {
+            if vis_pos >= target {
+                break;
+            }
+            result.push(ch);
             vis_pos += 1;
-            i += 1;
         }
-        cut_pos = i;
     }
 
-    let mut result = text[..cut_pos].to_string();
     result.push_str("\x1b[0m");
     result
 }
@@ -271,50 +282,41 @@ fn arrow_select_unix(
     let mut selected = default_index;
     let total_lines = items.len() + 2; // title + blank + items
 
-    let result = (|| -> Option<String> {
-        render(items, title, selected, total_lines, true);
+    render(items, title, selected, total_lines, true);
 
-        loop {
-            let key = match read_key(fd) {
-                Ok(k) => k,
-                Err(_) => {
-                    cleanup(total_lines);
-                    return None;
-                }
-            };
+    let result: Option<String> = loop {
+        let key = match read_key(fd) {
+            Ok(k) => k,
+            Err(_) => break None,
+        };
 
-            match key {
-                Key::Enter => {
-                    cleanup(total_lines);
-                    return Some(items[selected].1.clone());
-                }
-                Key::CtrlC | Key::Quit | Key::Escape => {
-                    cleanup(total_lines);
-                    return None;
-                }
-                Key::Up => {
-                    selected = if selected == 0 {
-                        items.len() - 1
-                    } else {
-                        selected - 1
-                    };
-                    render(items, title, selected, total_lines, false);
-                }
-                Key::Down => {
-                    selected = (selected + 1) % items.len();
-                    render(items, title, selected, total_lines, false);
-                }
-                Key::Number(n) => {
-                    let idx = (n as usize) - 1;
-                    if idx < items.len() {
-                        cleanup(total_lines);
-                        return Some(items[idx].1.clone());
-                    }
-                }
-                _ => {}
+        match key {
+            Key::Enter => break Some(items[selected].1.clone()),
+            Key::CtrlC | Key::Quit | Key::Escape => break None,
+            Key::Up => {
+                selected = if selected == 0 {
+                    items.len() - 1
+                } else {
+                    selected - 1
+                };
+                render(items, title, selected, total_lines, false);
             }
+            Key::Down => {
+                selected = (selected + 1) % items.len();
+                render(items, title, selected, total_lines, false);
+            }
+            Key::Number(n) => {
+                let idx = (n as usize) - 1;
+                if idx < items.len() {
+                    break Some(items[idx].1.clone());
+                }
+            }
+            _ => {}
         }
-    })();
+    };
+
+    // Clear our drawn lines; terminal mode is restored by `_guard` on drop.
+    cleanup(total_lines);
 
     Some(result)
 }

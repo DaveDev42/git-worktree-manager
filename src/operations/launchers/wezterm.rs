@@ -128,6 +128,13 @@ pub fn launch_window(
         .args(["cli", "spawn", "--new-window", "--cwd", &path_str])
         .output()
         .map_err(|e| CwError::Git(format!("wezterm spawn failed: {}", e)))?;
+    if !output.status.success() {
+        return Err(CwError::Git(format!(
+            "wezterm spawn failed (exit {}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
 
     let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
     set_tab_title(&pane_id, tab_title);
@@ -155,6 +162,13 @@ pub fn launch_tab(path: &Path, command: &str, ai_tool_name: &str, tab_title: &st
         .args(["cli", "spawn", "--cwd", &path_str])
         .output()
         .map_err(|e| CwError::Git(format!("wezterm spawn failed: {}", e)))?;
+    if !output.status.success() {
+        return Err(CwError::Git(format!(
+            "wezterm spawn failed (exit {}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
 
     let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
     set_tab_title(&pane_id, tab_title);
@@ -196,6 +210,13 @@ pub fn launch_tab_bg(
         .args(["cli", "spawn", "--cwd", &path_str])
         .output()
         .map_err(|e| CwError::Git(format!("wezterm spawn failed: {}", e)))?;
+    if !output.status.success() {
+        return Err(CwError::Git(format!(
+            "wezterm spawn failed (exit {}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
 
     let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
     set_tab_title(&pane_id, tab_title);
@@ -241,6 +262,13 @@ pub fn launch_pane(path: &Path, command: &str, ai_tool_name: &str, horizontal: b
         .args(["cli", "split-pane", split_flag, "--cwd", &path_str])
         .output()
         .map_err(|e| CwError::Git(format!("wezterm split-pane failed: {}", e)))?;
+    if !output.status.success() {
+        return Err(CwError::Git(format!(
+            "wezterm split-pane failed (exit {}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
 
     let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
     send_text(&pane_id, command)?;
