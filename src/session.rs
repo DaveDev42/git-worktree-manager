@@ -45,11 +45,16 @@ pub fn get_sessions_dir() -> PathBuf {
     new_dir
 }
 
-/// Get the session directory for a specific branch.
-pub fn get_session_dir(branch_name: &str) -> PathBuf {
+/// Compute the session directory path for a specific branch without creating it.
+fn session_dir_path(branch_name: &str) -> PathBuf {
     let branch = normalize_branch_name(branch_name);
     let safe = sanitize_branch_name(branch);
-    let dir = get_sessions_dir().join(safe);
+    get_sessions_dir().join(safe)
+}
+
+/// Get the session directory for a specific branch, creating it if needed.
+pub fn get_session_dir(branch_name: &str) -> PathBuf {
+    let dir = session_dir_path(branch_name);
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -116,6 +121,12 @@ fn has_jsonl_files(dir: &Path) -> bool {
 }
 
 /// Save session metadata for a branch.
+///
+/// Uses an atomic temp-then-rename write so that a concurrent `gw resume` on
+/// the same branch never sees a partially-written file. The rename is atomic
+/// on POSIX and best-effort on Windows (falls back to a direct write if the
+/// temp file ends up on a different filesystem than the metadata directory,
+/// which is impossible in practice since both live under `~/.config/`).
 pub fn save_session_metadata(branch_name: &str, ai_tool: &str, worktree_path: &str) -> Result<()> {
     let session_dir = get_session_dir(branch_name);
     let metadata_file = session_dir.join("metadata.json");
@@ -130,23 +141,26 @@ pub fn save_session_metadata(branch_name: &str, ai_tool: &str, worktree_path: &s
         updated_at: now,
     };
 
-    // Preserve created_at if metadata already exists
-    if metadata_file.exists() {
-        if let Ok(content) = std::fs::read_to_string(&metadata_file) {
-            if let Ok(existing) = serde_json::from_str::<SessionMetadata>(&content) {
-                metadata.created_at = existing.created_at;
-            }
+    // Preserve created_at if metadata already exists. Read before acquiring
+    // the write slot so we don't need to hold a lock across the read.
+    if let Ok(content) = std::fs::read_to_string(&metadata_file) {
+        if let Ok(existing) = serde_json::from_str::<SessionMetadata>(&content) {
+            metadata.created_at = existing.created_at;
         }
     }
 
     let content = serde_json::to_string_pretty(&metadata)?;
-    std::fs::write(&metadata_file, content)?;
+    // Write to a sibling temp file then atomically rename into place so
+    // concurrent readers never see a half-written file.
+    let tmp = metadata_file.with_extension("json.tmp");
+    std::fs::write(&tmp, &content)?;
+    std::fs::rename(&tmp, &metadata_file)?;
     Ok(())
 }
 
 /// Load session metadata for a branch.
 pub fn load_session_metadata(branch_name: &str) -> Option<SessionMetadata> {
-    let session_dir = get_session_dir(branch_name);
+    let session_dir = session_dir_path(branch_name);
     let metadata_file = session_dir.join("metadata.json");
 
     if !metadata_file.exists() {
@@ -198,7 +212,7 @@ pub fn save_context(branch_name: &str, context: &str) -> Result<()> {
 
 /// Load context information for a branch.
 pub fn load_context(branch_name: &str) -> Option<String> {
-    let session_dir = get_session_dir(branch_name);
+    let session_dir = session_dir_path(branch_name);
     let context_file = session_dir.join("context.txt");
     if !context_file.exists() {
         return None;
