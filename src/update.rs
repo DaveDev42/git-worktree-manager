@@ -264,6 +264,16 @@ fn current_target() -> &'static str {
     {
         "aarch64-unknown-linux-musl"
     }
+    #[cfg(not(any(
+        all(target_arch = "x86_64", target_os = "macos"),
+        all(target_arch = "aarch64", target_os = "macos"),
+        all(target_arch = "x86_64", target_os = "windows"),
+        all(target_arch = "x86_64", target_os = "linux"),
+        all(target_arch = "aarch64", target_os = "linux"),
+    )))]
+    compile_error!(
+        "unsupported target: gw self-update is not available for this platform/architecture combination"
+    );
 }
 
 /// Archive extension for the current platform.
@@ -358,8 +368,10 @@ fn download_and_extract(version: &str) -> Result<PathBuf, String> {
         ));
     }
 
-    // Move to a persistent temp file (tempdir would delete on drop)
-    let persistent_path = std::env::temp_dir().join(format!("gw-update-{}", version));
+    // Move to a persistent temp file (tempdir would delete on drop).
+    // Include the process ID to prevent concurrent-upgrade path collisions.
+    let persistent_path =
+        std::env::temp_dir().join(format!("gw-update-{}-{}", version, std::process::id()));
     std::fs::copy(&extracted_bin, &persistent_path)
         .map_err(|e| format!("Failed to copy binary: {}", e))?;
 

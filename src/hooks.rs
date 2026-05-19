@@ -25,6 +25,15 @@ use crate::error::Result;
 /// - `post_new` callers treat the error as **blocking**: propagate it as a
 ///   non-zero `gw new` exit code and skip the AI tool launch.
 pub fn run_event(event: &str, cwd: &Path) -> Result<()> {
+    // Hooks require a POSIX `sh` shell. Return a clear error on non-Unix
+    // platforms rather than failing cryptically when `sh` is missing.
+    #[cfg(not(unix))]
+    {
+        return Err(crate::error::CwError::Other(
+            "hooks require 'sh' shell which is not available on Windows".into(),
+        ));
+    }
+
     // Worktrees are siblings of the main repo (default ../<repo>-<branch>),
     // so walking up from `cwd` would never find the main repo's .cwconfig.json.
     // Resolve to the main repo root for config lookup; `cwd` is kept as the
