@@ -224,11 +224,9 @@ fn check_busy_worktrees(worktrees: &[WtInfo]) {
 fn check_claude_integration() {
     println!("{}", style("5. Checking Claude Code integration...").bold());
 
-    let has_claude = Command::new("which")
-        .arg("claude")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    // Use git::has_command for cross-platform PATH search instead of shelling
+    // out to `which` (Unix-only).
+    let has_claude = git::has_command("claude");
 
     let msgs = setup_claude_doctor_messages();
 

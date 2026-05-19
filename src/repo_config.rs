@@ -13,9 +13,13 @@ pub struct RepoConfig {
     pub value: serde_json::Value,
 }
 
+/// Maximum directory levels to walk up when searching for `.cwconfig.json`.
+/// Prevents unbounded traversal on deep or unusual filesystem layouts.
+const MAX_ANCESTOR_DEPTH: usize = 20;
+
 pub fn find_repo_config(start: &Path) -> Option<RepoConfig> {
     let mut cur = start.to_path_buf();
-    loop {
+    for _ in 0..MAX_ANCESTOR_DEPTH {
         let candidate = cur.join(".cwconfig.json");
         if candidate.exists() {
             if let Ok(content) = std::fs::read_to_string(&candidate) {
@@ -31,6 +35,7 @@ pub fn find_repo_config(start: &Path) -> Option<RepoConfig> {
             return None;
         }
     }
+    None
 }
 
 pub fn load_repo_config(start: &Path) -> Result<Option<serde_json::Value>> {
