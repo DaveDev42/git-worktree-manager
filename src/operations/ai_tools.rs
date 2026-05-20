@@ -7,7 +7,7 @@ use std::path::Path;
 use console::style;
 
 use crate::config::{
-    self, get_ai_tool_command, get_ai_tool_resume_command, is_claude_tool, is_claude_tool_for_cwd,
+    self, get_ai_tool_command_for_cwd, get_ai_tool_resume_command_for_cwd, is_claude_tool_for_cwd,
     load_effective_config,
 };
 use crate::constants::{LaunchMethod, MAX_SESSION_NAME_LENGTH};
@@ -226,12 +226,14 @@ pub fn launch_ai_tool(path: &Path, resume: bool, opts: &LaunchOptions<'_>) -> Re
     // having it silently dropped because they also passed `--model opus`
     // would be a footgun.
     let mut ai_cmd_parts = if resume {
-        get_ai_tool_resume_command()?
-    } else if is_claude_tool().unwrap_or(false) && session::claude_native_session_exists(path) {
-        eprintln!("Found existing Claude session, using --continue");
-        get_ai_tool_resume_command()?
+        get_ai_tool_resume_command_for_cwd(path)?
+    } else if is_claude_tool_for_cwd(path).unwrap_or(false)
+        && session::claude_native_session_exists(path)
+    {
+        println!("Found existing Claude session, using --continue");
+        get_ai_tool_resume_command_for_cwd(path)?
     } else {
-        get_ai_tool_command()?
+        get_ai_tool_command_for_cwd(path)?
     };
 
     if ai_cmd_parts.is_empty() {
@@ -304,8 +306,8 @@ pub fn resume_worktree(worktree: Option<&str>, opts: &LaunchOptions<'_>) -> Resu
     }
 
     // Check for existing session
-    let has_session =
-        is_claude_tool().unwrap_or(false) && session::claude_native_session_exists(&worktree_path);
+    let has_session = is_claude_tool_for_cwd(&worktree_path).unwrap_or(false)
+        && session::claude_native_session_exists(&worktree_path);
 
     if has_session {
         println!(
@@ -342,7 +344,7 @@ pub fn resume_worktree(worktree: Option<&str>, opts: &LaunchOptions<'_>) -> Resu
     // hides it). The tool itself knows whether it has anything to resume; if
     // it doesn't, `--continue` is harmless. Always passing the flag matches
     // the README's "always re-injects" promise.
-    let ai_cmd = get_ai_tool_resume_command()?;
+    let ai_cmd = get_ai_tool_resume_command_for_cwd(&worktree_path)?;
 
     if !ai_cmd.is_empty() {
         let ai_tool_name = &ai_cmd[0];
@@ -406,7 +408,7 @@ pub fn spawn_in_worktree(
     //   <preset args...> <forward_args...> [<prompt>]
     // The prompt is appended last so the AI tool sees it as the leading
     // user message (claude/codex/gemini all accept a trailing positional).
-    let mut ai_cmd_parts = get_ai_tool_command()?;
+    let mut ai_cmd_parts = get_ai_tool_command_for_cwd(worktree_path)?;
     if ai_cmd_parts.is_empty() {
         return Ok(());
     }
