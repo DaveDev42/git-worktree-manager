@@ -1,6 +1,4 @@
 /// CLI definitions using clap derive.
-///
-/// Mirrors the Typer-based CLI in src/git_worktree_manager/cli.py.
 pub mod completions;
 
 use clap::{Parser, Subcommand, ValueEnum, ValueHint};
