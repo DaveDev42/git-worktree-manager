@@ -111,11 +111,21 @@ pub fn create_worktree(
         return Err(CwError::InvalidBranch(messages::branch_not_found(&base)));
     }
 
-    // Determine worktree path
+    // Determine worktree path.
+    // For user-supplied paths: make absolute first (relative to cwd), then
+    // canonicalize to resolve symlinks. Canonicalize will fail if the path
+    // does not yet exist; in that case the absolute-but-non-canonical path is
+    // used — git will create the directory when it adds the worktree.
     let worktree_path = if let Some(p) = path {
-        PathBuf::from(p)
-            .canonicalize()
-            .unwrap_or_else(|_| PathBuf::from(p))
+        let raw = PathBuf::from(p);
+        let abs = if raw.is_absolute() {
+            raw
+        } else {
+            std::env::current_dir()
+                .map_err(|e| CwError::Other(format!("cannot determine current directory: {e}")))?
+                .join(raw)
+        };
+        abs.canonicalize().unwrap_or(abs)
     } else {
         default_worktree_path(&repo, branch_name)
     };
@@ -430,12 +440,12 @@ fn resolve_delete_target(
     target: Option<&str>,
     main_repo: &Path,
 ) -> Result<(PathBuf, Option<String>)> {
-    let target = target.map(|t| t.to_string()).unwrap_or_else(|| {
-        std::env::current_dir()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string()
-    });
+    let target = match target {
+        Some(t) => t.to_string(),
+        None => std::env::current_dir()
+            .map(|p| p.to_string_lossy().into_owned())
+            .map_err(|e| CwError::Other(format!("cannot determine current directory: {e}")))?,
+    };
 
     let strict = super::helpers::resolve_target_strict(main_repo, &target)?;
     Ok((strict.path, strict.branch))
