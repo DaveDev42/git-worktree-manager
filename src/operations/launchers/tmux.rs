@@ -23,10 +23,16 @@ pub fn launch_session(
     let path_str = path.to_string_lossy().to_string();
 
     // Create detached session
-    Command::new("tmux")
+    let status = Command::new("tmux")
         .args(["new-session", "-d", "-s", session_name, "-c", &path_str])
         .status()
         .map_err(|e| CwError::Git(format!("tmux new-session failed: {}", e)))?;
+    if !status.success() {
+        return Err(CwError::Git(format!(
+            "tmux new-session failed (exit {}): session '{}' may already exist",
+            status, session_name
+        )));
+    }
 
     // Send command
     Command::new("tmux")
@@ -35,10 +41,16 @@ pub fn launch_session(
         .map_err(|e| CwError::Git(format!("tmux send-keys failed: {}", e)))?;
 
     // Attach
-    Command::new("tmux")
+    let status = Command::new("tmux")
         .args(["attach-session", "-t", session_name])
         .status()
         .map_err(|e| CwError::Git(format!("tmux attach failed: {}", e)))?;
+    if !status.success() {
+        return Err(CwError::Git(format!(
+            "tmux attach-session failed (exit {})",
+            status
+        )));
+    }
 
     println!(
         "{} {} ran in tmux session '{}'\n",
