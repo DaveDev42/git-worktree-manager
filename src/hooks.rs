@@ -25,15 +25,6 @@ use crate::error::Result;
 /// - `post_new` callers treat the error as **blocking**: propagate it as a
 ///   non-zero `gw new` exit code and skip the AI tool launch.
 pub fn run_event(event: &str, cwd: &Path) -> Result<()> {
-    // Hooks require a POSIX `sh` shell. Return a clear error on non-Unix
-    // platforms rather than failing cryptically when `sh` is missing.
-    #[cfg(not(unix))]
-    {
-        return Err(crate::error::CwError::Other(
-            "hooks require 'sh' shell which is not available on Windows".into(),
-        ));
-    }
-
     // Worktrees are siblings of the main repo (default ../<repo>-<branch>),
     // so walking up from `cwd` would never find the main repo's .cwconfig.json.
     // Resolve to the main repo root for config lookup; `cwd` is kept as the
@@ -49,20 +40,29 @@ pub fn run_event(event: &str, cwd: &Path) -> Result<()> {
     let Some(cmd) = cmd else {
         return Ok(());
     };
+    // Hooks require a POSIX `sh` shell. Return a clear error on non-Unix
+    // platforms rather than failing cryptically when `sh` is missing.
+    #[cfg(not(unix))]
+    return Err(crate::error::CwError::Other(
+        "hooks require 'sh' shell which is not available on Windows".into(),
+    ));
     // sh -c lets users write pipes/conditionals like "npm install && npm test".
     // stderr is inherited from Command::status() so users see hook output directly.
-    let status = Command::new("sh")
-        .arg("-c")
-        .arg(&cmd)
-        .current_dir(cwd)
-        .status()?;
-    if !status.success() {
-        return Err(crate::error::CwError::Other(format!(
-            "hook '{}' (`{}`) exited with {}",
-            event,
-            cmd.chars().take(60).collect::<String>(),
-            status.code().unwrap_or(-1)
-        )));
+    #[cfg(unix)]
+    {
+        let status = Command::new("sh")
+            .arg("-c")
+            .arg(&cmd)
+            .current_dir(cwd)
+            .status()?;
+        if !status.success() {
+            return Err(crate::error::CwError::Other(format!(
+                "hook '{}' (`{}`) exited with {}",
+                event,
+                cmd.chars().take(60).collect::<String>(),
+                status.code().unwrap_or(-1)
+            )));
+        }
+        Ok(())
     }
-    Ok(())
 }
