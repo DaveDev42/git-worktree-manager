@@ -34,50 +34,80 @@ pub(crate) fn merge_hooks_into(settings: &mut Value) -> Result<bool> {
     let hooks_entry = root
         .entry("hooks")
         .or_insert_with(|| Value::Object(serde_json::Map::new()));
-    if hooks_entry.as_object().is_none() {
-        return Err(CwError::Other(
+    let hooks = hooks_entry.as_object_mut().ok_or_else(|| {
+        CwError::Other(
             "sync-claude: malformed .claude/settings.json — `hooks` is not a JSON object."
                 .to_string(),
-        ));
-    }
-    let hooks = hooks_entry.as_object_mut().expect("just checked");
+        )
+    })?;
 
     let mut changed = false;
 
     // --- PreToolUse(Bash) ---
-    {
-        let entry = claude_settings::pre_tool_use_bash_entry()?;
-        let our_cmd = extract_first_command(&entry);
-        let arr = hooks
-            .entry("PreToolUse")
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .ok_or_else(|| {
-                CwError::Other("sync-claude: `hooks.PreToolUse` is not an array.".to_string())
-            })?;
+    changed |= merge_one_hook(
+        hooks,
+        "PreToolUse",
+        claude_settings::pre_tool_use_bash_entry()?,
+        GUARD_SUFFIX,
+        true,
+    )?;
 
-        if drop_legacy_bash_entries(arr, GUARD_SUFFIX) {
+    // --- WorktreeCreate ---
+    changed |= merge_one_hook(
+        hooks,
+        "WorktreeCreate",
+        claude_settings::worktree_create_entry()?,
+        CREATE_SUFFIX,
+        false,
+    )?;
+
+    // --- WorktreeRemove ---
+    changed |= merge_one_hook(
+        hooks,
+        "WorktreeRemove",
+        claude_settings::worktree_remove_entry()?,
+        REMOVE_SUFFIX,
+        false,
+    )?;
+
+    Ok(changed)
+}
+
+/// Merge a single hook entry into `hooks[event_key]`, dropping any legacy
+/// absolute-path registrations with the given `legacy_suffix` first.
+///
+/// When `bash_matcher` is true, both the legacy-drop and presence-check only
+/// consider entries whose `matcher` field equals `"Bash"`, so that unrelated
+/// hook types with a different matcher are untouched.
+///
+/// Returns `true` if the hooks object was modified.
+fn merge_one_hook(
+    hooks: &mut serde_json::Map<String, Value>,
+    event_key: &str,
+    entry: Value,
+    legacy_suffix: &str,
+    bash_matcher: bool,
+) -> Result<bool> {
+    let our_cmd = extract_first_command(&entry);
+    let arr = hooks
+        .entry(event_key)
+        .or_insert_with(|| Value::Array(vec![]))
+        .as_array_mut()
+        .ok_or_else(|| {
+            CwError::Other(format!("sync-claude: `hooks.{event_key}` is not an array."))
+        })?;
+
+    let mut changed = false;
+    if bash_matcher {
+        if drop_legacy_bash_entries(arr, legacy_suffix) {
             changed = true;
         }
         if !pre_tool_use_bash_already_present(arr, our_cmd.as_deref()) {
             arr.push(entry);
             changed = true;
         }
-    }
-
-    // --- WorktreeCreate ---
-    {
-        let entry = claude_settings::worktree_create_entry()?;
-        let our_cmd = extract_first_command(&entry);
-        let arr = hooks
-            .entry("WorktreeCreate")
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .ok_or_else(|| {
-                CwError::Other("sync-claude: `hooks.WorktreeCreate` is not an array.".to_string())
-            })?;
-
-        if drop_legacy_entries(arr, CREATE_SUFFIX) {
+    } else {
+        if drop_legacy_entries(arr, legacy_suffix) {
             changed = true;
         }
         if !command_already_present(arr, our_cmd.as_deref()) {
@@ -85,28 +115,6 @@ pub(crate) fn merge_hooks_into(settings: &mut Value) -> Result<bool> {
             changed = true;
         }
     }
-
-    // --- WorktreeRemove ---
-    {
-        let entry = claude_settings::worktree_remove_entry()?;
-        let our_cmd = extract_first_command(&entry);
-        let arr = hooks
-            .entry("WorktreeRemove")
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .ok_or_else(|| {
-                CwError::Other("sync-claude: `hooks.WorktreeRemove` is not an array.".to_string())
-            })?;
-
-        if drop_legacy_entries(arr, REMOVE_SUFFIX) {
-            changed = true;
-        }
-        if !command_already_present(arr, our_cmd.as_deref()) {
-            arr.push(entry);
-            changed = true;
-        }
-    }
-
     Ok(changed)
 }
 
