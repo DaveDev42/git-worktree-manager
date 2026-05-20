@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.13](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.12...v0.1.13) (2026-05-20)
+
+
+### Bug Fixes
+
+* **ai-tools:** worktree-path-aware config resolution and atomic session writes ([#177](https://github.com/DaveDev42/git-worktree-manager/issues/177)) ([a565e0d](https://github.com/DaveDev42/git-worktree-manager/commit/a565e0db9176bd45cfe2e3b0681816bbea8e7daf))
+* **git:** correct dotted-branch key parsing and error variants ([#182](https://github.com/DaveDev42/git-worktree-manager/issues/182)) ([9761e26](https://github.com/DaveDev42/git-worktree-manager/commit/9761e26917a3855c381e8014bb2985cb2db75b4c))
+* harden update, busy detection, and Claude session resolution ([#181](https://github.com/DaveDev42/git-worktree-manager/issues/181)) ([75deaea](https://github.com/DaveDev42/git-worktree-manager/commit/75deaea987adf5901c59eed1391f7a95fa95a8de))
+* surface terminal launcher errors and unify TUI cleanup ([#180](https://github.com/DaveDev42/git-worktree-manager/issues/180)) ([504abd6](https://github.com/DaveDev42/git-worktree-manager/commit/504abd6bdbbd3399de03bf40cbaf38599d8d8b28))
+
 ## [0.1.12](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.11...v0.1.12) (2026-05-19)
 
 
