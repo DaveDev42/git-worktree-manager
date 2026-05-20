@@ -240,19 +240,14 @@ fn prewarm_busy_caches() {
     std::thread::spawn(crate::operations::claude_process::prewarm);
 }
 
-/// List all worktrees, grouped by repository, using cwd-based scope discovery.
-pub fn list_worktrees() -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let scope = crate::scope::discover_scope(&cwd)?;
-
-    if scope.is_empty() {
-        println!("  {}\n", style("No worktrees found.").dim());
-        return Ok(());
-    }
-
-    // Group by repo_root, preserving first-seen order.
-    // Using Vec<(PathBuf, Vec<(String, PathBuf)>)> instead of HashMap to keep
-    // a stable, deterministic order for multi-repo output.
+/// Group worktrees from a scope by repo_root, preserving first-seen order.
+///
+/// Returns `Vec<(repo_root, Vec<(branch_raw, path)>)>` — the shape the
+/// rendering pipeline expects. Detached HEAD entries use `"(detached)"` as the
+/// branch raw value so `normalize_branch_name` keeps working.
+fn group_worktrees(
+    scope: &crate::scope::Scope,
+) -> Vec<(std::path::PathBuf, Vec<(String, std::path::PathBuf)>)> {
     let mut groups: Vec<(std::path::PathBuf, Vec<(String, std::path::PathBuf)>)> = Vec::new();
     for w in scope.worktrees() {
         let key = &w.repo_root;
@@ -263,12 +258,23 @@ pub fn list_worktrees() -> Result<()> {
                 groups.last_mut().unwrap()
             }
         };
-        // Re-derive (branch_raw, path) tuple shape that the existing rendering
-        // pipeline expects. For detached HEAD, use "(detached)" so downstream
-        // normalize_branch_name keeps working.
         let branch_raw = w.branch.clone().unwrap_or_else(|| "(detached)".to_string());
         entry.1.push((branch_raw, w.path.clone()));
     }
+    groups
+}
+
+/// List all worktrees, grouped by repository, using cwd-based scope discovery.
+pub fn list_worktrees() -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let scope = crate::scope::discover_scope(&cwd)?;
+
+    if scope.is_empty() {
+        println!("  {}\n", style("No worktrees found.").dim());
+        return Ok(());
+    }
+
+    let groups = group_worktrees(&scope);
 
     for (i, (repo, worktrees)) in groups.iter().enumerate() {
         if i > 0 {
@@ -294,20 +300,7 @@ pub fn list_worktrees_tsv() -> Result<()> {
         return Ok(());
     }
 
-    // Group by repo_root in first-seen order.
-    let mut groups: Vec<(std::path::PathBuf, Vec<(String, std::path::PathBuf)>)> = Vec::new();
-    for w in scope.worktrees() {
-        let key = &w.repo_root;
-        let entry = match groups.iter_mut().find(|(k, _)| k == key) {
-            Some(e) => e,
-            None => {
-                groups.push((key.clone(), Vec::new()));
-                groups.last_mut().unwrap()
-            }
-        };
-        let branch_raw = w.branch.clone().unwrap_or_else(|| "(detached)".to_string());
-        entry.1.push((branch_raw, w.path.clone()));
-    }
+    let groups = group_worktrees(&scope);
 
     for (repo, worktrees) in &groups {
         let pr_cache = PrCache::load_or_fetch(repo, false);
@@ -657,7 +650,11 @@ fn lookup_intended_branch(repo: &Path, current_branch: &str, path: &Path) -> Opt
         return None;
     }
 
-    let repo_name = repo.file_name()?.to_string_lossy().to_string();
+    // Use the full canonical repo path as the disambiguation key so two repos
+    // with the same basename (e.g. `~/a/foo` and `~/b/foo`) do not collide.
+    let repo_canon = repo.canonicalize().unwrap_or_else(|_| repo.to_path_buf());
+    let repo_name = repo_canon.file_name()?.to_string_lossy().to_string();
+    let path_canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
 
     for line in result.stdout.trim().lines() {
         let parts: Vec<&str> = line.splitn(2, char::is_whitespace).collect();
@@ -667,7 +664,7 @@ fn lookup_intended_branch(repo: &Path, current_branch: &str, path: &Path) -> Opt
                 let branch_from_key = key_parts[1];
                 let expected_path_name =
                     format!("{}-{}", repo_name, sanitize_branch_name(branch_from_key));
-                if let Some(name) = path.file_name() {
+                if let Some(name) = path_canon.file_name() {
                     if name.to_string_lossy() == expected_path_name {
                         return Some(parts[1].to_string());
                     }

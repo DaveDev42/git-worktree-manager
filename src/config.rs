@@ -278,10 +278,15 @@ pub fn load_effective_config(cwd: &Path) -> Result<Config> {
 pub fn load_effective_config_with_global(cwd: &Path, global_path: &Path) -> Result<Config> {
     let mut merged = serde_json::to_value(Config::default())?;
 
+    // Cache the default path once to avoid a second `get_config_path()` call
+    // (which re-reads `GW_CONFIG_HOME`) and eliminate the TOCTOU window between
+    // the two reads.
+    let default_path = get_config_path();
+
     // Layer 2: global file (or legacy fallback if explicit path absent).
     let global_value = if global_path.exists() {
         Some(read_json_value(global_path)?)
-    } else if global_path == get_config_path().as_path() {
+    } else if global_path == default_path.as_path() {
         // Only fall through to legacy when the caller passed the *default* path —
         // tests that pass an explicit synthetic path should not pick up the user's
         // real legacy file.
@@ -391,6 +396,15 @@ pub fn get_ai_tool_resume_command_for_cwd(cwd: &Path) -> Result<Vec<String>> {
         if env_tool.trim().is_empty() {
             return Ok(Vec::new());
         }
+        // Look up the first word in the resume preset table so that known
+        // tools (e.g. "claude") get their proper resume flag (--continue)
+        // instead of a blind --resume append.
+        let first_word = env_tool.split_whitespace().next().unwrap_or("");
+        let resume_presets = ai_tool_resume_presets();
+        if let Some(preset_cmd) = resume_presets.get(first_word) {
+            return Ok(preset_cmd.iter().map(|s| s.to_string()).collect());
+        }
+        // Unknown tool: fall back to appending --resume.
         let mut parts: Vec<String> = env_tool.split_whitespace().map(String::from).collect();
         parts.push("--resume".to_string());
         return Ok(parts);
