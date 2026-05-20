@@ -37,7 +37,15 @@ pub fn share_files(source_repo: &Path, target_worktree: &Path) {
         let source = source_repo.join(rel_path);
         let target = target_worktree.join(rel_path);
 
-        if !source.exists() || target.exists() {
+        if !source.exists() {
+            continue;
+        }
+        if target.exists() {
+            println!(
+                "  {} Skipped (already exists): {}",
+                style("-").dim(),
+                rel_path
+            );
             continue;
         }
 

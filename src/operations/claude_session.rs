@@ -21,10 +21,12 @@ pub fn encode_project_dir(path: &Path) -> String {
 }
 
 /// Read up to ~64 KiB from the end of `path`, find the newest line that
-/// parses as JSON with a `timestamp` field, and return that timestamp.
+/// parses as JSON with a `timestamp` field, and return both the timestamp and
+/// the optional `cwd` field from that same event (parsed in a single pass).
+///
 /// Returns `None` for empty files, files containing only metadata events
 /// without `timestamp`, or unreadable / unparseable files.
-pub fn newest_event_timestamp(path: &Path) -> Option<DateTime<Utc>> {
+pub fn newest_event(path: &Path) -> Option<(DateTime<Utc>, Option<PathBuf>)> {
     const TAIL_BYTES: u64 = 64 * 1024;
 
     let mut f = File::open(path).ok()?;
@@ -44,7 +46,7 @@ pub fn newest_event_timestamp(path: &Path) -> Option<DateTime<Utc>> {
     }
 
     let reader = BufReader::new(slice);
-    let mut latest: Option<DateTime<Utc>> = None;
+    let mut latest: Option<(DateTime<Utc>, Option<PathBuf>)> = None;
     for line in reader.lines().map_while(Result::ok) {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -62,12 +64,22 @@ pub fn newest_event_timestamp(path: &Path) -> Option<DateTime<Utc>> {
             Ok(t) => t.with_timezone(&Utc),
             Err(_) => continue,
         };
+        let cwd = v.get("cwd").and_then(|x| x.as_str()).map(PathBuf::from);
         match latest {
-            Some(prev) if prev >= ts => {}
-            _ => latest = Some(ts),
+            Some((prev, _)) if prev >= ts => {}
+            _ => latest = Some((ts, cwd)),
         }
     }
     latest
+}
+
+/// Read up to ~64 KiB from the end of `path`, find the newest line that
+/// parses as JSON with a `timestamp` field, and return that timestamp.
+/// Returns `None` for empty files, files containing only metadata events
+/// without `timestamp`, or unreadable / unparseable files.
+#[inline]
+pub fn newest_event_timestamp(path: &Path) -> Option<DateTime<Utc>> {
+    newest_event(path).map(|(ts, _)| ts)
 }
 
 /// Information about one active Claude Code session in a worktree.
@@ -102,17 +114,23 @@ pub fn find_active_sessions(
         if path.extension().and_then(|s| s.to_str()) != Some("jsonl") {
             continue;
         }
-        let Some(ts) = newest_event_timestamp(&path) else {
+        // Parse the file once: get both the timestamp and cwd together.
+        let Some((ts, maybe_cwd)) = newest_event(&path) else {
             continue;
         };
         if (now - ts) > threshold {
             continue;
         }
-        if let Some(reported_cwd) = newest_event_cwd(&path) {
-            let reported_canon = reported_cwd.canonicalize().unwrap_or(reported_cwd);
-            if reported_canon != wt_canon {
-                continue;
-            }
+        // Require explicit cwd confirmation to guard against encode_project_dir
+        // collisions (e.g. `/foo/bar` and `/foo-bar` produce the same encoded
+        // directory name). Sessions with no cwd field are treated as non-matching.
+        let reported_cwd = match maybe_cwd {
+            Some(p) => p,
+            None => continue,
+        };
+        let reported_canon = reported_cwd.canonicalize().unwrap_or(reported_cwd);
+        if reported_canon != wt_canon {
+            continue;
         }
         let id = path
             .file_stem()
@@ -139,43 +157,10 @@ pub fn project_dir_for(worktree: &Path) -> Option<PathBuf> {
     Some(home.join(".claude").join("projects").join(encoded))
 }
 
-/// Companion: extract the `cwd` field from the same newest event. Used in
-/// Task 4 for path-encoding-collision defense. Returns `None` if not present.
+/// Extract the `cwd` field from the newest event in the jsonl file.
+/// Returns `None` if the file has no events with both `timestamp` and `cwd`.
+/// This is a thin wrapper around [`newest_event`] to avoid parsing the file twice.
+#[inline]
 pub fn newest_event_cwd(path: &Path) -> Option<PathBuf> {
-    const TAIL_BYTES: u64 = 64 * 1024;
-    let mut f = File::open(path).ok()?;
-    let len = f.metadata().ok()?.len();
-    let start = len.saturating_sub(TAIL_BYTES);
-    f.seek(SeekFrom::Start(start)).ok()?;
-    let mut buf = Vec::new();
-    f.read_to_end(&mut buf).ok()?;
-    let mut slice = buf.as_slice();
-    if start != 0 {
-        if let Some(nl) = slice.iter().position(|&b| b == b'\n') {
-            slice = &slice[nl + 1..];
-        }
-    }
-    let reader = BufReader::new(slice);
-    let mut latest: Option<(DateTime<Utc>, PathBuf)> = None;
-    for line in reader.lines().map_while(Result::ok) {
-        let v: serde_json::Value = match serde_json::from_str(line.trim()) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        let Some(ts_str) = v.get("timestamp").and_then(|x| x.as_str()) else {
-            continue;
-        };
-        let Some(cwd_str) = v.get("cwd").and_then(|x| x.as_str()) else {
-            continue;
-        };
-        let Ok(ts) = DateTime::parse_from_rfc3339(ts_str) else {
-            continue;
-        };
-        let ts = ts.with_timezone(&Utc);
-        match latest {
-            Some((prev, _)) if prev >= ts => {}
-            _ => latest = Some((ts, PathBuf::from(cwd_str))),
-        }
-    }
-    latest.map(|(_, p)| p)
+    newest_event(path).and_then(|(_, cwd)| cwd)
 }

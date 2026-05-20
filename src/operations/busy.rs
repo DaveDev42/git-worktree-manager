@@ -178,14 +178,14 @@ fn pgid_of(pid: u32) -> Option<u32> {
 
 #[cfg(target_os = "macos")]
 fn pgid_of(pid: u32) -> Option<u32> {
-    let out = Command::new("ps")
-        .args(["-o", "pgid=", "-p", &pid.to_string()])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
+    // SAFETY: getpgid is async-signal-safe and has no side effects.
+    // A return value of -1 indicates an error (pid not found or EPERM).
+    let pgid = unsafe { libc::getpgid(pid as libc::pid_t) };
+    if pgid == -1 {
+        None
+    } else {
+        Some(pgid as u32)
     }
-    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
