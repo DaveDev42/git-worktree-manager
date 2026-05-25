@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.15](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.14...v0.1.15) (2026-05-25)
+
+
+### Bug Fixes
+
+* **claude:** match WorktreeCreate payload to Claude Code's real name/cwd schema ([#188](https://github.com/DaveDev42/git-worktree-manager/issues/188)) ([22fff67](https://github.com/DaveDev42/git-worktree-manager/commit/22fff674402af1adbca1bc800cb4c81fc93139ab))
+
 ## [0.1.14](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.13...v0.1.14) (2026-05-25)
 
 
