@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.14](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.13...v0.1.14) (2026-05-25)
+
+
+### Bug Fixes
+
+* **claude:** align WorktreeCreate payload with Claude Code's real schema ([#185](https://github.com/DaveDev42/git-worktree-manager/issues/185)) ([a3127cf](https://github.com/DaveDev42/git-worktree-manager/commit/a3127cfb457f686d0a5fecd73e8cddb76785687d))
+
 ## [0.1.13](https://github.com/DaveDev42/git-worktree-manager/compare/v0.1.12...v0.1.13) (2026-05-20)
 
 
