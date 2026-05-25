@@ -17,14 +17,25 @@ use crate::error::{CwError, Result};
 
 #[derive(serde::Deserialize)]
 struct CreatePayload {
-    /// Absolute path where Claude Code wants the worktree created. Claude
-    /// derives the trailing segment from a suggested branch name, so we both
-    /// honor this exact path (via `gw new --path`) and use its final
-    /// component as the branch name.
-    worktree_path: String,
-    /// Git ref the worktree should be based on (e.g. `main`). Optional —
-    /// `gw new` falls back to the configured default base when absent.
-    base_ref: Option<String>,
+    /// Branch / worktree identifier Claude Code proposes (e.g.
+    /// `agent-<hash>` or a derived branch name). This is the only field the
+    /// hook needs to drive `gw new <branch>`; `gw` sanitizes it. Current
+    /// Claude Code sends `worktree_name`; some builds emit `name`, so we
+    /// accept either. (A payload carrying *both* keys would be rejected as a
+    /// duplicate field, but no Claude Code build sends both.)
+    #[serde(alias = "name")]
+    worktree_name: String,
+    /// Commit / ref the worktree should be based on. Optional — `gw new`
+    /// falls back to the configured default base when absent. Current Claude
+    /// Code sends `base_commit`; older drafts used `base_ref`, so we accept
+    /// either.
+    #[serde(alias = "base_ref")]
+    base_commit: Option<String>,
+    /// Legacy/optional explicit path. Claude Code's WorktreeCreate payload
+    /// does NOT carry this (the hook is responsible for creating the worktree
+    /// and reporting its path), but we honor it if a build ever sends one so
+    /// the worktree lands exactly where requested.
+    worktree_path: Option<String>,
     /// Repo the hook fired in. Used to relocate the inner `gw new` so it
     /// discovers the right repo root.
     cwd: Option<String>,
@@ -34,28 +45,11 @@ struct CreatePayload {
     _other: serde_json::Value,
 }
 
-/// Derive a branch name from the worktree path Claude Code proposes.
-///
-/// Claude builds the path as `<dir>/<branch-ish-name>`, so the final path
-/// component is the branch name. Returns an error if the path has no usable
-/// final component.
-fn branch_from_worktree_path(worktree_path: &str) -> Result<String> {
-    Path::new(worktree_path)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .ok_or_else(|| {
-            CwError::Other(format!(
-                "could not derive a branch name from worktree_path '{worktree_path}'"
-            ))
-        })
-}
-
 #[derive(serde::Deserialize)]
 struct RemovePayload {
     worktree_path: String,
-    // All other fields are intentionally ignored.
+    // All other fields (worktree_name, cwd, session_id, …) are intentionally
+    // ignored.
     #[serde(flatten)]
     _other: serde_json::Value,
 }
@@ -66,10 +60,12 @@ struct RemovePayload {
 
 /// Handle a Claude Code `WorktreeCreate` hook event.
 ///
-/// Reads the JSON payload from stdin, delegates to `gw new --emit json
-/// --term skip` (self-reexec), parses the resulting JSON, and prints only the
-/// `worktree_path` as a plain-text line to stdout — exactly what Claude Code's
-/// hook contract expects.
+/// Claude Code's payload carries `worktree_name` (and `cwd`/`base_commit`) but
+/// NOT a worktree path — the hook itself is responsible for creating the
+/// worktree and reporting where it landed. We read the payload from stdin,
+/// delegate to `gw new --emit json --term skip` (self-reexec), parse the
+/// resulting JSON, and print only the created `worktree_path` as a plain-text
+/// line to stdout — exactly what Claude Code's hook contract expects.
 ///
 /// Human-readable progress output from the inner `gw new` call flows through
 /// to stderr unchanged, so the user can see what's happening.
@@ -86,22 +82,27 @@ pub fn run_create() -> Result<()> {
         std::env::set_current_dir(cwd)?;
     }
 
-    // 3. Derive the branch name from the proposed worktree path, and honor that
-    //    exact path so the worktree lands where Claude Code expects it.
-    let branch = branch_from_worktree_path(&payload.worktree_path)?;
+    // 3. Use the proposed worktree name as the branch. `gw new` sanitizes it
+    //    and chooses the worktree path via its default convention unless an
+    //    explicit `worktree_path` was supplied (legacy/optional).
+    let branch = payload.worktree_name.trim();
+    if branch.is_empty() {
+        return Err(CwError::Other(
+            "WorktreeCreate hook payload had an empty worktree_name/name".into(),
+        ));
+    }
 
-    // 4. Re-exec the current binary as `gw new <branch> --path <path> [--base
-    //    <ref>] --emit json --term skip`. stdout is piped so we can extract
+    // 4. Re-exec the current binary as `gw new <branch> [--path <path>] [--base
+    //    <commit>] --emit json --term skip`. stdout is piped so we can extract
     //    `worktree_path`; stderr is inherited so the user sees human-readable
     //    progress from the inner process.
     let exe = std::env::current_exe()?;
-    let mut args = vec![
-        "new".to_string(),
-        branch,
-        "--path".to_string(),
-        payload.worktree_path.clone(),
-    ];
-    if let Some(base) = payload.base_ref.as_deref().filter(|b| !b.is_empty()) {
+    let mut args = vec!["new".to_string(), branch.to_string()];
+    if let Some(path) = payload.worktree_path.as_deref().filter(|p| !p.is_empty()) {
+        args.push("--path".to_string());
+        args.push(path.to_string());
+    }
+    if let Some(base) = payload.base_commit.as_deref().filter(|b| !b.is_empty()) {
         args.push("--base".to_string());
         args.push(base.to_string());
     }
