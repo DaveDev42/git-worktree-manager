@@ -263,7 +263,7 @@ Target is resolved in order: exact worktree name → exact branch name → exact
 ## Maintenance
 
 ### `gw doctor`
-Run a 5-check health audit: (1) git version, (2) worktree accessibility (no missing/orphaned dirs), (3) uncommitted changes across worktrees, (4) busy-worktree detection, (5) Claude Code integration (skill installation + plugin paths). Use `--session-start --quiet` for hook-friendly single-line output.
+Run a 5-check health audit: (1) git version, (2) worktree accessibility (no missing/orphaned dirs), (3) uncommitted changes across worktrees, (4) busy-worktree detection, (5) Claude Code integration (whether the gw skills and hooks are installed in this repo's `.claude/`). Use `--session-start --quiet` for hook-friendly single-line output.
 
 ### `gw setup-claude`
 Project-local one-click install: writes skill files into

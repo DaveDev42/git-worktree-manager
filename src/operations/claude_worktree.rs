@@ -17,12 +17,39 @@ use crate::error::{CwError, Result};
 
 #[derive(serde::Deserialize)]
 struct CreatePayload {
-    branch_name: String,
-    base_path: Option<String>,
-    // All other fields (hook_event_name, session_id, cwd, worktree_path,
-    // isolation_mode, …) are intentionally ignored.
+    /// Absolute path where Claude Code wants the worktree created. Claude
+    /// derives the trailing segment from a suggested branch name, so we both
+    /// honor this exact path (via `gw new --path`) and use its final
+    /// component as the branch name.
+    worktree_path: String,
+    /// Git ref the worktree should be based on (e.g. `main`). Optional —
+    /// `gw new` falls back to the configured default base when absent.
+    base_ref: Option<String>,
+    /// Repo the hook fired in. Used to relocate the inner `gw new` so it
+    /// discovers the right repo root.
+    cwd: Option<String>,
+    // All other fields (hook_event_name, session_id, transcript_path,
+    // isolation_type, …) are intentionally ignored.
     #[serde(flatten)]
     _other: serde_json::Value,
+}
+
+/// Derive a branch name from the worktree path Claude Code proposes.
+///
+/// Claude builds the path as `<dir>/<branch-ish-name>`, so the final path
+/// component is the branch name. Returns an error if the path has no usable
+/// final component.
+fn branch_from_worktree_path(worktree_path: &str) -> Result<String> {
+    Path::new(worktree_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            CwError::Other(format!(
+                "could not derive a branch name from worktree_path '{worktree_path}'"
+            ))
+        })
 }
 
 #[derive(serde::Deserialize)]
@@ -53,25 +80,34 @@ pub fn run_create() -> Result<()> {
     let payload: CreatePayload = serde_json::from_str(&buf)
         .map_err(|e| CwError::Other(format!("invalid WorktreeCreate hook payload: {e}")))?;
 
-    // 2. If base_path is provided and differs from cwd, switch to it so that
-    //    the inner `gw new` discovers the correct repo root.
-    if let Some(ref bp) = payload.base_path {
-        std::env::set_current_dir(bp)?;
+    // 2. If cwd is provided, switch to it so the inner `gw new` discovers the
+    //    correct repo root (the hook may run from elsewhere).
+    if let Some(ref cwd) = payload.cwd {
+        std::env::set_current_dir(cwd)?;
     }
 
-    // 3. Re-exec the current binary as `gw new <branch> --emit json --term skip`.
-    //    stdout is piped so we can extract `worktree_path`; stderr is inherited
-    //    so the user sees human-readable progress from the inner process.
+    // 3. Derive the branch name from the proposed worktree path, and honor that
+    //    exact path so the worktree lands where Claude Code expects it.
+    let branch = branch_from_worktree_path(&payload.worktree_path)?;
+
+    // 4. Re-exec the current binary as `gw new <branch> --path <path> [--base
+    //    <ref>] --emit json --term skip`. stdout is piped so we can extract
+    //    `worktree_path`; stderr is inherited so the user sees human-readable
+    //    progress from the inner process.
     let exe = std::env::current_exe()?;
+    let mut args = vec![
+        "new".to_string(),
+        branch,
+        "--path".to_string(),
+        payload.worktree_path.clone(),
+    ];
+    if let Some(base) = payload.base_ref.as_deref().filter(|b| !b.is_empty()) {
+        args.push("--base".to_string());
+        args.push(base.to_string());
+    }
+    args.extend(["--emit", "json", "--term", "skip"].map(str::to_string));
     let output = Command::new(&exe)
-        .args([
-            "new",
-            &payload.branch_name,
-            "--emit",
-            "json",
-            "--term",
-            "skip",
-        ])
+        .args(&args)
         // Force the inner `gw new` to error rather than silently returning an
         // existing worktree path with no JSON on stdout — the hook contract
         // requires that we only succeed when a fresh worktree was created.
@@ -88,7 +124,7 @@ pub fn run_create() -> Result<()> {
         )));
     }
 
-    // 4. Parse the JSON line from the inner process and extract worktree_path.
+    // 5. Parse the JSON line from the inner process and extract worktree_path.
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
         .map_err(|e| CwError::Other(format!("could not parse `gw new --emit json` output: {e}")))?;
@@ -96,7 +132,7 @@ pub fn run_create() -> Result<()> {
         .as_str()
         .ok_or_else(|| CwError::Other("`worktree_path` missing in `gw new` JSON output".into()))?;
 
-    // 5. Emit only the plain-text path — what Claude Code's hook reads.
+    // 6. Emit only the plain-text path — what Claude Code's hook reads.
     println!("{}", wt_path);
     Ok(())
 }

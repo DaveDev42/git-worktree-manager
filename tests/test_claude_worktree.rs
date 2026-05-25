@@ -74,13 +74,30 @@ fn run_remove_with_stdin(cwd: &std::path::Path, stdin_payload: &str) -> std::pro
 // _claude-worktree-create — happy path
 // ===========================================================================
 
-/// Minimal valid payload → stdout is a plain-text path, directory exists.
+/// Build the absolute `worktree_path` Claude Code would propose for a branch.
+///
+/// Claude derives the trailing path component from a suggested branch name, so
+/// the returned path ends in `branch`. The path lives inside a fresh, isolated
+/// temp dir (returned to the caller so it is cleaned up and never collides with
+/// sibling tests sharing `$TMPDIR`). The branch dir itself must not pre-exist —
+/// `git worktree add` creates it.
+fn proposed_worktree_path(branch: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let parent = tempfile::tempdir().expect("worktree parent tempdir");
+    let path = parent.path().join(branch);
+    (parent, path)
+}
+
+/// Minimal valid payload (Claude Code's real WorktreeCreate schema:
+/// `worktree_path` + `cwd`, no `branch_name`) → stdout is the exact proposed
+/// path, and the directory exists there.
 #[test]
 fn create_minimal_payload_outputs_path_and_dir_exists() {
     let repo = TestRepo::new();
+    let (_wt_parent, wt) = proposed_worktree_path("claude-create-test");
     let payload = format!(
-        r#"{{"hook_event_name":"WorktreeCreate","session_id":"s1","cwd":"{path}","worktree_path":"/ignored","base_path":"{path}","branch_name":"claude-create-test"}}"#,
-        path = json_path(repo.path())
+        r#"{{"hook_event_name":"WorktreeCreate","session_id":"s1","cwd":"{cwd}","worktree_path":"{wt}","base_ref":"main","isolation_type":"worktree"}}"#,
+        cwd = json_path(repo.path()),
+        wt = json_path(&wt),
     );
 
     let out = run_create_with_stdin(repo.path(), &payload);
@@ -110,17 +127,28 @@ fn create_minimal_payload_outputs_path_and_dir_exists() {
         "worktree directory must exist at {}, but it does not",
         lines[0]
     );
+    // The worktree must land at the exact path Claude Code proposed, so its
+    // default `git worktree add` is correctly overridden.
+    assert_eq!(
+        wt_path
+            .canonicalize()
+            .unwrap_or_else(|_| wt_path.to_path_buf()),
+        wt.canonicalize().unwrap_or(wt),
+        "worktree must be created at the path the hook proposed"
+    );
 }
 
-/// The output path contains the branch name (naming convention check).
+/// The branch name is derived from the final component of `worktree_path`,
+/// so a new branch by that name exists after creation.
 #[test]
-fn create_output_path_reflects_branch_name() {
+fn create_derives_branch_from_worktree_path() {
     let repo = TestRepo::new();
     let branch = "claude-naming-test";
+    let (_wt_parent, wt) = proposed_worktree_path(branch);
     let payload = format!(
-        r#"{{"hook_event_name":"WorktreeCreate","cwd":"{path}","base_path":"{path}","branch_name":"{branch}"}}"#,
-        path = json_path(repo.path()),
-        branch = branch
+        r#"{{"hook_event_name":"WorktreeCreate","cwd":"{cwd}","worktree_path":"{wt}","base_ref":"main"}}"#,
+        cwd = json_path(repo.path()),
+        wt = json_path(&wt),
     );
 
     let out = run_create_with_stdin(repo.path(), &payload);
@@ -134,8 +162,25 @@ fn create_output_path_reflects_branch_name() {
     let line = stdout.trim();
     assert!(
         line.contains(branch),
-        "output path '{}' should contain the branch name '{}'",
+        "output path '{}' should contain the derived branch name '{}'",
         line,
+        branch
+    );
+
+    // The derived branch must actually exist as a git branch in the repo.
+    let branches = Command::new("git")
+        .args([
+            "-C",
+            &repo.path().to_string_lossy(),
+            "branch",
+            "--list",
+            branch,
+        ])
+        .output()
+        .expect("git branch --list");
+    assert!(
+        String::from_utf8_lossy(&branches.stdout).contains(branch),
+        "branch '{}' should have been created from the worktree_path tail",
         branch
     );
 }
@@ -144,9 +189,11 @@ fn create_output_path_reflects_branch_name() {
 #[test]
 fn create_ignores_unknown_fields() {
     let repo = TestRepo::new();
+    let (_wt_parent, wt) = proposed_worktree_path("claude-unknown-fields");
     let payload = format!(
-        r#"{{"hook_event_name":"WorktreeCreate","unknown_future_field":42,"base_path":"{path}","branch_name":"claude-unknown-fields"}}"#,
-        path = json_path(repo.path())
+        r#"{{"hook_event_name":"WorktreeCreate","unknown_future_field":42,"cwd":"{cwd}","worktree_path":"{wt}"}}"#,
+        cwd = json_path(repo.path()),
+        wt = json_path(&wt),
     );
 
     let out = run_create_with_stdin(repo.path(), &payload);
@@ -157,6 +204,26 @@ fn create_ignores_unknown_fields() {
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(!stdout.trim().is_empty(), "should still output a path");
+}
+
+/// `base_ref` is optional — omitting it falls back to the default base.
+#[test]
+fn create_without_base_ref_uses_default_base() {
+    let repo = TestRepo::new();
+    let (_wt_parent, wt) = proposed_worktree_path("claude-no-base-ref");
+    let payload = format!(
+        r#"{{"hook_event_name":"WorktreeCreate","cwd":"{cwd}","worktree_path":"{wt}"}}"#,
+        cwd = json_path(repo.path()),
+        wt = json_path(&wt),
+    );
+
+    let out = run_create_with_stdin(repo.path(), &payload);
+    assert!(
+        out.status.success(),
+        "missing base_ref should fall back to default base; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!String::from_utf8_lossy(&out.stdout).trim().is_empty());
 }
 
 // ===========================================================================
@@ -180,20 +247,21 @@ fn create_invalid_json_exits_nonzero() {
     );
 }
 
-/// Missing `branch_name` field → non-zero exit.
+/// Missing `worktree_path` field → non-zero exit (it is the required field
+/// in Claude Code's real WorktreeCreate payload).
 #[test]
-fn create_missing_branch_name_exits_nonzero() {
+fn create_missing_worktree_path_exits_nonzero() {
     let repo = TestRepo::new();
-    // `branch_name` is absent; serde should fail deserialization.
+    // `worktree_path` is absent; serde should fail deserialization.
     let payload = format!(
-        r#"{{"hook_event_name":"WorktreeCreate","base_path":"{}"}}"#,
+        r#"{{"hook_event_name":"WorktreeCreate","cwd":"{}"}}"#,
         json_path(repo.path())
     );
 
     let out = run_create_with_stdin(repo.path(), &payload);
     assert!(
         !out.status.success(),
-        "missing branch_name should cause non-zero exit"
+        "missing worktree_path should cause non-zero exit"
     );
 }
 
@@ -220,7 +288,7 @@ fn remove_no_hook_exits_zero_silently() {
     let wt_path = repo.create_worktree("claude-remove-nohook");
 
     let payload = format!(
-        r#"{{"hook_event_name":"WorktreeRemove","session_id":"s1","cwd":"{repo}","worktree_path":"{wt}","isolation_mode":"worktree"}}"#,
+        r#"{{"hook_event_name":"WorktreeRemove","session_id":"s1","cwd":"{repo}","worktree_path":"{wt}","isolation_type":"worktree"}}"#,
         repo = json_path(repo.path()),
         wt = json_path(&wt_path)
     );

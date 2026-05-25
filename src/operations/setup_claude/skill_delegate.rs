@@ -27,6 +27,11 @@ If the user reports that subagent worktrees don't have the expected shared files
 or that `post_new` isn't firing, they probably need to run `gw setup-claude` once
 in this repo's root.
 
+> **Claude Code only.** The `Agent(isolation: "worktree")` → `gw new` routing
+> relies on Claude Code's `WorktreeCreate` / `WorktreeRemove` hook events. Other
+> AI tools (e.g. Codex) have no equivalent hook, so this skill's delegation path
+> does not apply to them — see "Delegating from a non-Claude-Code tool" below.
+
 ## When to delegate vs. work in-session
 
 Delegate when:
@@ -96,6 +101,27 @@ Conventions if you suggest a branch name:
   initial prompt comprehensive — include all requirements, constraints, and
   acceptance criteria upfront. If the user's request is vague, ask clarifying
   questions before spawning.
+
+## Delegating from a non-Claude-Code tool (e.g. Codex)
+
+This skill's `Agent(isolation: "worktree")` path is Claude-Code-specific. If the
+user is driving `gw` from Codex (or any tool without `WorktreeCreate` hooks),
+there is no in-session subagent delegation — `gw` still gives that tool the
+launch + resume + `<TOOL>_*` env-forward primitive, but worktree creation is
+manual:
+
+- **Spawn isolated work:** from a shell (a second terminal, or outside the
+  current session), run `gw new <branch>` to create the worktree and launch the
+  configured AI tool inside it. Forward tool args after `--`, e.g.
+  `gw new feat-x -- <codex-args>`.
+- **Resume later:** `gw resume <branch>` re-opens the tool in that worktree
+  (injecting `codex resume --last` for Codex).
+- `.cwshare` copying and the `post_new` hook fire on `gw new` regardless of
+  which AI tool is configured — those are not Claude-specific.
+
+There is no `setup-codex` and no Codex hook registration; the
+`WorktreeCreate` / `WorktreeRemove` / `PreToolUse(Bash)` hooks installed by
+`gw setup-claude` only ever fire under Claude Code.
 
 ## Cleanup
 
